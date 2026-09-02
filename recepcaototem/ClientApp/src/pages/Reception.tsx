@@ -95,7 +95,9 @@ export function Reception() {
     ana: '/dra-ana-lumis.png', carlos: '/carlos-lumis.jpg', beatriz: '/beatriz-lumis.jpg', rafael: '/rafael-lumis.jpg', marina: '/marina-lumis.jpg',
   }[professional.id] ?? professional.photo)
   const handleGalleryProfessional = (professional: Professional) => {
-    if (galleryDidDragRef.current) { galleryDidDragRef.current = false; return }
+    // A card tap must always be actionable. Native touch scrolling suppresses the
+    // click after a swipe; mouse drags are handled by the stage itself.
+    galleryDidDragRef.current = false
     if (professional.id === galleryFocus?.id || visibleProfessionals.length === 1) choose(professional)
     else setGalleryFocusId(professional.id)
   }
