@@ -115,7 +115,6 @@ export function Reception() {
     galleryDragStartRef.current = event.clientX
     galleryDidDragRef.current = false
     setGalleryDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
   }
   const moveGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== 'mouse' || !galleryPointerActiveRef.current) return
@@ -142,7 +141,7 @@ export function Reception() {
           <div className="lumis-gallery-title"><span>BEM-VINDO</span><h1>Quem você deseja visitar?</h1><small><MoveHorizontal size={15} /> Deslize para explorar</small></div>
         </header>
 
-        {galleryProfessionals.length ? <div ref={galleryRef} className={`lumis-gallery-stage count-${galleryProfessionals.length} ${galleryDragging ? 'is-dragging' : ''}`} style={{ transform: `translateX(${galleryDragX}px)` }} onPointerDown={startGalleryDrag} onPointerMove={moveGalleryDrag} onPointerUp={finishGalleryDrag} onPointerCancel={finishGalleryDrag}>
+        {galleryProfessionals.length ? <div ref={galleryRef} className={`lumis-gallery-stage count-${galleryProfessionals.length} ${galleryDragging ? 'is-dragging' : ''}`}>
           {galleryProfessionals.map((professional, index) => {
             const focused = professional.id === galleryFocus?.id
             return <button className={`lumis-gallery-card position-${index} ${focused ? 'is-focused' : ''}`} key={professional.id} type="button" onClick={() => handleGalleryProfessional(professional)} aria-label={`${focused ? 'Visitar' : 'Destacar'} ${professional.name}, sala ${professional.room}`}>
