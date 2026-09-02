@@ -24,6 +24,7 @@ export function Reception() {
   const streamRef = useRef<MediaStream | null>(null)
   const galleryRef = useRef<HTMLDivElement>(null)
   const galleryDragStartRef = useRef(0)
+  const galleryPointerActiveRef = useRef(false)
   const galleryDidDragRef = useRef(false)
 
   const stopCamera = useCallback(() => {
@@ -108,22 +109,24 @@ export function Reception() {
     // On touch devices the horizontal stage uses the browser's native scroll-snap.
     // Keeping the custom drag for mouse input prevents a swipe from racing a card click.
     if (event.pointerType !== 'mouse') return
+    galleryPointerActiveRef.current = true
     galleryDragStartRef.current = event.clientX
     galleryDidDragRef.current = false
     setGalleryDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const moveGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'mouse' || !galleryDragging) return
+    if (event.pointerType !== 'mouse' || !galleryPointerActiveRef.current) return
     const delta = event.clientX - galleryDragStartRef.current
-    // Ignore only intentional movement; tiny pointer jitter should never block a tap/click.
-    if (Math.abs(delta) > 18) galleryDidDragRef.current = true
     setGalleryDragX(Math.max(-88, Math.min(88, delta * .42)))
   }
   const finishGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'mouse' || !galleryDragging) return
+    if (event.pointerType !== 'mouse' || !galleryPointerActiveRef.current) return
+    galleryPointerActiveRef.current = false
     const delta = event.clientX - galleryDragStartRef.current
-    if (Math.abs(delta) > 48) shiftGallery(delta < 0 ? 1 : -1)
+    const didIntentionalDrag = Math.abs(delta) > 48
+    galleryDidDragRef.current = didIntentionalDrag
+    if (didIntentionalDrag) shiftGallery(delta < 0 ? 1 : -1)
     if (galleryDidDragRef.current && document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setGalleryDragging(false)
     setGalleryDragX(0)
