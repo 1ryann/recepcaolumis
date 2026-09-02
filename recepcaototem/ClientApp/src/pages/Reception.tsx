@@ -113,7 +113,8 @@ export function Reception() {
   const moveGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (!galleryDragging) return
     const delta = event.clientX - galleryDragStartRef.current
-    if (Math.abs(delta) > 7) galleryDidDragRef.current = true
+    // Ignore only intentional movement; tiny pointer jitter should never block a tap/click.
+    if (Math.abs(delta) > 18) galleryDidDragRef.current = true
     setGalleryDragX(Math.max(-88, Math.min(88, delta * .42)))
   }
   const finishGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
