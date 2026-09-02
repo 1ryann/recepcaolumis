@@ -546,7 +546,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow: hidden; }
   margin: 0 auto;
   perspective: 1800px;
   cursor: grab;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
   user-select: none;
   transition: transform .38s cubic-bezier(.2,.75,.2,1);
 }

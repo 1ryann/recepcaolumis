@@ -105,20 +105,23 @@ export function Reception() {
     setGalleryFocusId(visibleProfessionals[nextIndex].id)
   }
   const startGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
+    // On touch devices the horizontal stage uses the browser's native scroll-snap.
+    // Keeping the custom drag for mouse input prevents a swipe from racing a card click.
+    if (event.pointerType !== 'mouse') return
     galleryDragStartRef.current = event.clientX
     galleryDidDragRef.current = false
     setGalleryDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const moveGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (!galleryDragging) return
+    if (event.pointerType !== 'mouse' || !galleryDragging) return
     const delta = event.clientX - galleryDragStartRef.current
     // Ignore only intentional movement; tiny pointer jitter should never block a tap/click.
     if (Math.abs(delta) > 18) galleryDidDragRef.current = true
     setGalleryDragX(Math.max(-88, Math.min(88, delta * .42)))
   }
   const finishGalleryDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (!galleryDragging) return
+    if (event.pointerType !== 'mouse' || !galleryDragging) return
     const delta = event.clientX - galleryDragStartRef.current
     if (Math.abs(delta) > 48) shiftGallery(delta < 0 ? 1 : -1)
     if (galleryDidDragRef.current && document.activeElement instanceof HTMLElement) document.activeElement.blur()
