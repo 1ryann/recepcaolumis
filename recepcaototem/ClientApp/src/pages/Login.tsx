@@ -28,13 +28,13 @@ export function Login() {
   return (
     <main className="login-page">
       <section className="login-brand-panel">
-        <div className="login-brand-top"><img className="login-logo" src="/lumis-logo.png" alt="LUMIS" /></div>
+        <div className="login-brand-top"><img className="login-logo" src="/lumis-logo-transparent.png" alt="LUMIS" /></div>
         <div className="login-message"><span className="eyebrow eyebrow-light">Gestão integrada</span><h1>Seu edifício, organizado em cada detalhe.</h1><p>Recepção, salas, profissionais e locações em uma experiência simples e acolhedora.</p></div>
         <div className="login-trust"><ShieldCheck size={19} /><span><strong>Acesso administrativo</strong><small>Ambiente seguro para gestão do edifício</small></span></div>
       </section>
       <section className="login-form-panel">
         <div className="login-form-wrap">
-          <div className="login-mobile-logo"><img src="/lumis-logo.png" alt="LUMIS" /></div>
+          <div className="login-mobile-logo"><img src="/lumis-logo-transparent.png" alt="LUMIS" /></div>
           <span className="login-icon"><LockKeyhole size={22} /></span>
           <h2>Bem-vindo de volta</h2>
           <p>Entre para acessar o painel administrativo.</p>
