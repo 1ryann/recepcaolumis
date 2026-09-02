@@ -1,0 +1,87 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img "LUMIS"
+        - generic [ref=e7]: LUMIS
+      - generic [ref=e8]:
+        - text: BEM-VINDO
+        - heading [level=1] [ref=e9]:
+          - text: Quem você
+          - emphasis [ref=e10]: deseja visitar?
+        - paragraph [ref=e12]: Selecione um profissional para registrar sua chegada com rapidez e segurança.
+      - textbox "Buscar profissional ou sala" [ref=e17]:
+        - /placeholder: Buscar profissional ou sala...
+      - button "Quer trabalhar no LUMIS? Conheça as salas disponíveis para locação." [ref=e19] [cursor=pointer]:
+        - generic [ref=e25]:
+          - strong [ref=e26]: Quer trabalhar no LUMIS?
+          - generic [ref=e27]: Conheça as salas disponíveis para locação.
+    - generic [ref=e30]:
+      - generic [ref=e31]: Recepção disponível
+      - generic [ref=e35]:
+        - article [ref=e36]:
+          - generic [ref=e37]:
+            - img "Foto de Dra. Ana Martins" [ref=e38]
+            - generic [ref=e39]: DISPONÍVEL
+          - generic [ref=e41]:
+            - heading "Dra. Ana Martins" [level=2] [ref=e46]
+            - paragraph [ref=e47]: Psicóloga clínica
+            - generic [ref=e48]:
+              - generic [ref=e49]: Sala 03
+              - generic [ref=e53]: Disponível
+            - button "Selecionar profissional" [ref=e55] [cursor=pointer]
+        - generic [ref=e58]:
+          - button "Foto de Carlos Mendes DISPONÍVEL Carlos Mendes Advogado empresarial Sala 05 Disponível Selecionar" [ref=e59] [cursor=pointer]:
+            - generic [ref=e60]:
+              - img "Foto de Carlos Mendes" [ref=e61]
+              - generic [ref=e62]: DISPONÍVEL
+            - generic [ref=e64]:
+              - strong [ref=e65]: Carlos Mendes
+              - generic [ref=e66]: Advogado empresarial
+              - generic [ref=e67]:
+                - generic [ref=e68]: Sala 05
+                - generic [ref=e72]: Disponível
+              - generic [ref=e74]: Selecionar
+          - button "Foto de Dra. Beatriz Lima DISPONÍVEL Dra. Beatriz Lima Nutricionista Sala 01 Disponível Selecionar" [ref=e77] [cursor=pointer]:
+            - generic [ref=e78]:
+              - img "Foto de Dra. Beatriz Lima" [ref=e79]
+              - generic [ref=e80]: DISPONÍVEL
+            - generic [ref=e82]:
+              - strong [ref=e83]: Dra. Beatriz Lima
+              - generic [ref=e84]: Nutricionista
+              - generic [ref=e85]:
+                - generic [ref=e86]: Sala 01
+                - generic [ref=e90]: Disponível
+              - generic [ref=e92]: Selecionar
+          - button "Foto de Rafael Nogueira DISPONÍVEL Rafael Nogueira Consultor financeiro Sala 07 Disponível Selecionar" [ref=e95] [cursor=pointer]:
+            - generic [ref=e96]:
+              - img "Foto de Rafael Nogueira" [ref=e97]
+              - generic [ref=e98]: DISPONÍVEL
+            - generic [ref=e100]:
+              - strong [ref=e101]: Rafael Nogueira
+              - generic [ref=e102]: Consultor financeiro
+              - generic [ref=e103]:
+                - generic [ref=e104]: Sala 07
+                - generic [ref=e108]: Disponível
+              - generic [ref=e110]: Selecionar
+          - button "Foto de Marina Costa DISPONÍVEL Marina Costa Arquiteta Sala 08 Disponível Selecionar" [ref=e113] [cursor=pointer]:
+            - generic [ref=e114]:
+              - img "Foto de Marina Costa" [ref=e115]
+              - generic [ref=e116]: DISPONÍVEL
+            - generic [ref=e118]:
+              - strong [ref=e119]: Marina Costa
+              - generic [ref=e120]: Arquiteta
+              - generic [ref=e121]:
+                - generic [ref=e122]: Sala 08
+                - generic [ref=e126]: Disponível
+              - generic [ref=e128]: Selecionar
+      - generic [ref=e131]:
+        - generic [ref=e136]:
+          - strong [ref=e137]: Segurança em primeiro lugar
+          - generic [ref=e138]: Seus dados protegidos e sigilosos.
+        - generic [ref=e142]:
+          - strong [ref=e143]: Atendimento ágil
+          - generic [ref=e144]: Registro em poucos segundos.
+        - generic [ref=e148]:
+          - strong [ref=e149]: Experiência acolhedora
+          - generic [ref=e150]: Conforto e praticidade para você.

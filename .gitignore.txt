@@ -1,0 +1,8 @@
+.vs/
+.playwright-mcp/
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+*.user
+*.suo
