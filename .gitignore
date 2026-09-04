@@ -6,3 +6,14 @@
 **/dist/
 *.user
 *.suo
+artifacts/
+TestResults/
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+appsettings.Local.json
+appsettings.*.Local.json
+**/secrets.json
