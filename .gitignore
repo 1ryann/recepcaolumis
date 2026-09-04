@@ -1,5 +1,6 @@
 .vs/
 .playwright-mcp/
+.worktrees/
 **/bin/
 **/obj/
 **/node_modules/
