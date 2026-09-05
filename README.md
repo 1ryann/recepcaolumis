@@ -2,13 +2,13 @@
 
 ## Estado desta entrega
 
-Escopo atual: API mínima .NET 10 para IIS e SQL Server. Nenhuma regra complexa do MVP foi implementada nesta etapa. O frontend demonstrativo permanece no repositório, mas não é incluído na publicação desta API.
+Escopo atual: fundação .NET 10 e primeira funcionalidade real de autenticação/provisionamento. O React é servido pela própria API na mesma origem e os módulos de negócio continuam fora desta etapa.
 
 - Domain: nomes dos perfis e entidade mínima de auditoria.
 - Application: contratos de diagnóstico de banco e gravação de auditoria.
 - Infrastructure: Identity, EF Core SQL Server, DbContext e migrations.
-- API: health checks, sessão protegida, autorização, logs JSON, erros globais, CORS restrito e rate limiting inicial.
-- Usuários/roles não são criados automaticamente. Login e módulos operacionais serão implementados posteriormente.
+- API: login/logout/sessão por cookie seguro, antiforgery, lockout, dois limites cumulativos do login, policies, auditoria e criação administrativa de usuários.
+- CLI separada cria os roles e o primeiro administrador. Nada é criado automaticamente no startup.
 
 ## Continuar em casa
 
@@ -35,12 +35,13 @@ Invoke-RestMethod http://localhost:5218/health
 
 Para desenvolver com banco, configurar `ConnectionStrings:DefaultConnection` pelo User Secrets do projeto web ou variável de ambiente. Usar banco local exclusivo de desenvolvimento, nunca o banco de produção. Não gravar o valor no README ou appsettings versionado. O backend não carrega arquivos .env automaticamente.
 
-Documentação OpenAPI em `/openapi/v1.json`, somente em Development. Não há Swagger UI nem cadastro Identity público. `/api/auth/session` exige autenticação; não há endpoint de login nesta entrega de infraestrutura.
+Documentação OpenAPI em `/openapi/v1.json`, somente em Development. Não há Swagger UI nem cadastro público. A sessão web usa cookie `__Host-Lumis.Auth`; JWT/localStorage não são usados.
 
 ## Documentos de referência
 
 1. [Entrega de infraestrutura e IIS](docs/operations/iis-foundation.md) — instruções atuais e fronteira de aprovação.
 2. [Nomes das configurações](docs/operations/configuration.md).
+3. [Operação futura da autenticação](docs/operations/authentication-deployment.md).
 3. [Escopo congelado do MVP](docs/superpowers/specs/2026-09-04-mvp-congelado.md).
 4. [Estrutura/modelagem futura](docs/superpowers/specs/2026-09-04-backend-foundation-design.md).
 5. [Plano do MVP completo](docs/superpowers/plans/2026-09-04-mvp-10-dias.md).

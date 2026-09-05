@@ -69,7 +69,7 @@ Questões que não devem ser decididas implicitamente: vínculo contratual/finan
 - .NET SDK fixado em 10.0.400 (`global.json`), aplicação `net10.0`.
 - C#, ASP.NET Core Web API, ASP.NET Core Identity, EF Core/SQL Server 10.0.11.
 - API hospedável InProcess no IIS pelo AspNetCoreModuleV2.
-- React/TypeScript/Vite e CSS existentes em `recepcaototem/ClientApp`; o frontend demonstrativo permanece preservado, mas é excluído do pacote backend atual.
+- React/TypeScript/Vite em `recepcaototem/ClientApp`; o build é incorporado ao publish da API e servido na mesma origem.
 - Testes xUnit + `Microsoft.AspNetCore.Mvc.Testing`.
 - OpenAPI JSON somente em Development; não há Swagger UI nem OpenAPI em Production.
 
@@ -136,14 +136,15 @@ O script idempotente foi gerado localmente em `artifacts/migrations.sql`, que é
 ## O que está implementado agora
 
 - Solução separada em quatro camadas e referências corretas.
-- Identity base com `ApplicationUser`; constantes dos três perfis e policies.
+- Identity com `DisplayName`, `IsActive`, `MustChangePassword`, cookie seguro, roles e policies server-side.
 - `ApplicationDbContext`, provider SQL Server, factory design-time e probe de conectividade.
 - Health liveness `GET /health` e readiness de banco `GET /health/ready`, ambos com corpo genérico.
-- Endpoint protegido `GET /api/auth/session`; ainda não existe login funcional nem provisionamento de usuário/roles.
+- Login, sessão, logout, troca obrigatória de senha e antiforgery; respostas genéricas, lockout e limites independentes por IP e identificador derivado do e-mail.
+- Criação de usuários somente por ADMINISTRADOR, com senha temporária mostrada uma vez, e CLI transacional separada para o primeiro administrador.
 - Tratamento global de erros, logging JSON, CORS restrito, rate limiting e segurança HTTP inicial.
 - Base persistente de auditoria e migration correspondente.
 - Configurações por ambiente sem connection string de produção.
-- Publicação backend-only para IIS com `web.config` correto.
+- Publicação IIS com SPA em `wwwroot`; a CLI possui pacote separado e não entra no webroot.
 - Documentação e ferramenta `dotnet-ef` fixada em `dotnet-tools.json`.
 
 Não implementado: usuários reais, criação dos roles no banco, login/logout/antiforgery token, cadastros, agenda, locações, cobranças, visitas, fotos, retenção, notificações, SignalR, Meta ou Intelbras. O frontend ainda usa mocks/localStorage e autenticação demonstrativa; ele não integra a API atual e não faz parte do pacote IIS do backend.
