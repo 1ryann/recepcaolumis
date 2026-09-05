@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GestaoPredio.Domain\GestaoPredio.Domain.csproj" />
+    <ProjectReference Include="..\..\recepcaototem\recepcaototem.csproj" />
   </ItemGroup>
 
 </Project>

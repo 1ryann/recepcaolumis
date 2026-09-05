@@ -14,11 +14,13 @@ using recepcaototem.Api.Middleware;
 using recepcaototem.Api.Configuration;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Users;
+using recepcaototem.Features.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 builder.Services.AddProblemDetails();
+builder.Services.ConfigureHttpJsonOptions(StrictBody.Configure);
 var connection = builder.Configuration.GetConnectionString("DefaultConnection");
 if (builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(connection))
 {
