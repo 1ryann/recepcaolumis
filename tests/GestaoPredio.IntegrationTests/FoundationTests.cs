@@ -15,6 +15,7 @@ public class FoundationTests
             builder.UseSetting("RateLimiting:PermitLimit", limit.ToString());
             builder.UseSetting("AllowedHosts", "localhost");
             builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Test-Keys"));
+            builder.UseSetting("Storage:PrivateFilesPath", Path.GetTempPath());
         });
 
     [Fact]

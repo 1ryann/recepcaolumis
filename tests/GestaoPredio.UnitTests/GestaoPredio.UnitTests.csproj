@@ -19,7 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\src\GestaoPredio.Application\GestaoPredio.Application.csproj" />
     <ProjectReference Include="..\..\src\GestaoPredio.Domain\GestaoPredio.Domain.csproj" />
+    <ProjectReference Include="..\..\src\GestaoPredio.Infrastructure\GestaoPredio.Infrastructure.csproj" />
     <ProjectReference Include="..\..\recepcaototem\recepcaototem.csproj" />
   </ItemGroup>
 

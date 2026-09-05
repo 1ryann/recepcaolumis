@@ -32,6 +32,7 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
         builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnection);
         builder.UseSetting("AllowedHosts", "localhost");
         builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Auth-Test-Keys"));
+        builder.UseSetting("Storage:PrivateFilesPath", Path.Combine(Path.GetTempPath(), "Lumis-Auth-Test-PrivateFiles"));
         builder.UseSetting("RateLimiting:LoginPermitLimit", "20");
         builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "20");
         builder.ConfigureServices(services =>

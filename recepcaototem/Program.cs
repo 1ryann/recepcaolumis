@@ -4,6 +4,7 @@ using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Auditing;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
+using GestaoPredio.Infrastructure.Files;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
@@ -39,6 +40,7 @@ builder.Services.AddLumisAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<LoginRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
+builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
 builder.Services.AddAntiforgery(options =>
 {
