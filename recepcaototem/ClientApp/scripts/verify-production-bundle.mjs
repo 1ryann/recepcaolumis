@@ -24,4 +24,8 @@ for (const marker of ['atrium_professionals', 'atrium_rooms', 'atrium_leases', '
   if (emittedJavaScript.includes(marker)) throw new Error(`Production bundle contains demonstration storage marker: ${marker}`)
 }
 
+if (emittedJavaScript.includes('localhost:5218')) {
+  throw new Error('Production bundle contains a development API proxy target.')
+}
+
 console.log('Production bundle verifier passed: no development AppStore or mock storage markers were emitted.')
