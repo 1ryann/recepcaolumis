@@ -12,9 +12,14 @@ public sealed class AuditEntry
  public required string CorrelationId { get; set; }
  public string? TargetEntityType { get; set; }
  public Guid? TargetEntityId { get; set; }
- public string? ChangedFields { get; set; }
+ public string? ChangedFields { get; private set; }
 
- public static string BuildChangedFields(IEnumerable<string> fieldNames)
+ public void SetChangedFields(IEnumerable<string>? fieldNames)
+ {
+  ChangedFields = fieldNames is null ? null : BuildChangedFields(fieldNames);
+ }
+
+ private static string BuildChangedFields(IEnumerable<string> fieldNames)
  {
   ArgumentNullException.ThrowIfNull(fieldNames);
 

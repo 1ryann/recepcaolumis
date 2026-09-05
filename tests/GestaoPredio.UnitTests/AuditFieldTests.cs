@@ -7,14 +7,16 @@ public sealed class AuditFieldTests
     [Fact]
     public void BuildChangedFields_sorts_and_deduplicates_approved_field_names()
     {
-        var changedFields = AuditEntry.BuildChangedFields([
+        var entry = CreateAuthEntry();
+
+        entry.SetChangedFields([
             AuditFields.WhatsApp,
             AuditFields.Name,
             AuditFields.Profession,
             AuditFields.Name
         ]);
 
-        Assert.Equal("Name,Profession,WhatsApp", changedFields);
+        Assert.Equal("Name,Profession,WhatsApp", entry.ChangedFields);
     }
 
     [Theory]
@@ -25,29 +27,40 @@ public sealed class AuditFieldTests
     [InlineData("Bytes")]
     public void BuildChangedFields_rejects_values_and_non_field_content(string candidate)
     {
-        Assert.Throws<ArgumentException>(() => AuditEntry.BuildChangedFields([candidate]));
+        var entry = CreateAuthEntry();
+
+        Assert.Throws<ArgumentException>(() => entry.SetChangedFields([candidate]));
     }
 
     [Fact]
     public void BuildChangedFields_keeps_the_approved_field_set_within_the_persisted_limit()
     {
-        var changedFields = AuditEntry.BuildChangedFields(AuditFields.All);
+        var entry = CreateAuthEntry();
 
-        Assert.NotNull(changedFields);
-        Assert.True(changedFields.Length <= 500);
+        entry.SetChangedFields(AuditFields.All);
+
+        Assert.NotNull(entry.ChangedFields);
+        Assert.True(entry.ChangedFields.Length <= 500);
+    }
+
+    [Fact]
+    public void ChangedFields_can_only_be_mutated_from_approved_field_names_and_null_clears_it()
+    {
+        var entry = CreateAuthEntry();
+
+        entry.SetChangedFields([AuditFields.Profession, AuditFields.Name, AuditFields.Name]);
+        Assert.Equal("Name,Profession", entry.ChangedFields);
+
+        entry.SetChangedFields(null);
+
+        Assert.False(typeof(AuditEntry).GetProperty(nameof(AuditEntry.ChangedFields))!.SetMethod?.IsPublic ?? false);
+        Assert.Null(entry.ChangedFields);
     }
 
     [Fact]
     public void Existing_auth_audit_entry_remains_valid_without_entity_target()
     {
-        var entry = new AuditEntry
-        {
-            Id = Guid.NewGuid(),
-            Action = "LOGIN_SUCCEEDED",
-            Result = "SUCCESS",
-            OccurredAt = new DateTimeOffset(2026, 9, 5, 17, 20, 0, TimeSpan.Zero),
-            CorrelationId = "correlation-1"
-        };
+        var entry = CreateAuthEntry();
 
         Assert.Null(entry.TargetEntityType);
         Assert.Null(entry.TargetEntityId);
@@ -63,4 +76,13 @@ public sealed class AuditFieldTests
         Assert.Equal("PROFESSIONAL_USER_REPLACED", AuditActions.ProfessionalUserReplaced);
         Assert.Equal("ROOM_DEACTIVATED", AuditActions.RoomDeactivated);
     }
+
+    private static AuditEntry CreateAuthEntry() => new()
+    {
+        Id = Guid.NewGuid(),
+        Action = "LOGIN_SUCCEEDED",
+        Result = "SUCCESS",
+        OccurredAt = new DateTimeOffset(2026, 9, 5, 17, 20, 0, TimeSpan.Zero),
+        CorrelationId = "correlation-1"
+    };
 }
