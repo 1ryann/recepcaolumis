@@ -17,6 +17,8 @@ public static class ProfessionalEndpoints
         group.MapGet("/{id:guid}", Detail);
         group.MapPost("", Create).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPut("/{id:guid}", Update).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/activate", Activate).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/deactivate", Deactivate).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -108,6 +110,62 @@ public static class ProfessionalEndpoints
         var audit = CreateAudit(context, professional.Id, "PROFESSIONAL_UPDATED", now);
         audit.SetChangedFields(changedFields);
         db.AuditEntries.Add(audit);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Modified();
+        }
+
+        return Results.Ok(professional.ToResponse());
+    }
+
+    private static Task<IResult> Activate(
+        Guid id,
+        ConcurrencyRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        ChangeStatus(id, request, true, context, db, timeProvider, cancellationToken);
+
+    private static Task<IResult> Deactivate(
+        Guid id,
+        ConcurrencyRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        ChangeStatus(id, request, false, context, db, timeProvider, cancellationToken);
+
+    private static async Task<IResult> ChangeStatus(
+        Guid id,
+        ConcurrencyRequest request,
+        bool isActive,
+        HttpContext context,
+        ApplicationDbContext db,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var expectedVersion))
+            return InvalidToken();
+
+        var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (professional is null) return Results.NotFound();
+        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return Modified();
+        if (professional.IsActive == isActive) return Results.Ok(professional.ToResponse());
+
+        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        var now = timeProvider.GetUtcNow();
+        if (isActive) professional.Activate(now); else professional.Deactivate(now);
+        db.AuditEntries.Add(CreateAudit(context, professional.Id,
+            isActive ? "PROFESSIONAL_ACTIVATED" : "PROFESSIONAL_DEACTIVATED", now));
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try

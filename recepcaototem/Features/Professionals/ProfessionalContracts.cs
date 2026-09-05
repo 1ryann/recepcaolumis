@@ -14,6 +14,8 @@ public sealed record UpdateProfessionalRequest(
     string? WhatsApp,
     string? ConcurrencyToken) : IStrictModuleRequest;
 
+public sealed record ConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
+
 public sealed record ProfessionalResponse(
     Guid Id,
     string Name,
