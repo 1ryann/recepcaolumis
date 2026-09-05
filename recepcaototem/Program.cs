@@ -116,6 +116,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check 
 app.MapAuthEndpoints();
 app.MapUserAdministrationEndpoints();
 app.MapProfessionalEndpoints();
+app.MapProfessionalUserLinkEndpoints();
 app.MapRoomEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
