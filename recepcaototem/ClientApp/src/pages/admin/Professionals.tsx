@@ -1,42 +1,147 @@
-import { Eye, MoreHorizontal, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
-import { type FormEvent, useMemo, useState } from 'react'
+import { Camera, KeyRound, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ApiError } from '../../api/client'
+import { type EligibleUserDto, type ModuleStatus, type PagedResponse, type ProfessionalDto, professionalsApi } from '../../api/modules'
+import { useSession } from '../../auth/SessionProvider'
 import { Modal } from '../../components/Modal'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
-import type { Professional } from '../../data/mock'
-import { useAppStore } from '../../store/AppStore'
+import { ProfessionalForm } from '../../features/professionals/ProfessionalForm'
+import { ProfessionalPhotoEditor } from '../../features/professionals/ProfessionalPhotoEditor'
+import { ProfessionalUserLink } from '../../features/professionals/ProfessionalUserLink'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 
-const emptyForm = { name: '', profession: '', phone: '', room: '', photo: '', active: true }
+const pageSize = 20
+const empty: PagedResponse<ProfessionalDto> = { items: [], page: 1, pageSize, totalCount: 0 }
+
+function displayWhatsApp(value: string) {
+  const brazil = value.match(/^\+55(\d{2})(\d{4,5})(\d{4})$/)
+  return brazil ? `(${brazil[1]}) ${brazil[2]}-${brazil[3]}` : value
+}
 
 export function Professionals() {
-  const { professionals, rooms, saveProfessional, toggleProfessional } = useAppStore()
-  const [query, setQuery] = useState('')
-  const [editing, setEditing] = useState<Professional | null>(null)
-  const [viewing, setViewing] = useState<Professional | null>(null)
-  const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm] = useState(emptyForm)
-  const [saved, setSaved] = useState(false)
-  const filtered = useMemo(() => professionals.filter((item) => `${item.name} ${item.profession} ${item.room}`.toLowerCase().includes(query.toLowerCase())), [professionals, query])
+  const { user } = useSession()
+  const administrator = user?.roles.includes('ADMINISTRADOR') ?? false
+  const [rawSearch, setRawSearch] = useState('')
+  const search = useDebouncedValue(rawSearch.trim().replace(/\s+/g, ' ') || undefined)
+  const [status, setStatus] = useState<ModuleStatus>('all')
+  const [page, setPage] = useState(1)
+  const [result, setResult] = useState(empty)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [formProfessional, setFormProfessional] = useState<ProfessionalDto | null | undefined>(undefined)
+  const [photoProfessional, setPhotoProfessional] = useState<ProfessionalDto | null>(null)
+  const [linkProfessional, setLinkProfessional] = useState<ProfessionalDto | null>(null)
+  const [link, setLink] = useState<Awaited<ReturnType<typeof professionalsApi.userLink>> | null>(null)
+  const [eligible, setEligible] = useState<EligibleUserDto[]>([])
+  const [saving, setSaving] = useState(false)
 
-  const openNew = () => { setEditing(null); setForm(emptyForm); setFormOpen(true); setSaved(false) }
-  const openEdit = (professional: Professional) => { setEditing(professional); setForm({ name: professional.name, profession: professional.profession, phone: professional.phone, room: professional.room, photo: professional.photo, active: professional.active }); setFormOpen(true); setSaved(false) }
-  const submit = (event: FormEvent) => { event.preventDefault(); const fallbackPhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(form.name)}&background=E1EEEF&color=0B3B49&size=512`; saveProfessional(editing ? { ...form, id: editing.id, photo: form.photo || fallbackPhoto } : { ...form, photo: form.photo || fallbackPhoto }); setSaved(true); window.setTimeout(() => setFormOpen(false), 650) }
-  const uploadPhoto = (file?: File) => { if (!file) return; const reader = new FileReader(); reader.onload = () => setForm((current) => ({ ...current, photo: String(reader.result) })); reader.readAsDataURL(file) }
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setError(null)
+      setResult(await professionalsApi.list({ search, status, page, pageSize }, signal))
+    } catch (reason) {
+      if ((reason as DOMException).name !== 'AbortError') setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os profissionais.')
+    }
+  }, [page, search, status])
 
-  return (
-    <div className="page-enter">
-      <PageHeader eyebrow="Equipe do edifício" title="Profissionais" description="Gerencie quem atende no LUMIS e suas informações." action={<button className="primary-button" onClick={openNew}><Plus size={18} /> Novo profissional</button>} />
-      <section className="panel table-panel">
-        <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, profissão ou sala" aria-label="Buscar profissionais" /></div><span>{filtered.length} profissionais</span></div>
-        {filtered.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Profissional</th><th>Profissão</th><th>Sala</th><th>WhatsApp</th><th>Status</th><th className="actions-column">Ações</th></tr></thead><tbody>{filtered.map((professional) => <tr key={professional.id}><td><div className="person-cell"><img src={professional.photo} alt="" /><span><strong>{professional.name}</strong><small>Atendimento presencial</small></span></div></td><td>{professional.profession}</td><td><span className="room-tag">Sala {professional.room || '—'}</span></td><td>{professional.phone}</td><td><StatusBadge status={professional.active ? 'active' : 'inactive'} /></td><td><div className="row-actions"><button onClick={() => setViewing(professional)} title="Visualizar"><Eye size={17} /></button><button onClick={() => openEdit(professional)} title="Editar"><Pencil size={17} /></button><button onClick={() => toggleProfessional(professional.id)} title={professional.active ? 'Desativar' : 'Ativar'}>{professional.active ? <UserMinus size={17} /> : <UserPlus size={17} />}</button></div></td></tr>)}</tbody></table></div> : <EmptyState>Nenhum profissional encontrado para “{query}”.</EmptyState>}
-      </section>
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(result.items.length === 0); setRefreshing(result.items.length > 0)
+    void load(controller.signal).finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false) } })
+    return () => controller.abort()
+  }, [load])
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editing ? 'Editar profissional' : 'Novo profissional'} subtitle="Preencha as informações exibidas na recepção." size="large"><form className="form-grid" onSubmit={submit}>
-        <div className="photo-upload"><div>{form.photo ? <img src={form.photo} alt="Prévia" /> : <span>{form.name ? form.name.slice(0, 1).toUpperCase() : '?'}</span>}</div><label className="secondary-button">Escolher foto<input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} /></label><small>JPG ou PNG. A imagem será exibida na recepção.</small></div>
-        <div className="fields-area"><label className="field-label span-2">Nome completo<input className="field-input" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Dra. Helena Martins" /></label><label className="field-label">Profissão<input className="field-input" required value={form.profession} onChange={(event) => setForm({ ...form, profession: event.target.value })} placeholder="Ex.: Psicóloga clínica" /></label><label className="field-label">Telefone / WhatsApp<input className="field-input" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="(92) 99999-9999" /></label><label className="field-label">Sala<select className="field-input" required value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })}><option value="">Selecione</option>{rooms.map((room) => <option key={room.number} value={room.number}>Sala {room.number} · {room.status === 'available' ? 'Disponível' : 'Ocupada'}</option>)}</select></label><label className="field-label">Status<select className="field-input" value={form.active ? 'active' : 'inactive'} onChange={(event) => setForm({ ...form, active: event.target.value === 'active' })}><option value="active">Ativo</option><option value="inactive">Inativo</option></select></label></div>
-        <div className="modal-actions span-all"><button className="ghost-button" type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button className="primary-button" type="submit">{saved ? 'Salvo com sucesso!' : editing ? 'Salvar alterações' : 'Cadastrar profissional'}</button></div>
-      </form></Modal>
+  const refresh = async () => { await load() }
+  const upsert = (professional: ProfessionalDto) => setResult(current => ({ ...current, items: current.items.map(item => item.id === professional.id ? professional : item) }))
+  const resolveFailure = async (reason: unknown) => {
+    if (reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED') {
+      await refresh()
+      setError('Este registro foi alterado por outra operação. Recarregamos os dados para você tentar novamente.')
+      return
+    }
+    throw reason
+  }
+  const saveForm = async (values: { name: string, profession: string, whatsApp: string }) => {
+    setSaving(true)
+    try {
+      if (formProfessional) upsert(await professionalsApi.update(formProfessional.id, { ...values, concurrencyToken: formProfessional.concurrencyToken }))
+      else {
+        const created = await professionalsApi.create(values)
+        setResult(current => ({ ...current, items: [created, ...current.items], totalCount: current.totalCount + 1 }))
+      }
+      setFormProfessional(undefined)
+    } catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const toggleStatus = async (professional: ProfessionalDto) => {
+    setSaving(true)
+    try { upsert(await professionalsApi.changeStatus(professional.id, !professional.isActive, professional.concurrencyToken)) }
+    catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const uploadPhoto = async (file: File) => {
+    if (!photoProfessional) return
+    setSaving(true)
+    try { upsert(await professionalsApi.putPhoto(photoProfessional.id, file, photoProfessional.concurrencyToken)) }
+    catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const removePhoto = async () => {
+    if (!photoProfessional) return
+    setSaving(true)
+    try { upsert(await professionalsApi.removePhoto(photoProfessional.id, photoProfessional.concurrencyToken)) }
+    catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const openLink = async (professional: ProfessionalDto) => {
+    setLinkProfessional(professional); setLink(null); setEligible([])
+    try {
+      const [current, users] = await Promise.all([professionalsApi.userLink(professional.id), professionalsApi.eligibleUsers({ page: 1, pageSize })])
+      setLink(current); setEligible(users.items)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as contas.') }
+  }
+  const searchEligible = useCallback((value: string) => {
+    void professionalsApi.eligibleUsers({ search: value.trim() || undefined, page: 1, pageSize })
+      .then(response => setEligible(response.items))
+      .catch(reason => setError(reason instanceof Error ? reason.message : 'Não foi possível buscar as contas.'))
+  }, [])
+  const saveLink = async (userId: string) => {
+    if (!linkProfessional) return
+    setSaving(true)
+    try {
+      const updated = await professionalsApi.putUserLink(linkProfessional.id, userId, linkProfessional.concurrencyToken)
+      upsert(updated); setLinkProfessional(updated); setLink(await professionalsApi.userLink(updated.id))
+    } catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const removeLink = async () => {
+    if (!linkProfessional) return
+    setSaving(true)
+    try {
+      const updated = await professionalsApi.removeUserLink(linkProfessional.id, linkProfessional.concurrencyToken)
+      upsert(updated); setLinkProfessional(updated); setLink({ linked: false })
+    } catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const start = result.totalCount ? ((result.page - 1) * result.pageSize) + 1 : 0
+  const end = Math.min(result.page * result.pageSize, result.totalCount)
+  const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
 
-      <Modal open={!!viewing} onClose={() => setViewing(null)} title="Detalhes do profissional">{viewing && <div className="professional-detail"><div className="tenant-profile"><img src={viewing.photo} alt={`Foto de ${viewing.name}`} /><span><StatusBadge status={viewing.active ? 'active' : 'inactive'} /><strong>{viewing.name}</strong><p>{viewing.profession}</p></span></div><div className="profile-facts"><div><small>Sala</small><strong>{viewing.room ? `Sala ${viewing.room}` : 'Não definida'}</strong></div><div><small>WhatsApp</small><strong>{viewing.phone}</strong></div></div><button className="secondary-button full-button" onClick={() => { setViewing(null); openEdit(viewing) }}><Pencil size={17} /> Editar informações</button></div>}</Modal>
-    </div>
-  )
+  return <div className="page-enter">
+    <PageHeader eyebrow="Equipe do edifício" title="Profissionais" description="Gerencie os dados cadastrais e o acesso das pessoas que atendem no LUMIS."
+      action={<button className="primary-button" onClick={() => setFormProfessional(null)}><Plus size={18} /> Novo profissional</button>} />
+    <section className="panel table-panel">
+      <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome ou profissão" aria-label="Buscar profissionais" /></div>
+        <select className="field-input compact-select" value={status} aria-label="Status dos profissionais" onChange={event => { setStatus(event.target.value as ModuleStatus); setPage(1) }}><option value="all">Todos os status</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select>
+        <span>{start}–{end} de {result.totalCount} profissionais</span></div>
+      {loading ? <div className="empty-state" role="status">Carregando profissionais…</div>
+        : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
+          : result.items.length === 0 ? <EmptyState>Nenhum profissional encontrado.</EmptyState>
+            : <div className="table-scroll"><table className="data-table"><thead><tr><th>Profissional</th><th>Profissão</th><th>WhatsApp</th><th>Conta</th><th>Status</th><th className="actions-column">Ações</th></tr></thead><tbody>{result.items.map(professional => <tr key={professional.id}><td><div className="person-cell">
+              {professional.hasPhoto && professional.photoUrl ? <img src={professional.photoUrl} alt={`Foto de ${professional.name}`} /> : <span className="person-placeholder">{professional.name.slice(0, 1).toUpperCase()}</span>}
+              <span><strong>{professional.name}</strong><small>{professional.hasPhoto ? 'Foto cadastrada' : 'Sem foto'}</small></span></div></td><td>{professional.profession}</td><td>{displayWhatsApp(professional.whatsApp)}</td><td>{professional.hasLinkedUser ? 'Conta vinculada' : 'Sem conta'}</td><td><StatusBadge status={professional.isActive ? 'active' : 'inactive'} /></td><td><div className="row-actions">
+              <button onClick={() => setFormProfessional(professional)} aria-label={`Editar ${professional.name}`}><Pencil size={17} /></button><button onClick={() => setPhotoProfessional(professional)} aria-label={`Foto de ${professional.name}`}><Camera size={17} /></button>{administrator && <button onClick={() => void openLink(professional)} aria-label={`Vincular conta ${professional.name}`}><KeyRound size={17} /></button>}<button disabled={saving} onClick={() => void toggleStatus(professional)} aria-label={`${professional.isActive ? 'Desativar' : 'Ativar'} ${professional.name}`}>{professional.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button>
+            </div></td></tr>)}</tbody></table></div>}
+      {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
+      {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
+    </section>
+    <Modal open={formProfessional !== undefined} onClose={() => setFormProfessional(undefined)} title={formProfessional ? 'Editar profissional' : 'Novo profissional'} subtitle="Os dados são validados e normalizados pela API." size="large"><ProfessionalForm professional={formProfessional ?? null} pending={saving} onCancel={() => setFormProfessional(undefined)} onSubmit={saveForm} /></Modal>
+    <Modal open={photoProfessional !== null} onClose={() => setPhotoProfessional(null)} title="Foto do profissional" subtitle="A imagem fica em armazenamento privado." size="large">{photoProfessional && <ProfessionalPhotoEditor professional={photoProfessional} pending={saving} onClose={() => setPhotoProfessional(null)} onUpload={uploadPhoto} onRemove={removePhoto} />}</Modal>
+    <Modal open={linkProfessional !== null} onClose={() => setLinkProfessional(null)} title="Vínculo com conta" subtitle="Somente administradores podem administrar este vínculo." size="large">{linkProfessional && <ProfessionalUserLink link={link} eligible={eligible} pending={saving} onSearch={searchEligible} onSave={saveLink} onRemove={removeLink} />}</Modal>
+  </div>
 }
