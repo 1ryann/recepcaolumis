@@ -25,6 +25,7 @@ public sealed record PagingQuery(int Page, int PageSize, string Status, string? 
         if (actualStatus is not (All or Active or Inactive))
             return Fail("INVALID_STATUS", "O status informado é inválido.", out query, out error);
         var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : TextNormalizer.Normalize(search);
+        if (normalizedSearch?.Length == 0) normalizedSearch = null;
         if (normalizedSearch?.Length > MaximumSearchLength)
             return Fail("INVALID_SEARCH", "A busca deve possuir no máximo 100 caracteres.", out query, out error);
 

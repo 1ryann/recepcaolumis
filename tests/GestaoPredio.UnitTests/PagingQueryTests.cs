@@ -39,4 +39,11 @@ public sealed class PagingQueryTests
         Assert.False(PagingQuery.TryCreate(1, 20, "all", new string('a', 101), out _, out var error));
         Assert.Equal("INVALID_SEARCH", error!.Code);
     }
+
+    [Fact]
+    public void Search_that_becomes_empty_after_unicode_normalization_is_absent()
+    {
+        Assert.True(PagingQuery.TryCreate(1, 20, "all", "\u0301", out var query, out _));
+        Assert.Null(query!.Search);
+    }
 }
