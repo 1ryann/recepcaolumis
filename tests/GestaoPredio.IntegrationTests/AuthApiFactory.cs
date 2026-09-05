@@ -103,6 +103,15 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
         string role = SystemRoles.Administrador,
         bool isActive = true,
         bool mustChangePassword = false)
+        => await CreateUserAsync(email, password, [role], isActive, mustChangePassword);
+
+    public async Task<ApplicationUser> CreateUserAsync(
+        string email,
+        string password,
+        IReadOnlyCollection<string> roles,
+        bool isActive = true,
+        bool mustChangePassword = false,
+        string displayName = "Test User")
     {
         await using var scope = Services.CreateAsyncScope();
         await EnsureRolesAsync(scope.ServiceProvider);
@@ -112,13 +121,14 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
         {
             UserName = email,
             Email = email,
-            DisplayName = "Test User",
+            DisplayName = displayName,
             EmailConfirmed = true,
             IsActive = isActive,
             MustChangePassword = mustChangePassword
         };
         Assert.True((await userManager.CreateAsync(user, password)).Succeeded);
-        Assert.True((await userManager.AddToRoleAsync(user, role)).Succeeded);
+        foreach (var role in roles)
+            Assert.True((await userManager.AddToRoleAsync(user, role)).Succeeded);
         return user;
     }
 
@@ -142,6 +152,19 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
     public async Task<HttpResponseMessage> PostWithCsrfAsync(string path, object body)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-CSRF-TOKEN", await GetCsrfTokenAsync());
+        return await Client.SendAsync(request);
+    }
+
+    public Task<HttpResponseMessage> PutWithCsrfAsync(string path, object body) =>
+        SendWithCsrfAsync(HttpMethod.Put, path, body);
+
+    public Task<HttpResponseMessage> DeleteWithCsrfAsync(string path, object body) =>
+        SendWithCsrfAsync(HttpMethod.Delete, path, body);
+
+    private async Task<HttpResponseMessage> SendWithCsrfAsync(HttpMethod method, string path, object body)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) };
         request.Headers.Add("X-CSRF-TOKEN", await GetCsrfTokenAsync());
         return await Client.SendAsync(request);
     }
