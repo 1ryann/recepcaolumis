@@ -1,7 +1,17 @@
+using System.Collections.Frozen;
+
 namespace GestaoPredio.Domain.Auditing;
 
 public sealed class AuditEntry
 {
+ private static readonly FrozenSet<string> ApprovedChangedFields =
+ new[]
+ {
+  AuditFields.Name, AuditFields.Profession, AuditFields.WhatsApp,
+  AuditFields.Description, AuditFields.HourlyRate, AuditFields.DailyRate,
+  AuditFields.IsActive, AuditFields.PhotoFileId, AuditFields.ApplicationUserId
+ }.ToFrozenSet(StringComparer.Ordinal);
+
  public Guid Id { get; set; }
  public string? ActorUserId { get; set; }
  public string? TargetUserId { get; set; }
@@ -28,7 +38,7 @@ public sealed class AuditEntry
    .OrderBy(fieldName => fieldName, StringComparer.Ordinal)
    .ToArray();
 
-  if (fields.Any(fieldName => !AuditFields.All.Contains(fieldName, StringComparer.Ordinal)))
+  if (fields.Any(fieldName => !ApprovedChangedFields.Contains(fieldName)))
    throw new ArgumentException("A auditoria aceita apenas nomes de campos aprovados.", nameof(fieldNames));
 
   var changedFields = string.Join(',', fields);
@@ -51,9 +61,4 @@ public static class AuditFields
  public const string PhotoFileId = "PhotoFileId";
  public const string ApplicationUserId = "ApplicationUserId";
 
- public static readonly IReadOnlyList<string> All =
- [
-  Name, Profession, WhatsApp, Description, HourlyRate, DailyRate,
-  IsActive, PhotoFileId, ApplicationUserId
- ];
 }

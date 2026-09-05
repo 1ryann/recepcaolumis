@@ -37,7 +37,17 @@ public sealed class AuditFieldTests
     {
         var entry = CreateAuthEntry();
 
-        entry.SetChangedFields(AuditFields.All);
+        entry.SetChangedFields([
+            AuditFields.Name,
+            AuditFields.Profession,
+            AuditFields.WhatsApp,
+            AuditFields.Description,
+            AuditFields.HourlyRate,
+            AuditFields.DailyRate,
+            AuditFields.IsActive,
+            AuditFields.PhotoFileId,
+            AuditFields.ApplicationUserId
+        ]);
 
         Assert.NotNull(entry.ChangedFields);
         Assert.True(entry.ChangedFields.Length <= 500);
@@ -55,6 +65,16 @@ public sealed class AuditFieldTests
 
         Assert.False(typeof(AuditEntry).GetProperty(nameof(AuditEntry.ChangedFields))!.SetMethod?.IsPublic ?? false);
         Assert.Null(entry.ChangedFields);
+    }
+
+    [Fact]
+    public void AuditFields_does_not_expose_a_collection_that_can_expand_accepted_names()
+    {
+        var publicCollections = typeof(AuditFields)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => typeof(IEnumerable<string>).IsAssignableFrom(field.FieldType));
+
+        Assert.Empty(publicCollections);
     }
 
     [Fact]
