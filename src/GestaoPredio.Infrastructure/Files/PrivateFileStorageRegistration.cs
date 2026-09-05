@@ -1,4 +1,5 @@
 using GestaoPredio.Application.Abstractions;
+using GestaoPredio.Application.Files;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ public static class PrivateFileStorageRegistration
             .ValidateOnStart();
         services.AddSingleton<IPrivateFileStorage>(provider =>
             new FileSystemPrivateFileStorage(provider.GetRequiredService<IOptions<PrivateFileStorageOptions>>().Value));
+        services.AddSingleton<IProfessionalPhotoValidator, ProfessionalPhotoValidator>();
         return services;
     }
 }

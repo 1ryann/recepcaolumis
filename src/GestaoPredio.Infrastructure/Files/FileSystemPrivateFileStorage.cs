@@ -98,6 +98,15 @@ public sealed partial class FileSystemPrivateFileStorage : IPrivateFileStorage
         return Task.FromResult(stream);
     }
 
+    public Task<Stream> OpenStagedReadAsync(StagedPrivateFile staged, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(staged);
+        cancellationToken.ThrowIfCancellationRequested();
+        Stream stream = new FileStream(ResolveTemporary(staged.TemporaryKey), FileMode.Open, FileAccess.Read,
+            FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return Task.FromResult(stream);
+    }
+
     public Task<bool> DeleteAsync(string storageKey, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
