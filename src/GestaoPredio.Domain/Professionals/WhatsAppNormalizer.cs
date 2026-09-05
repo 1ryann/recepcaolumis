@@ -21,19 +21,23 @@ public static class WhatsAppNormalizer
 
         if (value[0] == '+')
         {
-            if (IsE164(value))
+            if (value.StartsWith("+55", StringComparison.Ordinal))
             {
-                canonical = value;
+                if (!TryNormalizeBrazilianNumber(value[3..].Trim(), out var nationalNumber))
+                {
+                    return false;
+                }
+
+                canonical = $"+55{nationalNumber}";
                 return true;
             }
 
-            if (!value.StartsWith("+55", StringComparison.Ordinal)
-                || !TryNormalizeBrazilianNumber(value[3..].Trim(), out var nationalNumber))
+            if (!IsE164(value))
             {
                 return false;
             }
 
-            canonical = $"+55{nationalNumber}";
+            canonical = value;
             return true;
         }
 

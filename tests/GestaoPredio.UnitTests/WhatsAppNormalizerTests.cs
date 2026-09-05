@@ -27,6 +27,8 @@ public sealed class WhatsAppNormalizerTests
     [InlineData("442071838750")]
     [InlineData("119876543210")]
     [InlineData("+1234567890123456")]
+    [InlineData("+5512345678")]
+    [InlineData("+55119876543210")]
     [InlineData("+44 2071838750")]
     [InlineData("(11) 98765-4321 ramal 9")]
     [InlineData("11987654321x9")]

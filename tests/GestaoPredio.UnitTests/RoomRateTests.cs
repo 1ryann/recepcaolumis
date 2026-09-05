@@ -23,6 +23,22 @@ public sealed class RoomRateTests
     }
 
     [Fact]
+    public void IsValid_rejects_a_value_with_three_decimal_places_even_when_the_last_digit_is_zero()
+    {
+        const decimal value = 1.230m;
+
+        Assert.False(RoomRate.IsValid(value));
+    }
+
+    [Fact]
+    public void IsValid_accepts_a_value_with_two_decimal_places_when_the_last_digit_is_zero()
+    {
+        const decimal value = 100.50m;
+
+        Assert.True(RoomRate.IsValid(value));
+    }
+
+    [Fact]
     public void IsValid_accepts_the_application_maximum_without_transforming_it()
     {
         const decimal maximum = 9_999_999_999_999.99m;
