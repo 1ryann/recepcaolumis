@@ -72,6 +72,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("Storage:ProfessionalPhotoMaxBytes", (5 * 1024 * 1024).ToString());
         builder.UseSetting("RateLimiting:LoginPermitLimit", "100");
         builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "100");
+        builder.UseSetting("RateLimiting:PermitLimit", "10000");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
