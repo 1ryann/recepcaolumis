@@ -1,28 +1,92 @@
-import { ArrowRight, Building, CalendarDays, CircleDollarSign, DoorOpen, Phone, Plus, UserRound } from 'lucide-react'
-import { useState } from 'react'
-import type { Room } from '../../data/mock'
-import { useAppStore } from '../../store/AppStore'
+import { Building2, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ApiError } from '../../api/client'
+import { type ModuleStatus, type PagedResponse, type RoomDto, roomsApi } from '../../api/modules'
 import { Modal } from '../../components/Modal'
-import { PageHeader, StatusBadge } from '../../components/PageElements'
-import { useNavigate } from 'react-router-dom'
+import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { RoomForm } from '../../features/rooms/RoomForm'
+import { formatBrl } from '../../features/rooms/money'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+
+const pageSize = 20
+const empty: PagedResponse<RoomDto> = { items: [], page: 1, pageSize, totalCount: 0 }
 
 export function Rooms() {
-  const { rooms, professionals, leases } = useAppStore()
-  const [selected, setSelected] = useState<Room | null>(null)
-  const navigate = useNavigate()
-  const professional = selected?.professionalId ? professionals.find((item) => item.id === selected.professionalId) : undefined
-  const lease = selected ? leases.find((item) => item.room === selected.number) : undefined
-  const occupied = rooms.filter((room) => room.status === 'occupied').length
+  const [rawSearch, setRawSearch] = useState('')
+  const search = useDebouncedValue(rawSearch.trim().replace(/\s+/g, ' ') || undefined)
+  const [status, setStatus] = useState<ModuleStatus>('all')
+  const [page, setPage] = useState(1)
+  const [result, setResult] = useState(empty)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [formRoom, setFormRoom] = useState<RoomDto | null | undefined>(undefined)
+  const [saving, setSaving] = useState(false)
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setError(null)
+      setResult(await roomsApi.list({ search, status, page, pageSize }, signal))
+    } catch (reason) {
+      if ((reason as DOMException).name !== 'AbortError') setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as salas.')
+    }
+  }, [page, search, status])
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(result.items.length === 0); setRefreshing(result.items.length > 0)
+    void load(controller.signal).finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false) } })
+    return () => controller.abort()
+  }, [load])
 
-  return (
-    <div className="page-enter">
-      <PageHeader eyebrow="Mapa do edifício" title="Salas" description="Visualize a ocupação e os detalhes de cada espaço." action={<button className="secondary-button" onClick={() => navigate('/admin/locacoes')}><Plus size={18} /> Nova locação</button>} />
-      <div className="room-summary"><span><i className="legend-dot occupied" />{occupied} ocupadas</span><span><i className="legend-dot available" />{rooms.length - occupied} disponíveis</span><b>{rooms.length} salas no total</b></div>
-      <section className="rooms-grid">{rooms.map((room) => { const tenant = room.professionalId ? professionals.find((item) => item.id === room.professionalId) : undefined; return <button className={`room-card room-${room.status}`} key={room.number} onClick={() => setSelected(room)} type="button"><span className="room-card-top"><span className="room-door"><DoorOpen size={22} /></span><StatusBadge status={room.status} /></span><span className="room-number"><small>Sala</small><strong>{room.number}</strong></span><span className="room-tenant">{tenant ? <><img src={tenant.photo} alt="" /><span><strong>{tenant.name}</strong><small>{tenant.profession}</small></span></> : <><span className="available-icon"><Plus size={18} /></span><span><strong>Disponível para locação</strong><small>{room.floor}</small></span></>}</span><span className="room-card-footer"><span>{room.floor}</span><ArrowRight size={17} /></span></button>})}</section>
+  const refresh = async () => { await load() }
+  const upsert = (room: RoomDto) => setResult(current => ({ ...current, items: current.items.map(item => item.id === room.id ? room : item) }))
+  const resolveFailure = async (reason: unknown) => {
+    if (reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED') {
+      await refresh(); setError('Este registro foi alterado por outra operação. Recarregamos os dados para você tentar novamente.'); return
+    }
+    throw reason
+  }
+  const save = async (input: { name: string, description: string | null, hourlyRate: number, dailyRate: number }) => {
+    setSaving(true)
+    try {
+      if (formRoom) upsert(await roomsApi.update(formRoom.id, { ...input, concurrencyToken: formRoom.concurrencyToken }))
+      else {
+        const created = await roomsApi.create(input)
+        setResult(current => ({ ...current, items: [created, ...current.items], totalCount: current.totalCount + 1 }))
+      }
+      setFormRoom(undefined)
+    } catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
+  }
+  const toggle = async (room: RoomDto) => {
+    setSaving(true)
+    try { upsert(await roomsApi.changeStatus(room.id, !room.isActive, room.concurrencyToken)) }
+    catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'ROOM_NAME_ALREADY_EXISTS') { setError(reason.message) }
+      else await resolveFailure(reason)
+    } finally { setSaving(false) }
+  }
+  const start = result.totalCount ? ((result.page - 1) * result.pageSize) + 1 : 0
+  const end = Math.min(result.page * result.pageSize, result.totalCount)
+  const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
 
-      <Modal open={!!selected} onClose={() => setSelected(null)} title={selected ? `Sala ${selected.number}` : 'Sala'} subtitle={selected?.floor}>
-        {selected?.status === 'occupied' && professional && lease ? <div className="room-detail"><div className="tenant-profile"><img src={professional.photo} alt={`Foto de ${professional.name}`} /><span><small>Profissional responsável</small><strong>{professional.name}</strong><p>{professional.profession}</p></span></div><div className="detail-grid"><div><Phone size={18} /><span><small>Telefone</small><strong>{professional.phone}</strong></span></div><div><CircleDollarSign size={18} /><span><small>Valor do aluguel</small><strong>{lease.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span></div><div><CalendarDays size={18} /><span><small>Próximo vencimento</small><strong>{new Date(`${lease.dueDate}T12:00:00`).toLocaleDateString('pt-BR')}</strong></span></div><div><Building size={18} /><span><small>Início da locação</small><strong>{new Date(`${lease.startDate}T12:00:00`).toLocaleDateString('pt-BR')}</strong></span></div></div><div className="payment-row"><span><small>Status do pagamento</small><strong>Referente ao mês atual</strong></span><StatusBadge status={lease.status} /></div><button className="secondary-button full-button" onClick={() => { setSelected(null); navigate('/admin/locacoes') }}>Ver detalhes da locação <ArrowRight size={17} /></button></div> : <div className="available-detail"><span className="available-detail-icon"><DoorOpen size={34} /></span><h3>Esta sala está disponível</h3><p>Registre uma nova locação para vincular um profissional a este espaço.</p><button className="primary-button" onClick={() => { setSelected(null); navigate('/admin/locacoes', { state: { newLease: true, room: selected?.number } }) }}><Plus size={18} /> Registrar nova locação</button></div>}
-      </Modal>
-    </div>
-  )
+  return <div className="page-enter">
+    <PageHeader eyebrow="Espaços do edifício" title="Salas" description="Cadastre os espaços e as tarifas disponíveis para uso."
+      action={<button className="primary-button" onClick={() => setFormRoom(null)}><Plus size={18} /> Nova sala</button>} />
+    <section className="panel table-panel">
+      <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome" aria-label="Buscar salas" /></div>
+        <select className="field-input compact-select" value={status} aria-label="Status das salas" onChange={event => { setStatus(event.target.value as ModuleStatus); setPage(1) }}><option value="all">Todos os status</option><option value="active">Ativas</option><option value="inactive">Inativas</option></select>
+        <span>{start}–{end} de {result.totalCount} salas</span></div>
+      {loading ? <div className="empty-state" role="status">Carregando salas…</div>
+        : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
+          : result.items.length === 0 ? <EmptyState>Nenhuma sala encontrada.</EmptyState>
+            : <div className="rooms-admin-grid">{result.items.map(room => <article className="room-admin-card" key={room.id}>
+              <div className="room-admin-heading"><span className="room-admin-icon"><Building2 size={20} /></span><div><strong>{room.name}</strong><StatusBadge status={room.isActive ? 'active' : 'inactive'} /></div></div>
+              <p>{room.description || 'Sem descrição cadastrada.'}</p>
+              <dl className="room-rates"><div><dt>Por hora</dt><dd>{formatBrl(room.hourlyRate)}</dd></div><div><dt>Diária</dt><dd>{formatBrl(room.dailyRate)}</dd></div></dl>
+              <div className="room-admin-actions"><button className="secondary-button" onClick={() => setFormRoom(room)} aria-label={`Editar ${room.name}`}><Pencil size={16} /> Editar</button><button className="ghost-button" disabled={saving} onClick={() => void toggle(room)} aria-label={`${room.isActive ? 'Desativar' : 'Ativar'} ${room.name}`}>{room.isActive ? <UserMinus size={16} /> : <UserPlus size={16} />}{room.isActive ? 'Desativar' : 'Ativar'}</button></div>
+            </article>)}</div>}
+      {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
+      {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
+    </section>
+    <Modal open={formRoom !== undefined} onClose={() => setFormRoom(undefined)} title={formRoom ? 'Editar sala' : 'Nova sala'} subtitle="As tarifas são informadas em reais e enviadas como números." size="large"><RoomForm room={formRoom ?? null} pending={saving} onCancel={() => setFormRoom(undefined)} onSubmit={save} /></Modal>
+  </div>
 }
