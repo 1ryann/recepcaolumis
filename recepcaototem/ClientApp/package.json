@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build && node scripts/postbuild.mjs",
+    "test": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -20,9 +21,13 @@
   "devDependencies": {
     "@openai/sites-vite-plugin": "^0.2.0",
     "@tailwindcss/vite": "latest",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "jsdom": "^29.1.1",
     "tailwindcss": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^5.0.0"
   }
 }

@@ -1,6 +1,7 @@
 import { CalendarRange, ChevronDown, DoorOpen, LayoutDashboard, LogOut, Menu, Settings, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useSession } from '../auth/SessionProvider'
 
 const navItems = [
   { to: '/admin', label: 'Visão geral', icon: LayoutDashboard, end: true },
@@ -19,7 +20,11 @@ export function AdminLayout() {
   const [open, setOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const logout = () => { localStorage.removeItem('atrium_session'); navigate('/login') }
+  const session = useSession()
+  const name = session.user?.displayName || session.user?.email || 'Usuário'
+  const initials = name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
+  const role = session.user?.roles[0] ?? ''
+  const logout = async () => { await session.logout(); navigate('/login') }
 
   return (
     <div className="admin-shell">
@@ -40,8 +45,8 @@ export function AdminLayout() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="sidebar-avatar">AD</div>
-          <div><strong>Administrador</strong><small>admin@demo.com</small></div>
+          <div className="sidebar-avatar">{initials}</div>
+          <div><strong>{name}</strong><small>{session.user?.email}</small></div>
           <button className="icon-button" type="button" onClick={logout} aria-label="Sair"><LogOut size={18} /></button>
         </div>
       </aside>
@@ -49,7 +54,7 @@ export function AdminLayout() {
       <div className="admin-main">
         <header className="admin-topbar">
           <div className="topbar-title"><button className="menu-trigger icon-button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><span>{pageNames[location.pathname] ?? 'Administração'}</span></div>
-          <button className="profile-chip" type="button"><span>AD</span><div><strong>Administrador</strong><small>Gestor</small></div><ChevronDown size={15} /></button>
+          <button className="profile-chip" type="button"><span>{initials}</span><div><strong>{name}</strong><small>{role}</small></div><ChevronDown size={15} /></button>
         </header>
         <div className="admin-content"><Outlet /></div>
       </div>

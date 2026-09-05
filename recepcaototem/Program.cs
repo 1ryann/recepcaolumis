@@ -85,7 +85,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
     context.Response.Headers["Cache-Control"] = "no-store";
-    context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
     // Only infrastructure probes support the requested internal plain HTTP binding.
     if (!app.Environment.IsDevelopment() && !context.Request.IsHttps &&
         context.Request.Path != "/health" && context.Request.Path != "/health/ready")
@@ -97,6 +97,8 @@ app.Use(async (context, next) =>
     await next(context);
 });
 if (!app.Environment.IsDevelopment()) app.UseHsts();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseRouting();
 app.UseCors();
 app.UseRateLimiter();
@@ -110,5 +112,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check 
 app.MapAuthEndpoints();
 app.MapUserAdministrationEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
+app.MapFallbackToFile("index.html").AllowAnonymous();
 // No migrations, accounts, role creation, Identity UI or business endpoints during startup.
 app.Run();

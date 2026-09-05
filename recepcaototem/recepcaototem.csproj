@@ -11,8 +11,18 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11"><PrivateAssets>all</PrivateAssets></PackageReference>
 </ItemGroup>
 <ItemGroup>
-<!-- API-only publish; preserve existing frontend in source control. -->
 <Content Remove="ClientApp/**;wwwroot/**;Pages/**;Areas/**" />
 <None Remove="ClientApp/**;wwwroot/**" />
 </ItemGroup>
+<Target Name="BuildClientApp" BeforeTargets="ComputeFilesToPublish">
+  <Exec WorkingDirectory="$(MSBuildProjectDirectory)/ClientApp" Command="npm ci" />
+  <Exec WorkingDirectory="$(MSBuildProjectDirectory)/ClientApp" Command="npm run build" />
+  <ItemGroup>
+    <ClientAppDist Include="$(MSBuildProjectDirectory)/ClientApp/dist/**" Exclude="$(MSBuildProjectDirectory)/ClientApp/dist/**/*.map" />
+    <ResolvedFileToPublish Include="@(ClientAppDist->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+      <RelativePath>wwwroot/%(ClientAppDist.RecursiveDir)%(ClientAppDist.Filename)%(ClientAppDist.Extension)</RelativePath>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </ResolvedFileToPublish>
+  </ItemGroup>
+</Target>
 </Project>

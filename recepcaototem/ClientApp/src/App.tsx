@@ -9,12 +9,14 @@ import { Settings } from './pages/admin/Settings'
 import { Visits } from './pages/admin/Visits'
 import { Login } from './pages/Login'
 import { Reception } from './pages/Reception'
+import { ChangePassword } from './pages/ChangePassword'
 
 export function App() {
   return (
     <Routes>
       <Route path="/recepcao" element={<Reception />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/change-password" element={<ChangePassword />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />

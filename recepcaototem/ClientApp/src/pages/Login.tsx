@@ -1,28 +1,28 @@
 import { ArrowRight, Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useSession } from '../auth/SessionProvider'
 
 export function Login() {
-  const [email, setEmail] = useState('admin@demo.com')
-  const [password, setPassword] = useState('123456')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const session = useSession()
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (email !== 'admin@demo.com' || password !== '123456') {
-      setError('E-mail ou senha incorretos. Confira os dados de acesso.')
-      return
-    }
     setLoading(true)
-    window.setTimeout(() => {
-      localStorage.setItem('atrium_session', 'active')
+    try {
+      await session.login(email, password)
       const destination = (location.state as { from?: string } | null)?.from ?? '/admin'
       navigate(destination, { replace: true })
-    }, 550)
+    } catch {
+      setError('E-mail ou senha inválidos.')
+    } finally { setLoading(false) }
   }
 
   return (
@@ -44,7 +44,6 @@ export function Login() {
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="primary-button login-submit" type="submit" disabled={loading}>{loading ? <span className="spinner" /> : <>Entrar no painel <ArrowRight size={18} /></>}</button>
           </form>
-          <div className="demo-credentials"><strong>Acesso para apresentação</strong><span><b>E-mail</b> admin@demo.com</span><span><b>Senha</b> 123456</span></div>
           <a className="back-reception" href="/recepcao">Voltar para a recepção</a>
         </div>
       </section>
