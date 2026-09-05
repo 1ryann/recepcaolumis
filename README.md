@@ -2,13 +2,15 @@
 
 ## Estado desta entrega
 
-Escopo atual: fundação .NET 10 e primeira funcionalidade real de autenticação/provisionamento. O React é servido pela própria API na mesma origem e os módulos de negócio continuam fora desta etapa.
+Escopo atual: fundação .NET 10, autenticação/provisionamento e os primeiros cadastros operacionais de Profissionais e Salas. O React é servido pela própria API na mesma origem.
 
 - Domain: nomes dos perfis e entidade mínima de auditoria.
 - Application: contratos de diagnóstico de banco e gravação de auditoria.
 - Infrastructure: Identity, EF Core SQL Server, DbContext e migrations.
-- API: login/logout/sessão por cookie seguro, antiforgery, lockout, dois limites cumulativos do login, policies, auditoria e criação administrativa de usuários.
+- API: login/logout/sessão por cookie seguro, antiforgery, lockout, dois limites cumulativos do login, policies, auditoria, criação administrativa de usuários, Profissionais, Salas e fotos privadas.
 - CLI separada cria os roles e o primeiro administrador. Nada é criado automaticamente no startup.
+
+Profissionais e Salas usam somente a API real. Dashboard, Recepção, Locações, Visitas e Configurações preservam as rotas e o shell visual, mas no pacote de produção exibem “Módulo ainda não disponível”; os mocks permanecem isolados para desenvolvimento e não entram no bundle publicado.
 
 ## Continuar em casa
 
@@ -41,7 +43,8 @@ Documentação OpenAPI em `/openapi/v1.json`, somente em Development. Não há S
 
 1. [Entrega de infraestrutura e IIS](docs/operations/iis-foundation.md) — instruções atuais e fronteira de aprovação.
 2. [Nomes das configurações](docs/operations/configuration.md).
-3. [Operação futura da autenticação](docs/operations/authentication-deployment.md).
+3. [Operação de autenticação](docs/operations/authentication-deployment.md).
+4. [Migration de Profissionais e Salas](docs/operations/professionals-rooms-production-migration.md).
 3. [Escopo congelado do MVP](docs/superpowers/specs/2026-09-04-mvp-congelado.md).
 4. [Estrutura/modelagem futura](docs/superpowers/specs/2026-09-04-backend-foundation-design.md).
 5. [Plano do MVP completo](docs/superpowers/plans/2026-09-04-mvp-10-dias.md).

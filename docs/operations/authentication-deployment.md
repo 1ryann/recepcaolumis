@@ -20,7 +20,7 @@ dotnet publish .\recepcaototem\recepcaototem.csproj -c Release -o .\artifacts\pu
 dotnet publish .\tools\GestaoPredio.AdminCli\GestaoPredio.AdminCli.csproj -c Release -o .\artifacts\tools\GestaoPredio.AdminCli
 ```
 
-O primeiro comando executa `npm ci` e `npm run build` e incorpora somente `ClientApp/dist` em `wwwroot`. Confira `web.config`, `recepcaototem.dll`, `wwwroot/index.html`, assets versionados e a ausência de `.env`, fontes TypeScript, source maps e `GestaoPredio.AdminCli`.
+O primeiro comando executa `npm ci` e `npm run build` e incorpora somente `ClientApp/dist` em `wwwroot`. Confira `web.config`, `recepcaototem.dll`, `wwwroot/index.html`, assets versionados e a ausência de `.env`, fontes TypeScript, source maps, `src/dev`, datasets mock, scripts SQL, arquivos privados e `GestaoPredio.AdminCli`. O verificador `npm run verify:production-bundle` deve passar antes do publish.
 
 Na operação futura autorizada, exporte a configuração do IIS e copie `C:\Sites\Lumis\Api` para um backup datado. Preserve `ConnectionStrings__DefaultConnection`, `Security__DataProtectionPath`, `AllowedHosts` e limites externos. Pare e inicie somente `LumisApiPool` ao substituir os arquivos. Valide `/health` e `/health/ready` pelo binding interno e valide `/`, CSRF e autenticação pela origem HTTPS oficial. O rollback restaura o backup e recicla somente esse pool.
 

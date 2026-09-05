@@ -1,6 +1,6 @@
 # PROJECT CONTEXT — LUMIS Gestão Predial
 
-Atualizado em 04/09/2026. Este é o ponto de entrada para continuar o projeto em outra máquina. O escopo de negócio detalhado e congelado permanece em `docs/superpowers/specs/2026-09-04-mvp-congelado.md`; este arquivo resume o estado executável atual sem substituí-lo.
+Atualizado em 05/09/2026. Este é o ponto de entrada para continuar o projeto em outra máquina. A fonte de verdade para Profissionais e Salas é `docs/superpowers/specs/2026-09-05-professionals-rooms-design.md`; este arquivo resume o estado executável atual sem substituí-la.
 
 ## Objetivo
 
@@ -69,7 +69,7 @@ Questões que não devem ser decididas implicitamente: vínculo contratual/finan
 - .NET SDK fixado em 10.0.400 (`global.json`), aplicação `net10.0`.
 - C#, ASP.NET Core Web API, ASP.NET Core Identity, EF Core/SQL Server 10.0.11.
 - API hospedável InProcess no IIS pelo AspNetCoreModuleV2.
-- React/TypeScript/Vite em `recepcaototem/ClientApp`; o build é incorporado ao publish da API e servido na mesma origem.
+- React/TypeScript/Vite em `recepcaototem/ClientApp`; o build é incorporado ao publish da API e servido na mesma origem. Em produção, somente Profissionais e Salas operam dados reais; mocks ficam isolados em `ClientApp/src/dev` e não entram no bundle.
 - Testes xUnit + `Microsoft.AspNetCore.Mvc.Testing`.
 - OpenAPI JSON somente em Development; não há Swagger UI nem OpenAPI em Production.
 
@@ -129,7 +129,9 @@ LGPD prevista na arquitetura: DTOs mínimos e autorização por recurso; foto pr
 ## Migrations
 
 1. `00000000000000_CreateIdentitySchema`: migration Identity histórica, preservada e movida para Infrastructure. O repositório não comprova que foi aplicada ao `GestaoPredioDB`.
-2. `20260904174759_InfrastructureFoundation`: adiciona somente `AuditEntries` e índice por `OccurredAt`. Não foi aplicada a banco local nem de produção.
+2. `20260904174759_InfrastructureFoundation`: adiciona somente `AuditEntries` e índice por `OccurredAt`.
+3. `20260904235115_AuthenticationAndProvisioning`: adiciona os campos Identity/auditoria da autenticação.
+4. `20260905052933_ProfessionalsAndRooms`: migration somente aditiva para `PrivateFiles`, `Professionals`, `Rooms` e as colunas de auditoria relacionadas. Os scripts revisáveis e hashes ficam em `artifacts/sql`; a execução de produção é descrita em `docs/operations/professionals-rooms-production-migration.md` e nunca ocorre automaticamente no startup.
 
 O script idempotente foi gerado localmente em `artifacts/migrations.sql`, que é ignorado e reproduzível. Antes de aplicar: inspecionar `__EFMigrationsHistory` e esquema real, revisar script e backup. Se o banco já tiver tabelas Identity sem histórico compatível, reconciliar; não executar a migration inicial cegamente. Aplicação exige autorização e identidade de deploy com DDL, sem ampliar a conta runtime.
 

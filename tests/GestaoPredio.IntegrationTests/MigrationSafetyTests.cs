@@ -56,6 +56,9 @@ public sealed class MigrationSafetyTests
         Assert.Contains("CREATE TABLE [PrivateFiles]", sql);
         Assert.Contains("CREATE TABLE [Rooms]", sql);
         Assert.Contains("CREATE INDEX [IX_AuditEntries_TargetEntity]", sql);
+        Assert.Contains("ALTER TABLE [AuditEntries] ADD [ChangedFields]", sql);
+        Assert.Contains("ALTER TABLE [AuditEntries] ADD [TargetEntityId]", sql);
+        Assert.Contains("ALTER TABLE [AuditEntries] ADD [TargetEntityType]", sql);
     }
 
     private static void AssertNoAction(AddForeignKeyOperation foreignKey)
