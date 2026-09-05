@@ -3,8 +3,8 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
  public async Task InvokeAsync(HttpContext context) {
   try { await next(context); }
   catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { }
-  catch (Exception) {
-   logger.LogError("Unhandled request failure. TraceId: {TraceId}", context.TraceIdentifier);
+  catch (Exception ex) {
+   logger.LogError(ex, "Unhandled request failure. TraceId: {TraceId}", context.TraceIdentifier);
    if (context.Response.HasStarted) { context.Abort(); return; }
    context.Response.Clear();
    context.Response.StatusCode = StatusCodes.Status500InternalServerError;

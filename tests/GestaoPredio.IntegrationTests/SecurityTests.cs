@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using recepcaototem.Api.Middleware;
 
@@ -17,6 +18,21 @@ namespace GestaoPredio.IntegrationTests;
 
 public class SecurityTests
 {
+    private sealed class CapturingLogger : ILogger<GlobalExceptionMiddleware>
+    {
+        public Exception? LoggedException { get; private set; }
+        public LogLevel? LoggedLevel { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            LoggedLevel = logLevel;
+            LoggedException = exception;
+        }
+    }
+
     private static WebApplicationFactory<recepcaototem.Pages.IndexModel> Api(bool databaseOnline) =>
         new WebApplicationFactory<recepcaototem.Pages.IndexModel>().WithWebHostBuilder(builder =>
         {
@@ -76,7 +92,9 @@ public class SecurityTests
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
         context.RequestServices = new ServiceCollection().AddLogging().AddOptions().BuildServiceProvider();
-        var middleware = new GlobalExceptionMiddleware(_ => throw new InvalidOperationException("sensitive-database-connection"), NullLogger<GlobalExceptionMiddleware>.Instance);
+        var exception = new InvalidOperationException("sensitive-database-connection");
+        var logger = new CapturingLogger();
+        var middleware = new GlobalExceptionMiddleware(_ => throw exception, logger);
         await middleware.InvokeAsync(context);
         context.Response.Body.Position = 0;
         var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
@@ -84,6 +102,8 @@ public class SecurityTests
         Assert.Contains("INTERNAL_ERROR", body);
         Assert.DoesNotContain("sensitive-database-connection", body);
         Assert.DoesNotContain("InvalidOperationException", body);
+        Assert.Equal(LogLevel.Error, logger.LoggedLevel);
+        Assert.Same(exception, logger.LoggedException);
     }
 
     [Fact]
