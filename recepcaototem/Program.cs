@@ -15,6 +15,7 @@ using recepcaototem.Api.Configuration;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Users;
 using recepcaototem.Features.Common;
+using recepcaototem.Features.Professionals;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -113,6 +114,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false, 
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready"), ResponseWriter = WriteHealth }).AllowAnonymous();
 app.MapAuthEndpoints();
 app.MapUserAdministrationEndpoints();
+app.MapProfessionalEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

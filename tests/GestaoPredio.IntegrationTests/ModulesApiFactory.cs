@@ -159,6 +159,16 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         return (await response.Content.ReadFromJsonAsync<CsrfPayload>())!.Token;
     }
 
+    public async Task<HttpResponseMessage> LoginAsync(string email, string password)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email, password })
+        };
+        request.Headers.Add("X-CSRF-TOKEN", await GetCsrfTokenAsync());
+        return await Client.SendAsync(request);
+    }
+
     public Task<HttpResponseMessage> PostWithCsrfAsync(string path, object body) =>
         SendWithCsrfAsync(HttpMethod.Post, path, body);
 
