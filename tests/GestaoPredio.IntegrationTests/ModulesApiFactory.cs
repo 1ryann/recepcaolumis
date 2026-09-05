@@ -118,6 +118,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     {
         await using var scope = Services.CreateAsyncScope();
         await ResetDatabaseAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        ClearStoredTestFiles();
         Client.Dispose();
         Client = CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -213,6 +214,23 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
             throw new InvalidOperationException("Refusing to delete a private-files path outside the test root.");
         if (Directory.Exists(root))
             Directory.Delete(root, recursive: true);
+    }
+
+    private void ClearStoredTestFiles()
+    {
+        var root = Path.GetFullPath(PrivateFilesRoot);
+        var safeBase = Path.GetFullPath(StorageBase) + Path.DirectorySeparatorChar;
+        if (!root.StartsWith(safeBase, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Refusing to clear private files outside the test root.");
+
+        foreach (var child in new[] { ".staging", "files" })
+        {
+            var directory = Path.GetFullPath(Path.Combine(root, child));
+            if (!directory.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Refusing to clear an invalid private-files subdirectory.");
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            Directory.CreateDirectory(directory);
+        }
     }
 
     private sealed record CsrfPayload(string Token);

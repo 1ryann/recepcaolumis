@@ -119,6 +119,7 @@ app.MapAuthEndpoints();
 app.MapUserAdministrationEndpoints();
 app.MapProfessionalEndpoints();
 app.MapProfessionalUserLinkEndpoints();
+app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
