@@ -107,10 +107,10 @@ public class SecurityTests
     }
 
     [Fact]
-    public void Sql_server_model_preserves_identity_key_lengths_and_contains_audit()
+    public void PostgreSql_model_preserves_identity_key_lengths_and_contains_audit()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
-        Assert.Equal("Microsoft.EntityFrameworkCore.SqlServer", db.Database.ProviderName);
+        Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", db.Database.ProviderName);
         Assert.NotNull(db.Model.FindEntityType(typeof(ApplicationUser)));
         var token = db.Model.FindEntityType(typeof(Microsoft.AspNetCore.Identity.IdentityUserToken<string>))!;
         Assert.Equal(128, token.FindProperty("Name")!.GetMaxLength());

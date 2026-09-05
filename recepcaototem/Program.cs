@@ -8,7 +8,6 @@ using GestaoPredio.Infrastructure.Files;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Api.Health;
 using recepcaototem.Api.Middleware;
@@ -25,14 +24,8 @@ builder.Logging.AddJsonConsole();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(StrictBody.Configure);
 var connection = builder.Configuration.GetConnectionString("DefaultConnection");
-if (builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(connection))
-{
-    var sql = new SqlConnectionStringBuilder(connection);
-    if (!sql.IntegratedSecurity || !string.IsNullOrEmpty(sql.UserID) || !string.IsNullOrEmpty(sql.Password))
-        throw new InvalidOperationException("Production requires Windows integrated database authentication.");
-}
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connection, sql => sql.CommandTimeout(5)));
+    options.UseNpgsql(connection, postgres => postgres.CommandTimeout(5)));
 builder.Services.AddScoped<IDatabaseProbe, EfDatabaseProbe>();
 builder.Services.AddScoped<IAuditWriter, EfAuditWriter>();
 builder.Services.AddLumisIdentity();

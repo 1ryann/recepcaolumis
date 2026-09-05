@@ -38,7 +38,7 @@ if (!string.Equals(password, confirmation, StringComparison.Ordinal))
 var services = new ServiceCollection();
 services.AddLogging();
 services.AddSingleton(TimeProvider.System);
-services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(connection));
+services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connection));
 services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure)
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
