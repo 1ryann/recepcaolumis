@@ -1,13 +1,23 @@
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Files;
+using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Infrastructure.Identity;
+using GestaoPredio.Infrastructure.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 namespace GestaoPredio.Infrastructure.Persistence;
 public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options) {
  public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+ public DbSet<Professional> Professionals => Set<Professional>();
+ public DbSet<Room> Rooms => Set<Room>();
+ public DbSet<PrivateFile> PrivateFiles => Set<PrivateFile>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
+  builder.ApplyConfiguration(new ProfessionalConfiguration());
+  builder.ApplyConfiguration(new RoomConfiguration());
+  builder.ApplyConfiguration(new PrivateFileConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);
@@ -27,6 +37,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
    entity.Property(x => x.Action).HasMaxLength(100).IsRequired();
    entity.Property(x => x.Result).HasMaxLength(50).IsRequired();
    entity.Property(x => x.CorrelationId).HasMaxLength(100).IsRequired();
+   entity.Property(x => x.TargetEntityType).HasMaxLength(50);
+   entity.Property(x => x.ChangedFields).HasMaxLength(500);
+   entity.HasIndex(x => new { x.TargetEntityType, x.TargetEntityId, x.OccurredAt })
+    .HasDatabaseName("IX_AuditEntries_TargetEntity");
    entity.HasIndex(x => x.OccurredAt);
    entity.HasIndex(x => new { x.Action, x.OccurredAt });
   });
