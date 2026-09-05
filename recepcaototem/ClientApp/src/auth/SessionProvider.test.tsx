@@ -14,7 +14,7 @@ test('loads the authenticated session from the same-origin API', async () => {
   render(<SessionProvider><Consumer /></SessionProvider>)
   await waitFor(() => expect(screen.getByText('authenticated:Admin Real')).toBeInTheDocument())
   expect(fetch).toHaveBeenCalledWith('/api/auth/session', expect.objectContaining({ credentials: 'same-origin' }))
-  expect(localStorage.getItem('atrium_session')).toBeNull()
+  expect(localStorage.length).toBe(0)
 })
 
 test('represents a forced password change separately from a normal session', async () => {
