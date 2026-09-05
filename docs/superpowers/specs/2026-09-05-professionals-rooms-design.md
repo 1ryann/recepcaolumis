@@ -31,9 +31,9 @@ Não será criado generic repository nem arquitetura paralela. Regras de domíni
 |---|---|
 | Id | `uniqueidentifier`, identidade técnica única |
 | Name | `nvarchar(200)`, obrigatório |
-| NormalizedName | `nvarchar(200)`, calculado no backend |
+| NormalizedName | `nvarchar(400)`, calculado no backend |
 | Profession | `nvarchar(150)`, obrigatório |
-| NormalizedProfession | `nvarchar(150)`, calculado no backend |
+| NormalizedProfession | `nvarchar(300)`, calculado no backend |
 | WhatsApp | `varchar(16)`, E.164 canônico |
 | PhotoFileId | `uniqueidentifier`, nullable |
 | ApplicationUserId | `nvarchar(450)`, nullable |
@@ -49,7 +49,7 @@ Nome, profissão e WhatsApp não possuem unicidade. Homônimos, especialidades i
 |---|---|
 | Id | `uniqueidentifier` |
 | Name | `nvarchar(100)`, obrigatório e exibido na UI |
-| NormalizedName | `nvarchar(100)`, chave de unicidade permanente |
+| NormalizedName | `nvarchar(200)`, chave de unicidade permanente |
 | Description | `nvarchar(1000)`, nullable |
 | HourlyRate / DailyRate | `decimal(18,2)`, obrigatórios |
 | IsActive | `bit`, novos registros começam ativos |
@@ -156,9 +156,9 @@ DELETE /api/admin/professionals/{id:guid}/user-link
 
 Os quatro endpoints exigem `Administration`; mutações exigem antiforgery e token. A constraint `{id:guid}` evita colisão com `eligible-users`.
 
-Contas elegíveis estão ativas, possuem role exata `PROFISSIONAL` e não estão vinculadas. A consulta paginada retorna apenas `userId`, `displayName` e `email`. O GET do vínculo retorna `{ linked: false }` ou os mesmos três dados mínimos; 404 significa profissional inexistente.
+Contas elegíveis estão ativas, possuem `PROFISSIONAL`, não possuem `ADMINISTRADOR` nem `GERENTE` e não estão vinculadas. Assim, uma conta administrativa continua inelegível mesmo quando também possui `PROFISSIONAL`. A consulta paginada retorna apenas `userId`, `displayName` e `email`. O GET do vínculo retorna `{ linked: false }` ou os mesmos três dados mínimos; 404 significa profissional inexistente.
 
-PUT revalida existência, atividade, role e exclusividade no momento da escrita. Primeiro vínculo audita `LINKED`, troca audita `REPLACED`, e repetir a mesma conta com token atual é no-op. DELETE remove somente a referência; ausência de vínculo com token atual é no-op. Nenhuma operação altera usuário, role ou estado Identity. Conta inválida retorna `400 INVALID_PROFESSIONAL_USER`; vínculo usado retorna `409 PROFESSIONAL_USER_ALREADY_LINKED`.
+PUT revalida no momento da escrita que a conta existe, está ativa, possui `PROFISSIONAL`, não possui `ADMINISTRADOR` nem `GERENTE` e continua exclusiva. Primeiro vínculo audita `LINKED`, troca audita `REPLACED`, e repetir a mesma conta com token atual é no-op. DELETE remove somente a referência; ausência de vínculo com token atual é no-op. Nenhuma operação altera usuário, role ou estado Identity. Conta inválida retorna `400 INVALID_PROFESSIONAL_USER`; vínculo usado retorna `409 PROFESSIONAL_USER_ALREADY_LINKED`.
 
 ## Concorrência e idempotência
 
@@ -213,11 +213,11 @@ O bootstrap de produção não importa ou monta AppStore/mocks. Imports demonstr
 
 ## TDD e verificação
 
-Testes unitários cobrem normalizadores, tarifas, parser monetário React, concurrency token, options/path, formatos de imagem, storage keys e `ChangedFields`. Testes do parser usam fixtures válidas, truncamentos e amostras pseudoaleatórias limitadas com seed reproduzível e tempo previsível.
+Testes unitários cobrem normalizadores, tarifas, parser monetário React, concurrency token, options/path, formatos de imagem, storage keys e `ChangedFields`. Testes do parser usam fixtures válidas, truncamentos e amostras pseudoaleatórias limitadas com seed reproduzível e tempo previsível. Um teste com caracteres Unicode cuja normalização ou conversão para maiúsculas aumente o comprimento confirma que uma entrada válida persiste sem exceder as colunas derivadas ampliadas.
 
 Integração usa somente `GestaoPredioModulesTests` ou derivados explícitos. A factory recusa Production, conexão ausente, `GestaoPredioDB`, banco fora do prefixo e qualquer fallback para a conexão normal. Cada cenário usa storage root exclusivo; testes paralelos não compartilham banco mutável, temporário ou chave.
 
-A suíte cobre 401/403 e sucesso de Admin/Gerente, DTOs, validação, paginação, busca com acentos, duplicidades permitidas de profissional, unicidade de sala, concorrência, no-ops, auditoria, foto, compensação, vínculo e corridas. Regressão executa autenticação e CLI existentes. React cobre fluxos críticos, estados, moeda, concorrência, roles e isolamento dos mocks. O round-trip monetário cobre `0`, `0.01`, `0.10`, `100.99` e `9999999999999.99`, garantindo ausência de perda observável de centavos no fluxo esperado, sem afirmar exatidão binária do `Number`.
+A suíte cobre 401/403 e sucesso de Admin/Gerente, DTOs, validação, paginação, busca com acentos, duplicidades permitidas de profissional, unicidade de sala, concorrência, no-ops, auditoria, foto, compensação, vínculo e corridas. A elegibilidade e o vínculo Identity cobrem explicitamente a matriz: `PROFISSIONAL` sozinho é elegível; `ADMINISTRADOR` sozinho, `GERENTE` sozinho, `PROFISSIONAL + GERENTE` e `PROFISSIONAL + ADMINISTRADOR` não são elegíveis. Os mesmos casos são exercitados na consulta e no PUT. Regressão executa autenticação e CLI existentes. React cobre fluxos críticos, estados, moeda, concorrência, roles e isolamento dos mocks. O round-trip monetário cobre `0`, `0.01`, `0.10`, `100.99` e `9999999999999.99`, garantindo ausência de perda observável de centavos no fluxo esperado, sem afirmar exatidão binária do `Number`.
 
 ## Migration e operação futura
 
