@@ -12,6 +12,7 @@ public sealed class PublishContentsTests
         Assert.Contains("ClientApp/dist/**/*.map", project);
         Assert.DoesNotContain("GestaoPredio.AdminCli", project);
         Assert.DoesNotContain("ClientApp/src/**", project);
+        Assert.Contains("Content Remove=\"vercel.json\"", project);
     }
 
     private static string FindRepositoryRoot()

@@ -12,6 +12,7 @@
 </ItemGroup>
 <ItemGroup>
 <Content Remove="ClientApp/**;wwwroot/**;Pages/**;Areas/**" />
+<Content Remove="vercel.json" />
 <None Remove="ClientApp/**;wwwroot/**" />
 </ItemGroup>
 <Target Name="BuildClientApp" BeforeTargets="ComputeFilesToPublish">
