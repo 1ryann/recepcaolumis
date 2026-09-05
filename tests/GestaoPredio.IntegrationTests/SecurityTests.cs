@@ -60,7 +60,11 @@ public class SecurityTests
     {
         await using var api = Api(false);
         using var scope = api.Services.CreateScope();
-        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "test"));
+        var user = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(ClaimTypes.Role, role),
+            new Claim("lumis:active", "true"),
+            new Claim("lumis:must_change_password", "false")
+        ], "test"));
         var result = await scope.ServiceProvider.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, null, policy);
         Assert.Equal(permitted, result.Succeeded);
     }

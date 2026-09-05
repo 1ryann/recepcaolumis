@@ -1,20 +1,19 @@
-using System.Security.Claims;
 using System.Threading.RateLimiting;
 using GestaoPredio.Application.Abstractions;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Auditing;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Api.Health;
 using recepcaototem.Api.Middleware;
+using recepcaototem.Api.Configuration;
+using recepcaototem.Features.Auth;
+using recepcaototem.Features.Users;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -31,37 +30,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connection, sql => sql.CommandTimeout(5)));
 builder.Services.AddScoped<IDatabaseProbe, EfDatabaseProbe>();
 builder.Services.AddScoped<IAuditWriter, EfAuditWriter>();
-builder.Services.AddIdentityCore<ApplicationUser>(options =>
-{
-    options.User.RequireUniqueEmail = true;
-    options.Password.RequiredLength = 12;
-    options.Lockout.MaxFailedAccessAttempts = 5;
-    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-})
-.AddRoles<IdentityRole>()
-.AddEntityFrameworkStores<ApplicationDbContext>()
-.AddSignInManager()
-.AddDefaultTokenProviders();
-builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
-builder.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, options =>
-{
-    options.Cookie.Name = "__Host-Lumis.Auth";
-    options.Cookie.HttpOnly = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-    options.Cookie.SameSite = SameSiteMode.Lax;
-    options.Cookie.Path = "/";
-    options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
-    options.SlidingExpiration = true;
-    options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
-    options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
-});
-builder.Services.AddAuthorization(options =>
-{
-    options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
-    options.AddPolicy("Administration", p => p.RequireRole(SystemRoles.Administrador));
-    options.AddPolicy("Operations", p => p.RequireRole(SystemRoles.Administrador, SystemRoles.Gerente));
-    options.AddPolicy("Professional", p => p.RequireRole(SystemRoles.Profissional));
-});
+builder.Services.AddLumisIdentity();
+builder.Services.AddLumisAuthorization();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<LoginRateLimiter>();
+builder.Services.AddScoped<AuthAuditService>();
+builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -133,11 +107,8 @@ static Task WriteHealth(HttpContext context, Microsoft.Extensions.Diagnostics.He
     context.Response.WriteAsJsonAsync(new { status = report.Status.ToString() });
 app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteHealth }).AllowAnonymous().DisableRateLimiting();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready"), ResponseWriter = WriteHealth }).AllowAnonymous();
-app.MapGet("/api/auth/session", (ClaimsPrincipal user) => Results.Ok(new
-{
-    userId = user.FindFirstValue(ClaimTypes.NameIdentifier),
-    roles = user.FindAll(ClaimTypes.Role).Select(x => x.Value).ToArray()
-})).RequireAuthorization();
+app.MapAuthEndpoints();
+app.MapUserAdministrationEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 // No migrations, accounts, role creation, Identity UI or business endpoints during startup.
 app.Run();
