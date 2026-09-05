@@ -17,7 +17,7 @@ public static class IdentityConfiguration
 
     public static IServiceCollection AddLumisIdentity(this IServiceCollection services)
     {
-        services.AddIdentityCore<ApplicationUser>(ConfigureIdentity)
+        services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure)
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager()
@@ -39,19 +39,6 @@ public static class IdentityConfiguration
         });
         services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(5));
         return services;
-    }
-
-    public static void ConfigureIdentity(IdentityOptions options)
-    {
-        options.User.RequireUniqueEmail = true;
-        options.Password.RequiredLength = 12;
-        options.Password.RequireDigit = true;
-        options.Password.RequireLowercase = true;
-        options.Password.RequireUppercase = true;
-        options.Password.RequireNonAlphanumeric = true;
-        options.Lockout.MaxFailedAccessAttempts = 5;
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-        options.Lockout.AllowedForNewUsers = true;
     }
 
     public static void AddLumisAuthorization(this IServiceCollection services)
