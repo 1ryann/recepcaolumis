@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Camera, Check, DoorOpen, MoveHorizontal, Phone, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react'
 import { type FormEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react'
-import type { Professional } from '../data/mock'
-import { useAppStore } from '../store/AppStore'
+import type { Professional } from '../dev/mock'
+import { useAppStore } from '../dev/AppStore'
 import { Modal } from '../components/Modal'
 
 type Step = 'select' | 'identify' | 'camera' | 'success'

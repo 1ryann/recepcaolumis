@@ -1,7 +1,7 @@
 import { CalendarDays, Download, Search, UserRoundSearch } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { EmptyState, PageHeader } from '../../components/PageElements'
-import { useAppStore } from '../../store/AppStore'
+import { useAppStore } from '../../dev/AppStore'
 
 export function Visits() {
   const { visits, professionals } = useAppStore()

@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarClock, CircleDollarSign, DoorOpen, Sparkles, UserRoundCheck, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useAppStore } from '../../store/AppStore'
+import { useAppStore } from '../../dev/AppStore'
 import { PageHeader, StatusBadge } from '../../components/PageElements'
 
 export function Dashboard() {

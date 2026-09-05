@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
-import { defaultLeases, defaultProfessionals, defaultRooms, defaultSettings, defaultVisits, type Lease, type Professional, type Room, type SettingsData, type Visit } from '../data/mock'
+import { defaultLeases, defaultProfessionals, defaultRooms, defaultSettings, defaultVisits, type Lease, type Professional, type Room, type SettingsData, type Visit } from './mock'
 
 type NewProfessional = Omit<Professional, 'id'>
 type NewLease = Omit<Lease, 'id'>

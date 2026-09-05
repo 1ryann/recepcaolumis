@@ -1,7 +1,7 @@
 import { Camera, Check, ChevronRight, MessageCircle, Save, Settings2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { PageHeader } from '../../components/PageElements'
-import { useAppStore } from '../../store/AppStore'
+import { useAppStore } from '../../dev/AppStore'
 
 export function Settings() {
   const { settings, saveSettings } = useAppStore()

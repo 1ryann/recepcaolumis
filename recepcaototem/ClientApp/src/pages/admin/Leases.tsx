@@ -3,8 +3,8 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Modal } from '../../components/Modal'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
-import type { Lease } from '../../data/mock'
-import { useAppStore } from '../../store/AppStore'
+import type { Lease } from '../../dev/mock'
+import { useAppStore } from '../../dev/AppStore'
 
 type Filter = 'all' | Lease['status']
 
