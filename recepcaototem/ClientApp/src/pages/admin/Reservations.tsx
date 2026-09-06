@@ -17,7 +17,10 @@ const statusLabels: Record<ReservationStatus, string> = {
 const kindLabels = { NEW: 'Nova reserva', RESCHEDULE: 'Remarcação', CANCELLATION: 'Cancelamento' }
 const emptyForm = { roomId: '', professionalId: '', startAt: '', endAt: '' }
 
-const toIso = (value: string) => new Date(value).toISOString()
+export const reservationLocalToIso = (value: string) => {
+  const local = value.length === 16 ? `${value}:00` : value
+  return new Date(`${local}-04:00`).toISOString()
+}
 const toInputDate = (value?: string | null) => value
   ? new Date(value).toLocaleString('sv-SE', { timeZone: 'America/Porto_Velho' }).replace(' ', 'T').slice(0, 16)
   : ''
@@ -27,7 +30,9 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('pt-BR', {
 
 export function Reservations() {
   const session = useSession()
-  const professionalMode = session.user?.roles.includes('PROFISSIONAL') ?? false
+  const roles = session.user?.roles ?? []
+  const professionalMode = roles.includes('PROFISSIONAL') &&
+    !roles.some(role => role === 'ADMINISTRADOR' || role === 'GERENTE')
   const [result, setResult] = useState(empty)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -110,7 +115,7 @@ export function Reservations() {
       let saved: ReservationDto
       if (formReservation) {
         const input = {
-          startAt: toIso(form.startAt), endAt: toIso(form.endAt),
+          startAt: reservationLocalToIso(form.startAt), endAt: reservationLocalToIso(form.endAt),
           concurrencyToken: formReservation.concurrencyToken,
         }
         saved = professionalMode
@@ -118,16 +123,17 @@ export function Reservations() {
           : await reservationsApi.reschedule(formReservation.id, input)
       } else if (professionalMode) {
         saved = await professionalReservationsApi.create({
-          roomId: form.roomId, startAt: toIso(form.startAt), endAt: toIso(form.endAt),
+          roomId: form.roomId, startAt: reservationLocalToIso(form.startAt), endAt: reservationLocalToIso(form.endAt),
         })
       } else {
         saved = await reservationsApi.create({
           roomId: form.roomId, professionalId: form.professionalId,
-          startAt: toIso(form.startAt), endAt: toIso(form.endAt),
+          startAt: reservationLocalToIso(form.startAt), endAt: reservationLocalToIso(form.endAt),
         })
       }
       setResult(current => ({ ...current, items: [saved, ...current.items], totalCount: current.totalCount + 1 }))
       setFormReservation(undefined)
+      if (!professionalMode && formReservation) await load()
     } catch (reason) {
       await resolveFailure(reason)
     } finally {
@@ -135,7 +141,10 @@ export function Reservations() {
     }
   }
   const approve = async (reservation: ReservationDto) => {
-    try { upsert(await reservationsApi.approve(reservation.id, reservation.concurrencyToken)) }
+    try {
+      await reservationsApi.approve(reservation.id, reservation.concurrencyToken)
+      await load()
+    }
     catch (reason) { await resolveFailure(reason) }
   }
   const cancel = async (reservation: ReservationDto) => {

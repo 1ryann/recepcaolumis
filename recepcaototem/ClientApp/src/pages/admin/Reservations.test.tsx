@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { professionalReservationsApi, professionalsApi, reservationsApi, roomsApi } from '../../api/modules'
 import { useSession } from '../../auth/SessionProvider'
-import { Reservations } from './Reservations'
+import { reservationLocalToIso, Reservations } from './Reservations'
 
 vi.mock('../../api/modules', () => ({
   reservationsApi: {
@@ -84,4 +84,20 @@ test('professional mode uses only owned reservation endpoints and exposes reques
   expect(screen.getByRole('button', { name: /Solicitar remarcação de Sala Norte/i })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Solicitar cancelamento de Sala Norte/i }))
   await waitFor(() => expect(professionalReservationsApi.requestCancellation).toHaveBeenCalledWith('res-1', 'rv1'))
+})
+
+test('operational local time is transported using America Porto Velho offset', () => {
+  expect(reservationLocalToIso('2026-09-07T10:00')).toBe('2026-09-07T14:00:00.000Z')
+})
+
+test('approving a reschedule refreshes both the request and its original reservation', async () => {
+  vi.mocked(reservationsApi.list).mockResolvedValue({
+    ...page, items: [{ ...reservation, kind: 'RESCHEDULE', originalReservationId: 'original-1' }],
+  })
+  vi.mocked(reservationsApi.approve).mockResolvedValue({
+    ...reservation, kind: 'RESCHEDULE', originalReservationId: 'original-1', status: 'APPROVED',
+  })
+  render(<Reservations />)
+  fireEvent.click(await screen.findByRole('button', { name: /Aprovar reserva de Ana Lima/i }))
+  await waitFor(() => expect(reservationsApi.list).toHaveBeenCalledTimes(2))
 })
