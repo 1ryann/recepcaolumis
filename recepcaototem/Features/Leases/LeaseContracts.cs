@@ -13,6 +13,22 @@ public sealed record CreateLeaseRequest(
     DateTimeOffset OccupancyStartAt,
     DateTimeOffset? OccupancyEndAt) : IStrictModuleRequest;
 
+public sealed record UpdateLeaseRequest(
+    Guid TenantId,
+    Guid ProfessionalId,
+    Guid RoomId,
+    string? Mode,
+    decimal ContractedRate,
+    DateTimeOffset BillingStartAt,
+    int? BillingDueDay,
+    DateTimeOffset OccupancyStartAt,
+    DateTimeOffset? OccupancyEndAt,
+    string? ConcurrencyToken) : IStrictModuleRequest;
+
+public sealed record PostponeLeaseRequest(DateTimeOffset OccupancyStartAt, string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record LeaseConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record EndLeaseRequest(DateTimeOffset? EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
+
 public sealed record LeaseResponse(
     Guid Id,
     Guid TenantId,
@@ -31,4 +47,3 @@ public sealed record LeaseResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     string ConcurrencyToken);
-

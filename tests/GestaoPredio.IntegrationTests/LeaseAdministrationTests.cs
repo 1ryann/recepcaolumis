@@ -4,6 +4,7 @@ using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Domain.Tenants;
+using GestaoPredio.Domain.Leases;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,6 +113,100 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
             (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).StatusCode);
     }
 
+    [Fact]
+    public async Task Scheduled_lease_can_be_updated_and_stale_token_is_rejected_without_success_audit()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Gerente);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeasePayload>())!;
+        var body = Body(resources);
+        var update = new
+        {
+            body.TenantId, body.ProfessionalId, body.RoomId, body.Mode,
+            contractedRate = 175.25m, body.BillingStartAt, body.BillingDueDay,
+            body.OccupancyStartAt, body.OccupancyEndAt,
+            concurrencyToken = created.ConcurrencyToken
+        };
+
+        var success = await factory.PutWithCsrfAsync($"/api/admin/leases/{created.Id}", update);
+        success.EnsureSuccessStatusCode();
+        var updated = (await success.Content.ReadFromJsonAsync<LeasePayload>())!;
+        Assert.NotEqual(created.ConcurrencyToken, updated.ConcurrencyToken);
+
+        var stale = await factory.PutWithCsrfAsync($"/api/admin/leases/{created.Id}", update);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Equal("RESOURCE_MODIFIED", (await stale.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "LEASE_UPDATED"));
+    }
+
+    [Fact]
+    public async Task Postpone_preserves_billing_start_and_cancel_ends_a_scheduled_lease()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        var postponedStart = created.OccupancyStartAt.AddMinutes(30);
+        var postponed = await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/postpone-occupancy", new
+        {
+            occupancyStartAt = postponedStart,
+            concurrencyToken = created.ConcurrencyToken
+        });
+        postponed.EnsureSuccessStatusCode();
+        var afterPostpone = (await postponed.Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        Assert.Equal(created.BillingStartAt, afterPostpone.BillingStartAt);
+        Assert.Equal(postponedStart, afterPostpone.OccupancyStartAt);
+
+        var cancelled = await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/cancel", new
+        {
+            concurrencyToken = afterPostpone.ConcurrencyToken
+        });
+        cancelled.EnsureSuccessStatusCode();
+        Assert.Equal("CANCELADA", (await cancelled.Content.ReadFromJsonAsync<LeasePayload>())!.Status);
+    }
+
+    [Fact]
+    public async Task Active_lease_supports_scheduled_and_immediate_end_with_audit()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        var now = DateTimeOffset.UtcNow;
+        var lease = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
+            LeaseMode.Hourly, 120m, now.AddDays(-2), null, now.AddHours(-1), now.AddHours(3), null, now.AddDays(-2));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Leases.Add(lease);
+            db.LeaseOccurrences.Add(LeaseOccurrence.Create(lease.Id, lease.OccupancyStartAt, lease.OccupancyEndAt!.Value, now.AddDays(-2)));
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(SystemRoles.Administrador);
+        var current = (await (await factory.Client.GetAsync($"/api/admin/leases/{lease.Id}"))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        var scheduled = await factory.PostWithCsrfAsync($"/api/admin/leases/{lease.Id}/end", new
+        {
+            endAt = now.AddHours(1), concurrencyToken = current.ConcurrencyToken
+        });
+        scheduled.EnsureSuccessStatusCode();
+        var afterSchedule = (await scheduled.Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+
+        var ended = await factory.PostWithCsrfAsync($"/api/admin/leases/{lease.Id}/end", new
+        {
+            endAt = (DateTimeOffset?)null, concurrencyToken = afterSchedule.ConcurrencyToken
+        });
+        ended.EnsureSuccessStatusCode();
+        Assert.Equal("ENCERRADA", (await ended.Content.ReadFromJsonAsync<LeasePayload>())!.Status);
+        await using var verification = factory.Services.CreateAsyncScope();
+        var verificationDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.Action == "LEASE_END_SCHEDULED"));
+        Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.Action == "LEASE_ENDED"));
+    }
+
     private static CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(
         value.Tenant.Id, value.Professional.Id, value.Room.Id, "HOURLY", 150.50m,
         DateTimeOffset.UtcNow.AddDays(-1), 10, DateTimeOffset.UtcNow.AddDays(1),
@@ -139,6 +234,8 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
 
     private sealed record LeasePage(IReadOnlyList<LeasePayload> Items, int Page, int PageSize, int TotalCount);
     private sealed record LeasePayload(Guid Id, string Status, string ConcurrencyToken);
+    private sealed record LeaseDetailPayload(Guid Id, string Status, string ConcurrencyToken,
+        DateTimeOffset BillingStartAt, DateTimeOffset OccupancyStartAt, DateTimeOffset? OccupancyEndAt);
     private sealed record ErrorPayload(string Code, string Message);
     private sealed record CreateLeaseBody(Guid TenantId, Guid ProfessionalId, Guid RoomId, string Mode,
         decimal ContractedRate, DateTimeOffset BillingStartAt, int? BillingDueDay,

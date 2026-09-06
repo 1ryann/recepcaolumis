@@ -48,6 +48,8 @@ builder.Services.AddSingleton(operationalTimeZone);
 builder.Services.AddSingleton<ILeaseOccurrencePlanner>(new LeaseOccurrencePlanner(operationalTimeZone));
 builder.Services.AddScoped<ILeaseResourceLock, PostgreSqlLeaseResourceLock>();
 builder.Services.AddScoped<ILeaseConflictDetector, PostgreSqlLeaseConflictDetector>();
+builder.Services.AddSingleton<ILeaseOpenVisitProbe, NoOpenVisitProbe>();
+builder.Services.AddScoped<ILeaseLifecycleCoordinator, LeaseLifecycleCoordinator>();
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";

@@ -12,7 +12,7 @@ using recepcaototem.Features.Common;
 
 namespace recepcaototem.Features.Leases;
 
-public static class LeaseEndpoints
+public static partial class LeaseEndpoints
 {
     private static readonly string[] Statuses =
         ["all", "AGENDADA", "ATIVA", "ENCERRAMENTO_PENDENTE", "ENCERRADA", "CANCELADA"];
@@ -23,6 +23,10 @@ public static class LeaseEndpoints
         group.MapGet("", List);
         group.MapGet("/{id:guid}", Detail);
         group.MapPost("", Create).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPut("/{id:guid}", Update).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/postpone-occupancy", Postpone).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/cancel", Cancel).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/end", End).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 

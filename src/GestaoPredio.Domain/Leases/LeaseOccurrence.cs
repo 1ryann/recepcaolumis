@@ -54,4 +54,14 @@ public sealed class LeaseOccurrence
         State = LeaseOccurrenceState.Completed;
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
+
+    public void RescheduleEnd(DateTimeOffset endAt, DateTimeOffset occurredAt)
+    {
+        if (State != LeaseOccurrenceState.Planned)
+            throw new InvalidOperationException("Somente uma ocorrência planejada pode ser ajustada.");
+        var end = TimestampNormalizer.ToUtcMicroseconds(endAt);
+        if (end <= StartAt) throw new ArgumentException("O término deve ser posterior ao início.", nameof(endAt));
+        EndAt = end;
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
 }

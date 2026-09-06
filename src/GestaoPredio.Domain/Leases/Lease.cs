@@ -71,6 +71,33 @@ public sealed class Lease
         return LeaseOperationalStatus.Active;
     }
 
+    public void UpdateScheduled(
+        Guid tenantId,
+        Guid professionalId,
+        Guid roomId,
+        LeaseMode mode,
+        decimal contractedRate,
+        DateTimeOffset billingStartAt,
+        int? billingDueDay,
+        DateTimeOffset occupancyStartAt,
+        DateTimeOffset? occupancyEndAt,
+        int? monthlyAnchorDay,
+        DateTimeOffset occurredAt)
+    {
+        if (GetOperationalStatus(occurredAt) != LeaseOperationalStatus.Scheduled)
+            throw new InvalidOperationException("Somente uma locação agendada pode ser editada.");
+        ValidateResourceId(tenantId, nameof(tenantId));
+        ValidateResourceId(professionalId, nameof(professionalId));
+        ValidateResourceId(roomId, nameof(roomId));
+        SetContract(mode, contractedRate, billingStartAt, billingDueDay,
+            occupancyStartAt, occupancyEndAt, monthlyAnchorDay);
+        TenantId = tenantId;
+        ProfessionalId = professionalId;
+        RoomId = roomId;
+        MaterializedThroughAt = null;
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
+
     public void PostponeOccupancy(
         DateTimeOffset newOccupancyStartAt,
         int? monthlyAnchorDay,
@@ -116,6 +143,31 @@ public sealed class Lease
             throw new InvalidOperationException("A locação não pode ser encerrada neste estado.");
         LifecycleState = LeaseLifecycleState.Ended;
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
+
+    public void ScheduleEnd(DateTimeOffset endAt, DateTimeOffset occurredAt)
+    {
+        EnsureOpen();
+        var timestamp = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+        var end = TimestampNormalizer.ToUtcMicroseconds(endAt);
+        if (timestamp < OccupancyStartAt)
+            throw new InvalidOperationException("Uma locação ainda não iniciada deve ser cancelada.");
+        if (end <= timestamp)
+            throw new ArgumentException("O término agendado deve ser futuro.", nameof(endAt));
+        OccupancyEndAt = end;
+        MaterializedThroughAt = null;
+        UpdatedAt = timestamp;
+    }
+
+    public void EndImmediately(DateTimeOffset occurredAt)
+    {
+        EnsureOpen();
+        var timestamp = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+        if (timestamp < OccupancyStartAt)
+            throw new InvalidOperationException("Uma locação ainda não iniciada deve ser cancelada.");
+        OccupancyEndAt = timestamp;
+        MaterializedThroughAt = timestamp;
+        UpdatedAt = timestamp;
     }
 
     public void SetMaterializedThrough(DateTimeOffset? value)
