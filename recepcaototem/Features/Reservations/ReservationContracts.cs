@@ -8,6 +8,11 @@ public sealed record CreateReservationRequest(
     DateTimeOffset StartAt,
     DateTimeOffset EndAt) : IStrictModuleRequest;
 
+public sealed record RequestReservationRequest(
+    Guid RoomId,
+    DateTimeOffset StartAt,
+    DateTimeOffset EndAt) : IStrictModuleRequest;
+
 public sealed record ReservationResponse(
     Guid Id,
     Guid RoomId,

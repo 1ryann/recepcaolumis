@@ -137,6 +137,7 @@ app.MapTenantEndpoints();
 app.MapLeaseEndpoints();
 app.MapProfessionalLeaseEndpoints();
 app.MapReservationEndpoints();
+app.MapProfessionalReservationEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
