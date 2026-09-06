@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
-  reservationsApi, roomsApi, tenantsApi } from './modules'
+  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -123,5 +123,27 @@ test('reservation clients keep administrative and professional contracts separat
   })
   expect(apiClient.post).toHaveBeenCalledWith('/api/professional/reservations/x-6/cancel-request', {
     concurrencyToken: 'rv6',
+  })
+})
+
+test('visit clients keep operations and owned professional contracts separate', async () => {
+  const signal = new AbortController().signal
+  await visitsApi.list({ status: 'WAITING', professionalId: 'p-1', roomId: 'r-1', page: 1, pageSize: 20 }, signal)
+  await visitsApi.create({ professionalId: 'p-1', roomId: 'r-1', reservationId: null, visitorName: 'Maria' })
+  await visitsApi.start('v-1', 'vv1')
+  await visitsApi.end('v-2', 'vv2')
+  await visitsApi.cancel('v-3', 'vv3')
+  await visitsApi.correct('v-4', 'IN_SERVICE', 'Correção operacional', 'vv4')
+  await professionalVisitsApi.list({ status: 'IN_SERVICE', page: 1, pageSize: 20 }, signal)
+  await professionalVisitsApi.start('v-5', 'vv5')
+
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/visits', {
+    query: { status: 'WAITING', professionalId: 'p-1', roomId: 'r-1', page: 1, pageSize: 20 }, signal,
+  })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/visits/v-4/correct', {
+    status: 'IN_SERVICE', reason: 'Correção operacional', concurrencyToken: 'vv4',
+  })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/professional/visits', {
+    query: { status: 'IN_SERVICE', page: 1, pageSize: 20 }, signal,
   })
 })

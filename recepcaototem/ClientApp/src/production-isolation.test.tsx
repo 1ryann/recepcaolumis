@@ -4,11 +4,20 @@ import professionalsSource from './pages/admin/Professionals.tsx?raw'
 import roomsSource from './pages/admin/Rooms.tsx?raw'
 import leasesSource from './pages/admin/Leases.tsx?raw'
 import reservationsSource from './pages/admin/Reservations.tsx?raw'
+import visitsSource from './pages/admin/Visits.tsx?raw'
 
 test('real module screens do not import AppStore or mock data', () => {
-  for (const content of [professionalsSource, roomsSource, leasesSource, reservationsSource]) {
+  for (const content of [professionalsSource, roomsSource, leasesSource, reservationsSource, visitsSource]) {
     expect(content).not.toMatch(/AppStore|data\/mock|store\/AppStore/)
   }
+})
+
+test('visits use the real screen on both route trees', async () => {
+  const developmentSource = await import('./dev/DevelopmentApp.tsx?raw').then(module => module.default)
+  expect(appSource).toContain('<Visits />')
+  expect(developmentSource).toContain('<Visits />')
+  expect(visitsSource).toContain('visitsApi.list')
+  expect(visitsSource).toContain('professionalVisitsApi.list')
 })
 
 test('reservations use the real screen on both route trees', async () => {

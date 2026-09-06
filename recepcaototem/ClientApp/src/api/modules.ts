@@ -165,12 +165,28 @@ export interface ReservationListQuery {
   pageSize: number
 }
 
+export type VisitStatus = 'WAITING' | 'IN_SERVICE' | 'ENDED' | 'CANCELLED'
+export interface VisitTransitionDto { id: string, previousStatus: VisitStatus | null, newStatus: VisitStatus, occurredAt: string, reason: string | null, isCorrection: boolean }
+export interface VisitDto {
+  id: string; professionalId: string; professionalName: string; roomId: string | null; roomName: string | null
+  reservationId: string | null; visitorName: string; status: VisitStatus; arrivedAt: string
+  serviceStartedAt: string | null; endedAt: string | null; cancelledAt: string | null
+  createdAt: string; updatedAt: string; concurrencyToken: string; history: VisitTransitionDto[]
+}
+export interface VisitListQuery {
+  status: VisitStatus | 'all'; professionalId?: string; roomId?: string; from?: string; to?: string
+  page: number; pageSize: number
+}
+export interface VisitInput { professionalId: string, roomId: string | null, reservationId: string | null, visitorName: string }
+
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
 const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
 const leasePath = (id: string) => `/api/admin/leases/${encodeURIComponent(id)}`
 const reservationPath = (id: string) => `/api/admin/reservations/${encodeURIComponent(id)}`
 const professionalReservationPath = (id: string) => `/api/professional/reservations/${encodeURIComponent(id)}`
+const visitPath = (id: string) => `/api/admin/visits/${encodeURIComponent(id)}`
+const professionalVisitPath = (id: string) => `/api/professional/visits/${encodeURIComponent(id)}`
 
 export const professionalsApi = {
   list(query: ModuleListQuery, signal?: AbortSignal) {
@@ -324,4 +340,26 @@ export const professionalReservationsApi = {
   requestCancellation(id: string, concurrencyToken: string) {
     return apiClient.post<ReservationDto>(`${professionalReservationPath(id)}/cancel-request`, { concurrencyToken })
   },
+}
+
+export const visitsApi = {
+  list(query: VisitListQuery, signal?: AbortSignal) { return apiClient.get<PagedResponse<VisitDto>>('/api/admin/visits', { query: { ...query }, signal }) },
+  detail(id: string, signal?: AbortSignal) { return apiClient.get<VisitDto>(visitPath(id), { signal }) },
+  create(input: VisitInput) { return apiClient.post<VisitDto>('/api/admin/visits', input) },
+  start(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${visitPath(id)}/start`, { concurrencyToken }) },
+  end(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${visitPath(id)}/end`, { concurrencyToken }) },
+  cancel(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${visitPath(id)}/cancel`, { concurrencyToken }) },
+  correct(id: string, status: VisitStatus, reason: string, concurrencyToken: string) {
+    return apiClient.post<VisitDto>(`${visitPath(id)}/correct`, { status, reason, concurrencyToken })
+  },
+}
+
+export const professionalVisitsApi = {
+  list(query: Pick<VisitListQuery, 'status' | 'from' | 'to' | 'page' | 'pageSize'>, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<VisitDto>>('/api/professional/visits', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) { return apiClient.get<VisitDto>(professionalVisitPath(id), { signal }) },
+  start(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/start`, { concurrencyToken }) },
+  end(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/end`, { concurrencyToken }) },
+  cancel(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/cancel`, { concurrencyToken }) },
 }
