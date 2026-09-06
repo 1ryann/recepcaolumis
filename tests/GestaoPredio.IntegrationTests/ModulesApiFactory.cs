@@ -181,6 +181,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private static async Task ResetDatabaseAsync(ApplicationDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"VisitTransitions\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Visits\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Reservations\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"LeaseOccurrences\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Leases\"");

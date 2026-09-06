@@ -5,6 +5,7 @@ using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Tenants;
+using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -209,6 +210,31 @@ public sealed class ModuleModelTests
         AssertIndex(entity, "IX_Reservations_Professional_Status_Start", false, null, "ProfessionalId", "Status", "StartAt");
         AssertIndex(entity, "IX_Reservations_OriginalReservationId", false, null, "OriginalReservationId");
         AssertPostgreSqlVersion(entity);
+    }
+
+    [Fact]
+    public void Visit_model_preserves_state_history_and_uses_postgresql_concurrency()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var visit = Entity<Visit>(db);
+        Assert.Equal("Visits", visit.GetTableName());
+        AssertColumn(visit, "VisitorName", "character varying(200)", 200);
+        AssertColumn(visit, "Status", "character varying(20)", 20);
+        Assert.True(visit.FindProperty("RoomId")!.IsNullable);
+        Assert.True(visit.FindProperty("ReservationId")!.IsNullable);
+        Assert.Equal(3, visit.GetForeignKeys().Count());
+        Assert.All(visit.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+        AssertIndex(visit, "IX_Visits_Status_ArrivedAt", false, null, "Status", "ArrivedAt");
+        AssertIndex(visit, "IX_Visits_Professional_Status_ArrivedAt", false, null,
+            "ProfessionalId", "Status", "ArrivedAt");
+        AssertPostgreSqlVersion(visit);
+
+        var transition = Entity<VisitTransition>(db);
+        Assert.Equal("VisitTransitions", transition.GetTableName());
+        AssertColumn(transition, "ActorUserId", "character varying(450)", 450);
+        AssertColumn(transition, "Reason", "character varying(500)", 500, nullable: true);
+        Assert.Equal(DeleteBehavior.NoAction, Assert.Single(transition.GetForeignKeys()).DeleteBehavior);
+        AssertIndex(transition, "IX_VisitTransitions_Visit_OccurredAt", false, null, "VisitId", "OccurredAt");
     }
 
     private static IEntityType Entity<T>(ApplicationDbContext db) =>

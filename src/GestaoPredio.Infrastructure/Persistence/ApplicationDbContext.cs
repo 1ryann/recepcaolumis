@@ -5,6 +5,7 @@ using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Tenants;
+using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -20,6 +21,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<Lease> Leases => Set<Lease>();
  public DbSet<LeaseOccurrence> LeaseOccurrences => Set<LeaseOccurrence>();
  public DbSet<Reservation> Reservations => Set<Reservation>();
+ public DbSet<Visit> Visits => Set<Visit>();
+ public DbSet<VisitTransition> VisitTransitions => Set<VisitTransition>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -33,6 +36,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new LeaseConfiguration());
   builder.ApplyConfiguration(new LeaseOccurrenceConfiguration());
   builder.ApplyConfiguration(new ReservationConfiguration());
+  builder.ApplyConfiguration(new VisitConfiguration());
+  builder.ApplyConfiguration(new VisitTransitionConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);
