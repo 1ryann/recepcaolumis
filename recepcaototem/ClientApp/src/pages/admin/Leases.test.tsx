@@ -6,7 +6,7 @@ import { Leases } from './Leases'
 
 vi.mock('../../api/modules', () => ({
   leasesApi: { list: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn(), postpone: vi.fn(), cancel: vi.fn(), end: vi.fn() },
-  tenantsApi: { list: vi.fn() }, professionalsApi: { list: vi.fn() }, roomsApi: { list: vi.fn() },
+  tenantsApi: { list: vi.fn(), create: vi.fn() }, professionalsApi: { list: vi.fn() }, roomsApi: { list: vi.fn() },
 }))
 
 const lease = {
@@ -35,6 +35,26 @@ test('loads real leases with server filters and BRL presentation', async () => {
   fireEvent.change(screen.getByLabelText('Buscar locações'), { target: { value: ' aurora ' } })
   await waitFor(() => expect(leasesApi.list).toHaveBeenLastCalledWith(
     expect.objectContaining({ search: 'aurora', page: 1 }), expect.any(AbortSignal)), { timeout: 1000 })
+  fireEvent.change(screen.getByLabelText('Filtrar por profissional'), { target: { value: 'professional-1' } })
+  await waitFor(() => expect(leasesApi.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ professionalId: 'professional-1', page: 1 }), expect.any(AbortSignal)))
+})
+
+test('supports tenant creation and scheduled ending without hardcoded records', async () => {
+  vi.mocked(tenantsApi.create).mockResolvedValue({ id: 'tenant-2', name: 'Novo locatário', kind: 'INDIVIDUAL', isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 't2' })
+  vi.mocked(leasesApi.list).mockResolvedValue({ items: [{ ...lease, status: 'ATIVA' }], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(leasesApi.end).mockResolvedValue({ ...lease, status: 'ATIVA', occupancyEndAt: '2026-09-07T13:00:00Z', concurrencyToken: 'lease-token-2' })
+  render(<Leases />)
+  await screen.findByText('Clínica Aurora')
+  fireEvent.click(screen.getByRole('button', { name: /Nova locação/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Novo locatário/i }))
+  fireEvent.change(screen.getByLabelText('Nome do locatário'), { target: { value: 'Novo locatário' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Cadastrar locatário' }))
+  await waitFor(() => expect(tenantsApi.create).toHaveBeenCalledWith({ name: 'Novo locatário', kind: 'INDIVIDUAL' }))
+  fireEvent.click(screen.getByRole('button', { name: /Encerrar locação Clínica Aurora/i }))
+  fireEvent.change(screen.getByLabelText('Data de encerramento'), { target: { value: '2026-09-07T13:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar encerramento' }))
+  await waitFor(() => expect(leasesApi.end).toHaveBeenCalledWith('lease-1', expect.any(String), 'lease-token-1'))
 })
 
 test('creates a lease from real resource identifiers', async () => {

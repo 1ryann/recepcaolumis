@@ -35,6 +35,8 @@ export function Leases() {
   const [rawSearch, setRawSearch] = useState('')
   const search = useDebouncedValue(rawSearch.trim().replace(/\s+/g, ' ') || undefined)
   const [status, setStatus] = useState<LeaseStatus | 'all'>('all')
+  const [professionalFilter, setProfessionalFilter] = useState('')
+  const [roomFilter, setRoomFilter] = useState('')
   const [page, setPage] = useState(1)
   const [result, setResult] = useState(empty)
   const [loading, setLoading] = useState(true)
@@ -49,21 +51,35 @@ export function Leases() {
   const [detail, setDetail] = useState<LeaseDto | null>(null)
   const [postpone, setPostpone] = useState<LeaseDto | null>(null)
   const [postponeAt, setPostponeAt] = useState('')
+  const [endLease, setEndLease] = useState<LeaseDto | null>(null)
+  const [endAt, setEndAt] = useState('')
+  const [newTenant, setNewTenant] = useState(false)
+  const [tenantName, setTenantName] = useState('')
+  const [tenantKind, setTenantKind] = useState<'INDIVIDUAL' | 'LEGAL_ENTITY'>('INDIVIDUAL')
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       setError(null)
-      setResult(await leasesApi.list({ search, status, page, pageSize }, signal))
+      setResult(await leasesApi.list({ search, status, page, pageSize,
+        professionalId: professionalFilter || undefined, roomId: roomFilter || undefined }, signal))
     } catch (reason) {
       if ((reason as DOMException).name !== 'AbortError') setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as locações.')
     }
-  }, [page, search, status])
+  }, [page, professionalFilter, roomFilter, search, status])
   useEffect(() => {
     const controller = new AbortController()
     setLoading(result.items.length === 0); setRefreshing(result.items.length > 0)
     void load(controller.signal).finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false) } })
     return () => controller.abort()
   }, [load])
+  useEffect(() => {
+    const controller = new AbortController()
+    const query = { status: 'all' as const, page: 1, pageSize: 100 }
+    void Promise.all([professionalsApi.list(query, controller.signal), roomsApi.list(query, controller.signal)])
+      .then(([professionalPage, roomPage]) => { setProfessionals(professionalPage.items); setRooms(roomPage.items) })
+      .catch(reason => { if ((reason as DOMException).name !== 'AbortError') void resolveFailure(reason) })
+    return () => controller.abort()
+  }, [])
 
   const refresh = () => load()
   const upsert = (lease: LeaseDto) => setResult(current => ({
@@ -114,8 +130,18 @@ export function Leases() {
   const cancel = async (lease: LeaseDto) => {
     try { upsert(await leasesApi.cancel(lease.id, lease.concurrencyToken)) } catch (reason) { await resolveFailure(reason) }
   }
-  const endNow = async (lease: LeaseDto) => {
-    try { upsert(await leasesApi.end(lease.id, null, lease.concurrencyToken)) } catch (reason) { await resolveFailure(reason) }
+  const saveEnd = async (event: FormEvent) => {
+    event.preventDefault(); if (!endLease) return
+    try { upsert(await leasesApi.end(endLease.id, endAt ? toIso(endAt) : null, endLease.concurrencyToken)); setEndLease(null) }
+    catch (reason) { await resolveFailure(reason) }
+  }
+  const createTenant = async (event: FormEvent) => {
+    event.preventDefault()
+    try {
+      const created = await tenantsApi.create({ name: tenantName, kind: tenantKind })
+      setTenants(current => [...current, created]); setForm(current => ({ ...current, tenantId: created.id }))
+      setNewTenant(false); setTenantName('')
+    } catch (reason) { await resolveFailure(reason) }
   }
   const savePostpone = async (event: FormEvent) => {
     event.preventDefault(); if (!postpone) return
@@ -134,7 +160,10 @@ export function Leases() {
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por locatário, profissional ou sala" aria-label="Buscar locações" /></div>
         <select className="field-input compact-select" value={status} aria-label="Status das locações" onChange={event => { setStatus(event.target.value as LeaseStatus | 'all'); setPage(1) }}>
           <option value="all">Todos os status</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select><span>{result.totalCount} locações</span></div>
+        </select>
+        <select className="field-input compact-select" value={professionalFilter} aria-label="Filtrar por profissional" onChange={event => { setProfessionalFilter(event.target.value); setPage(1) }}><option value="">Todos os profissionais</option>{professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select className="field-input compact-select" value={roomFilter} aria-label="Filtrar por sala" onChange={event => { setRoomFilter(event.target.value); setPage(1) }}><option value="">Todas as salas</option>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <span>{result.totalCount} locações</span></div>
       {loading ? <div className="empty-state" role="status">Carregando locações…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhuma locação encontrada.</EmptyState>
@@ -142,7 +171,7 @@ export function Leases() {
               {result.items.map(lease => <tr key={lease.id}><td><strong>{lease.tenantName}</strong></td><td>{lease.professionalName}</td><td>{lease.roomName}</td><td>{modeLabels[lease.mode]}</td><td><span className="date-cell"><CalendarDays size={16} />{formatDate(lease.occupancyStartAt)} — {formatDate(lease.occupancyEndAt)}</span></td><td className="money-cell">{formatBrl(lease.contractedRate)}</td><td><span className={`status-badge status-${lease.status.toLowerCase()}`}>{statusLabels[lease.status]}</span></td><td><div className="room-admin-actions">
                 <button className="secondary-button" onClick={() => void showDetail(lease)}>Detalhes</button>
                 {lease.status === 'AGENDADA' && <><button className="secondary-button" aria-label={`Editar locação ${lease.tenantName}`} onClick={() => void openForm(lease)}><Pencil size={15} /> Editar</button><button className="ghost-button" onClick={() => { setPostpone(lease); setPostponeAt(toInputDate(lease.occupancyStartAt)) }}>Postergar</button><button className="ghost-button" aria-label={`Cancelar locação ${lease.tenantName}`} onClick={() => void cancel(lease)}>Cancelar</button></>}
-                {lease.status === 'ATIVA' && <button className="ghost-button" onClick={() => void endNow(lease)}>Encerrar agora</button>}
+                {lease.status === 'ATIVA' && <button className="ghost-button" aria-label={`Encerrar locação ${lease.tenantName}`} onClick={() => { setEndLease(lease); setEndAt('') }}>Encerrar</button>}
               </div></td></tr>)}
             </tbody></table></div>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
@@ -152,6 +181,7 @@ export function Leases() {
     <Modal open={formLease !== undefined} onClose={() => setFormLease(undefined)} title={formLease ? 'Editar locação' : 'Nova locação'} subtitle="Informe o contrato e o período de ocupação." size="large">
       <form className="simple-form" onSubmit={submit}><div className="fields-area full-fields">
         <label className="field-label">Locatário<select className="field-input" required value={form.tenantId} onChange={event => setForm(current => ({ ...current, tenantId: event.target.value }))}><option value="">Selecione</option>{tenants.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <button className="secondary-button" type="button" onClick={() => setNewTenant(true)}>Novo locatário</button>
         <label className="field-label">Profissional<select className="field-input" required value={form.professionalId} onChange={event => setForm(current => ({ ...current, professionalId: event.target.value }))}><option value="">Selecione</option>{professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="field-label">Sala<select className="field-input" required value={form.roomId} onChange={event => setForm(current => ({ ...current, roomId: event.target.value }))}><option value="">Selecione</option>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="field-label">Modalidade<select className="field-input" value={form.mode} onChange={event => setForm(current => ({ ...current, mode: event.target.value as LeaseMode }))}><option value="HOURLY">Por hora</option><option value="DAILY">Diária</option><option value="MONTHLY">Mensal</option></select></label>
@@ -164,5 +194,7 @@ export function Leases() {
     </Modal>
     <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes da locação">{detail && <dl className="room-rates"><div><dt>Locatário</dt><dd>{detail.tenantName}</dd></div><div><dt>Profissional</dt><dd>{detail.professionalName}</dd></div><div><dt>Sala</dt><dd>{detail.roomName}</dd></div><div><dt>Status</dt><dd>{statusLabels[detail.status]}</dd></div></dl>}</Modal>
     <Modal open={postpone !== null} onClose={() => setPostpone(null)} title="Postergar ocupação"><form className="simple-form" onSubmit={savePostpone}><label className="field-label">Novo início da ocupação<input className="field-input" required type="datetime-local" value={postponeAt} onChange={event => setPostponeAt(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setPostpone(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar postergação</button></div></form></Modal>
+    <Modal open={endLease !== null} onClose={() => setEndLease(null)} title="Encerrar locação" subtitle="Deixe a data vazia para encerramento imediato."><form className="simple-form" onSubmit={saveEnd}><label className="field-label">Data de encerramento<input className="field-input" type="datetime-local" value={endAt} onChange={event => setEndAt(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setEndLease(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar encerramento</button></div></form></Modal>
+    <Modal open={newTenant} onClose={() => setNewTenant(false)} title="Novo locatário"><form className="simple-form" onSubmit={createTenant}><label className="field-label">Nome do locatário<input className="field-input" required maxLength={200} value={tenantName} onChange={event => setTenantName(event.target.value)} /></label><label className="field-label">Tipo<select className="field-input" value={tenantKind} onChange={event => setTenantKind(event.target.value as typeof tenantKind)}><option value="INDIVIDUAL">Pessoa física</option><option value="LEGAL_ENTITY">Pessoa jurídica</option></select></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setNewTenant(false)}>Cancelar</button><button className="primary-button" type="submit">Cadastrar locatário</button></div></form></Modal>
   </div>
 }
