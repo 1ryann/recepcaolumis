@@ -3,6 +3,7 @@ using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
+using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Tenants;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
@@ -182,6 +183,31 @@ public sealed class ModuleModelTests
         AssertColumn(entity, "State", "character varying(20)", 20);
         AssertIndex(entity, "UX_LeaseOccurrences_LeaseId_StartAt", true, null, "LeaseId", "StartAt");
         Assert.Equal(DeleteBehavior.NoAction, Assert.Single(entity.GetForeignKeys()).DeleteBehavior);
+        AssertPostgreSqlVersion(entity);
+    }
+
+    [Fact]
+    public void Reservation_model_preserves_workflow_history_and_supports_resource_conflict_queries()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<Reservation>(db);
+
+        Assert.Equal("Reservations", entity.GetTableName());
+        AssertColumn(entity, "Kind", "character varying(20)", 20);
+        AssertColumn(entity, "Status", "character varying(20)", 20);
+        AssertColumn(entity, "RequestedByUserId", "character varying(450)", 450);
+        AssertColumn(entity, "DecidedByUserId", "character varying(450)", 450, nullable: true);
+        AssertColumn(entity, "RejectionReason", "character varying(500)", 500, nullable: true);
+        Assert.Equal("timestamp with time zone", entity.FindProperty("StartAt")!.GetColumnType());
+        Assert.Equal("timestamp with time zone", entity.FindProperty("EndAt")!.GetColumnType());
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Kind");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Status");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Period");
+        Assert.Equal(3, entity.GetForeignKeys().Count());
+        Assert.All(entity.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+        AssertIndex(entity, "IX_Reservations_Room_Status_Start", false, null, "RoomId", "Status", "StartAt");
+        AssertIndex(entity, "IX_Reservations_Professional_Status_Start", false, null, "ProfessionalId", "Status", "StartAt");
+        AssertIndex(entity, "IX_Reservations_OriginalReservationId", false, null, "OriginalReservationId");
         AssertPostgreSqlVersion(entity);
     }
 
