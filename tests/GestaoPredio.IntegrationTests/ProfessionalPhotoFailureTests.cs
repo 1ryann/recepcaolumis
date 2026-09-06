@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using recepcaototem.Features.Common;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -72,7 +73,7 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            token = Convert.ToBase64String((await db.Professionals.AsNoTracking().SingleAsync()).RowVersion);
+            token = ConcurrencyToken.Encode((await db.Professionals.AsNoTracking().SingleAsync()).Version);
         }
 
         await using var child = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
@@ -133,8 +134,8 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
         }
         string token;
         await using (var scope = factory.Services.CreateAsyncScope())
-            token = Convert.ToBase64String((await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
-                .Professionals.AsNoTracking().SingleAsync()).RowVersion);
+            token = ConcurrencyToken.Encode((await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .Professionals.AsNoTracking().SingleAsync()).Version);
 
         await using var child = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {

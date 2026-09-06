@@ -4,8 +4,11 @@
 <FrameworkReference Include="Microsoft.AspNetCore.App" />
 <ProjectReference Include="../GestaoPredio.Application/GestaoPredio.Application.csproj" />
 <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.11" />
-<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
 <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11"><PrivateAssets>all</PrivateAssets></PackageReference>
+</ItemGroup>
+<ItemGroup>
+<Compile Remove="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
+<None Include="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
 </ItemGroup>
 </Project>

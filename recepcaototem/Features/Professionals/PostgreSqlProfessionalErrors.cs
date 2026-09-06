@@ -1,13 +1,16 @@
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace recepcaototem.Features.Professionals;
 
-internal static class SqlServerProfessionalErrors
+internal static class PostgreSqlProfessionalErrors
 {
     private const string UniqueUserIndex = "UX_Professionals_ApplicationUserId";
 
     public static bool IsUserLinkConflict(DbUpdateException exception) =>
-        exception.InnerException is SqlException { Number: 2601 or 2627 } sql &&
-        sql.Message.Contains(UniqueUserIndex, StringComparison.Ordinal);
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: UniqueUserIndex
+        };
 }

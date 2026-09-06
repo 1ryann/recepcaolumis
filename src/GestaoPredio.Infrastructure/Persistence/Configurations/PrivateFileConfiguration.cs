@@ -10,8 +10,8 @@ public sealed class PrivateFileConfiguration : IEntityTypeConfiguration<PrivateF
     {
         entity.ToTable("PrivateFiles", table =>
         {
-            table.HasCheckConstraint("CK_PrivateFiles_Purpose", "[Purpose] = 'PROFESSIONAL_PHOTO'");
-            table.HasCheckConstraint("CK_PrivateFiles_Length_Positive", "[Length] > 0");
+            table.HasCheckConstraint("CK_PrivateFiles_Purpose", "\"Purpose\" = 'PROFESSIONAL_PHOTO'");
+            table.HasCheckConstraint("CK_PrivateFiles_Length_Positive", "\"Length\" > 0");
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.StorageKey).HasMaxLength(64).IsUnicode(false).IsRequired();

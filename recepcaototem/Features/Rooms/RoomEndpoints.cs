@@ -66,7 +66,7 @@ public static class RoomEndpoints
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
-        catch (DbUpdateException exception) when (SqlServerRoomErrors.IsNameConflict(exception))
+        catch (DbUpdateException exception) when (PostgreSqlRoomErrors.IsNameConflict(exception))
         {
             await transaction.RollbackAsync(cancellationToken);
             return NameConflict();
@@ -80,7 +80,7 @@ public static class RoomEndpoints
         if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var expectedVersion)) return InvalidToken();
         var room = await db.Rooms.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (room is null) return Results.NotFound();
-        if (!room.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return Modified();
+        if (room.Version != expectedVersion) return Modified();
         if (!RoomInput.TryValidate(request, out var input, out var error)) return Results.BadRequest(error);
 
         var normalizedName = TextNormalizer.Normalize(input!.Name);
@@ -94,7 +94,7 @@ public static class RoomEndpoints
         if (room.DailyRate != input.DailyRate) changedFields.Add(AuditFields.DailyRate);
         if (changedFields.Count == 0) return Results.Ok(room.ToResponse());
 
-        db.Entry(room).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(room).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         room.Update(input.Name, input.Description, input.HourlyRate, input.DailyRate, now);
         var audit = CreateAudit(context, room.Id, "ROOM_UPDATED", now);
@@ -111,7 +111,7 @@ public static class RoomEndpoints
             await transaction.RollbackAsync(cancellationToken);
             return Modified();
         }
-        catch (DbUpdateException exception) when (SqlServerRoomErrors.IsNameConflict(exception))
+        catch (DbUpdateException exception) when (PostgreSqlRoomErrors.IsNameConflict(exception))
         {
             await transaction.RollbackAsync(cancellationToken);
             return NameConflict();
@@ -133,10 +133,10 @@ public static class RoomEndpoints
         if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var expectedVersion)) return InvalidToken();
         var room = await db.Rooms.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (room is null) return Results.NotFound();
-        if (!room.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return Modified();
+        if (room.Version != expectedVersion) return Modified();
         if (room.IsActive == isActive) return Results.Ok(room.ToResponse());
 
-        db.Entry(room).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(room).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         if (isActive) room.Activate(now); else room.Deactivate(now);
         db.AuditEntries.Add(CreateAudit(context, room.Id,

@@ -7,8 +7,6 @@ namespace recepcaototem.Features.Professionals;
 
 public static class EligibleUserQuery
 {
-    public const string Collation = "Latin1_General_100_CI_AI";
-
     public static IQueryable<ApplicationUser> Create(ApplicationDbContext db) =>
         WithRequiredRoleProfile(db).Where(user =>
             !db.Professionals.Any(professional => professional.ApplicationUserId == user.Id));

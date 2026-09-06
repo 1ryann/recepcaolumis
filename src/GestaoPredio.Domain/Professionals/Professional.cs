@@ -19,7 +19,7 @@ public sealed class Professional
     public bool IsActive { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
-    public byte[] RowVersion { get; private set; } = [];
+    public uint Version { get; private set; }
 
     public static Professional Create(string name, string profession, string whatsApp, DateTimeOffset occurredAt)
     {
@@ -27,8 +27,8 @@ public sealed class Professional
         {
             Id = Guid.NewGuid(),
             IsActive = true,
-            CreatedAt = occurredAt.ToUniversalTime(),
-            UpdatedAt = occurredAt.ToUniversalTime()
+            CreatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt),
+            UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt)
         };
 
         professional.SetProfile(name, profession, whatsApp);
@@ -38,7 +38,7 @@ public sealed class Professional
     public void Update(string name, string profession, string whatsApp, DateTimeOffset occurredAt)
     {
         SetProfile(name, profession, whatsApp);
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     public void Activate(DateTimeOffset occurredAt) => SetActive(true, occurredAt);
@@ -53,13 +53,13 @@ public sealed class Professional
         }
 
         PhotoFileId = photoFileId;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     public void RemovePhoto(DateTimeOffset occurredAt)
     {
         PhotoFileId = null;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     public void LinkUser(string applicationUserId, DateTimeOffset occurredAt)
@@ -70,13 +70,13 @@ public sealed class Professional
         }
 
         ApplicationUserId = applicationUserId;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     public void UnlinkUser(DateTimeOffset occurredAt)
     {
         ApplicationUserId = null;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     private void SetProfile(string name, string profession, string whatsApp)
@@ -109,6 +109,6 @@ public sealed class Professional
     private void SetActive(bool isActive, DateTimeOffset occurredAt)
     {
         IsActive = isActive;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 }

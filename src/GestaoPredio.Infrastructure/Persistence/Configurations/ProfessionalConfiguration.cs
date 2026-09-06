@@ -18,11 +18,11 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
         entity.Property(x => x.NormalizedProfession).HasMaxLength(300).IsRequired();
         entity.Property(x => x.WhatsApp).HasMaxLength(16).IsUnicode(false).IsRequired();
         entity.Property(x => x.ApplicationUserId).HasMaxLength(450);
-        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.Version).IsRowVersion();
         entity.HasIndex(x => x.ApplicationUserId).IsUnique()
-            .HasFilter("[ApplicationUserId] IS NOT NULL").HasDatabaseName("UX_Professionals_ApplicationUserId");
+            .HasDatabaseName("UX_Professionals_ApplicationUserId");
         entity.HasIndex(x => x.PhotoFileId).IsUnique()
-            .HasFilter("[PhotoFileId] IS NOT NULL").HasDatabaseName("UX_Professionals_PhotoFileId");
+            .HasDatabaseName("UX_Professionals_PhotoFileId");
         entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ApplicationUserId)
             .OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<PrivateFile>().WithMany().HasForeignKey(x => x.PhotoFileId)

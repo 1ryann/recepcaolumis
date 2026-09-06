@@ -95,7 +95,7 @@ public sealed class EligibleProfessionalUserTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task Approved_collation_exists_in_the_test_sql_server()
+    public async Task Approved_unaccent_extension_works_in_local_PostgreSQL()
     {
         await factory.ResetAsync();
         await using var scope = factory.Services.CreateAsyncScope();
@@ -103,8 +103,8 @@ public sealed class EligibleProfessionalUserTests(ModulesApiFactory factory)
         var connection = db.Database.GetDbConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT CASE WHEN N'Ána' COLLATE Latin1_General_100_CI_AI LIKE N'%ana%' THEN 1 ELSE 0 END";
-        Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
+        command.CommandText = "SELECT upper(extensions.unaccent('Ána')) LIKE '%ANA%'";
+        Assert.True(Convert.ToBoolean(await command.ExecuteScalarAsync()));
         await connection.CloseAsync();
     }
 

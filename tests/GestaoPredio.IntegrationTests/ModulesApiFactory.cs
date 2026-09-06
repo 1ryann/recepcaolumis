@@ -5,7 +5,6 @@ using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,32 +19,31 @@ public sealed class ModulesDatabaseCollection : ICollectionFixture<ModulesApiFac
 
 public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Pages.IndexModel>, IAsyncLifetime
 {
-    public const string DatabasePrefix = "GestaoPredioModulesTests";
     private static readonly string StorageBase = Path.Combine(Path.GetTempPath(), "Lumis-ModulesTests");
-    private bool _databaseInitialized;
+    private readonly string _baseConnection;
+    private bool _schemaCreated;
 
     public ModulesApiFactory()
     {
         var suffix = Guid.NewGuid().ToString("N");
-        DatabaseName = $"{DatabasePrefix}_{suffix}";
-        ConnectionString = CreateTestConnection(DatabaseName);
+        DatabaseName = LocalPostgreSqlTestDatabase.DatabaseName;
+        SchemaName = $"{LocalPostgreSqlTestDatabase.SchemaPrefix}{suffix}";
+        _baseConnection = LocalPostgreSqlTestDatabase.LoadBaseConnection();
+        ConnectionString = LocalPostgreSqlTestDatabase.WithSchema(_baseConnection, SchemaName);
         PrivateFilesRoot = Path.Combine(StorageBase, suffix);
         ValidateTestConfiguration("Testing", ConnectionString);
     }
 
     public string DatabaseName { get; }
+    public string SchemaName { get; }
     public string ConnectionString { get; }
     public string PrivateFilesRoot { get; }
     public HttpClient Client { get; private set; } = null!;
 
     public static string CreateTestConnection(string database) =>
-        new SqlConnectionStringBuilder
+        new Npgsql.NpgsqlConnectionStringBuilder(LocalPostgreSqlTestDatabase.LoadBaseConnection())
         {
-            DataSource = "localhost\\SQLEXPRESS",
-            InitialCatalog = database,
-            IntegratedSecurity = true,
-            Encrypt = true,
-            TrustServerCertificate = true
+            Database = database
         }.ConnectionString;
 
     public static void ValidateTestConfiguration(string environment, string? connection)
@@ -55,10 +53,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         if (string.IsNullOrWhiteSpace(connection))
             throw new InvalidOperationException("Module tests require an explicit connection string.");
 
-        var parsed = new SqlConnectionStringBuilder(connection);
-        if (string.Equals(parsed.InitialCatalog, "GestaoPredioDB", StringComparison.OrdinalIgnoreCase) ||
-            !parsed.InitialCatalog.StartsWith(DatabasePrefix, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Module tests require a {DatabasePrefix} database.");
+        LocalPostgreSqlTestDatabase.Validate(connection);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -76,13 +71,15 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
-            services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(ConnectionString));
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(ConnectionString));
         });
     }
 
     public async Task InitializeAsync()
     {
         ValidateTestConfiguration("Testing", ConnectionString);
+        await LocalPostgreSqlTestDatabase.CreateSchemaAsync(_baseConnection, SchemaName);
+        _schemaCreated = true;
         Directory.CreateDirectory(PrivateFilesRoot);
         Client = CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -94,7 +91,6 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.Database.MigrateAsync();
-        _databaseInitialized = true;
         await ResetDatabaseAsync(db);
         await EnsureRolesAsync(scope.ServiceProvider);
     }
@@ -102,13 +98,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     async Task IAsyncLifetime.DisposeAsync()
     {
         Client?.Dispose();
-        if (_databaseInitialized)
-        {
-            await using var scope = Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            ValidateTestConfiguration("Testing", db.Database.GetConnectionString());
-            await db.Database.EnsureDeletedAsync();
-        }
+        if (_schemaCreated)
+            await LocalPostgreSqlTestDatabase.DropSchemaAsync(_baseConnection, SchemaName);
 
         DeletePrivateRootSafely();
         await base.DisposeAsync();
@@ -189,13 +180,13 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private static async Task ResetDatabaseAsync(ApplicationDbContext db)
     {
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [Professionals]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [Rooms]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [PrivateFiles]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AuditEntries]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetUserRoles]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetUsers]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetRoles]");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Professionals\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Rooms\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"PrivateFiles\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditEntries\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetUserRoles\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetUsers\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetRoles\"");
     }
 
     private static async Task EnsureRolesAsync(IServiceProvider services)

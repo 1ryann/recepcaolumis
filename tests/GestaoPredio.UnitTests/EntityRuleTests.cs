@@ -63,7 +63,7 @@ public sealed class EntityRuleTests
             nameof(Professional.IsActive),
             nameof(Professional.CreatedAt),
             nameof(Professional.UpdatedAt),
-            nameof(Professional.RowVersion));
+            nameof(Professional.Version));
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class EntityRuleTests
             nameof(Room.IsActive),
             nameof(Room.CreatedAt),
             nameof(Room.UpdatedAt),
-            nameof(Room.RowVersion));
+            nameof(Room.Version));
     }
 
     [Fact]

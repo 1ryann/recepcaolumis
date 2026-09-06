@@ -15,7 +15,7 @@ public sealed class ModulesApiFactoryTests
     [Fact]
     public void Factory_rejects_production_before_database_access()
     {
-        var connection = ModulesApiFactory.CreateTestConnection("GestaoPredioModulesTests_Guard");
+        var connection = ModulesApiFactory.CreateTestConnection("LumisDev");
 
         Assert.Throws<InvalidOperationException>(() =>
             ModulesApiFactory.ValidateTestConfiguration("Production", connection));
@@ -23,9 +23,9 @@ public sealed class ModulesApiFactoryTests
 
     [Theory]
     [InlineData("GestaoPredioDB")]
-    [InlineData("GestaoPredioAuthTests")]
+    [InlineData("GestaoPredioHomolog")]
     [InlineData("OtherDatabase")]
-    public void Factory_rejects_every_non_modules_database(string database)
+    public void Factory_rejects_every_non_development_database(string database)
     {
         var connection = ModulesApiFactory.CreateTestConnection(database);
 
@@ -33,26 +33,34 @@ public sealed class ModulesApiFactoryTests
             ModulesApiFactory.ValidateTestConfiguration("Testing", connection));
     }
 
-    [Theory]
-    [InlineData("GestaoPredioModulesTests")]
-    [InlineData("GestaoPredioModulesTests_Queries")]
-    public void Factory_accepts_only_the_modules_test_prefix(string database)
+    [Fact]
+    public void Factory_accepts_only_local_LumisDev()
     {
-        var connection = ModulesApiFactory.CreateTestConnection(database);
+        var connection = ModulesApiFactory.CreateTestConnection("LumisDev");
 
         ModulesApiFactory.ValidateTestConfiguration("Testing", connection);
     }
 
     [Fact]
-    public void Factories_do_not_share_database_or_private_storage()
+    public void Factory_rejects_remote_PostgreSQL_host()
+    {
+        const string connection = "Host=db.example.test;Database=LumisDev;Username=postgres;Password=not-used";
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ModulesApiFactory.ValidateTestConfiguration("Testing", connection));
+    }
+
+    [Fact]
+    public void Factories_share_only_LumisDev_but_isolate_schema_and_private_storage()
     {
         using var first = new ModulesApiFactory();
         using var second = new ModulesApiFactory();
 
-        Assert.NotEqual(first.DatabaseName, second.DatabaseName);
-        Assert.NotEqual(first.ConnectionString, second.ConnectionString);
+        Assert.Equal("LumisDev", first.DatabaseName);
+        Assert.Equal(first.DatabaseName, second.DatabaseName);
+        Assert.NotEqual(first.SchemaName, second.SchemaName);
         Assert.NotEqual(first.PrivateFilesRoot, second.PrivateFilesRoot);
-        Assert.StartsWith("GestaoPredioModulesTests_", first.DatabaseName, StringComparison.Ordinal);
+        Assert.StartsWith("lumis_test_", first.SchemaName, StringComparison.Ordinal);
         Assert.StartsWith(Path.GetTempPath(), first.PrivateFilesRoot, StringComparison.OrdinalIgnoreCase);
     }
 }

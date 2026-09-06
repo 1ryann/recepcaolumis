@@ -1,4 +1,5 @@
 using GestaoPredio.Infrastructure.Persistence;
+using GestaoPredio.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using recepcaototem.Features.Auth;
@@ -26,15 +27,15 @@ public static class ProfessionalUserLinkEndpoints
         var query = EligibleUserQuery.Create(db).AsNoTracking();
         if (paging!.Search is not null)
         {
-            var term = paging.Search;
+            var term = TextNormalizer.Normalize(paging.Search);
             query = query.Where(user =>
-                EF.Functions.Collate(user.DisplayName, EligibleUserQuery.Collation).Contains(term) ||
-                EF.Functions.Collate(user.Email!, EligibleUserQuery.Collation).Contains(term));
+                PostgreSqlText.Unaccent(user.DisplayName).ToUpper().Contains(term) ||
+                PostgreSqlText.Unaccent(user.Email!).ToUpper().Contains(term));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
         var users = await query
-            .OrderBy(user => EF.Functions.Collate(user.DisplayName, EligibleUserQuery.Collation))
+            .OrderBy(user => PostgreSqlText.Unaccent(user.DisplayName).ToUpper())
             .ThenBy(user => user.Id)
             .Skip((paging.Page - 1) * paging.PageSize)
             .Take(paging.PageSize)
@@ -59,7 +60,7 @@ public static class ProfessionalUserLinkEndpoints
             return ProfessionalEndpoints.InvalidToken();
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return ProfessionalEndpoints.Modified();
+        if (professional.Version != expectedVersion) return ProfessionalEndpoints.Modified();
         if (string.IsNullOrWhiteSpace(request.ApplicationUserId)) return InvalidUser();
 
         var userId = request.ApplicationUserId;
@@ -73,7 +74,7 @@ public static class ProfessionalUserLinkEndpoints
         var action = professional.ApplicationUserId is null
             ? "PROFESSIONAL_USER_LINKED"
             : "PROFESSIONAL_USER_REPLACED";
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         professional.LinkUser(userId, now);
         var audit = ProfessionalEndpoints.CreateAudit(context, professional.Id, action, now);
@@ -90,7 +91,7 @@ public static class ProfessionalUserLinkEndpoints
             await transaction.RollbackAsync(cancellationToken);
             return ProfessionalEndpoints.Modified();
         }
-        catch (DbUpdateException exception) when (SqlServerProfessionalErrors.IsUserLinkConflict(exception))
+        catch (DbUpdateException exception) when (PostgreSqlProfessionalErrors.IsUserLinkConflict(exception))
         {
             await transaction.RollbackAsync(cancellationToken);
             return UserAlreadyLinked();
@@ -105,11 +106,11 @@ public static class ProfessionalUserLinkEndpoints
             return ProfessionalEndpoints.InvalidToken();
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return ProfessionalEndpoints.Modified();
+        if (professional.Version != expectedVersion) return ProfessionalEndpoints.Modified();
         if (professional.ApplicationUserId is null) return Results.Ok(professional.ToResponse());
 
         var previousUserId = professional.ApplicationUserId;
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         professional.UnlinkUser(now);
         var audit = ProfessionalEndpoints.CreateAudit(context, professional.Id, "PROFESSIONAL_USER_UNLINKED", now);

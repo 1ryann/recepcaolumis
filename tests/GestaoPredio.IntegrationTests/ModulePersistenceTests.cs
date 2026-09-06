@@ -13,7 +13,8 @@ public sealed class ModulePersistenceTests(ModulesApiFactory factory)
     public void Factory_connection_is_guarded_before_fixture_database_work()
     {
         ModulesApiFactory.ValidateTestConfiguration("Testing", factory.ConnectionString);
-        Assert.StartsWith(ModulesApiFactory.DatabasePrefix, factory.DatabaseName, StringComparison.Ordinal);
+        Assert.Equal(LocalPostgreSqlTestDatabase.DatabaseName, factory.DatabaseName);
+        Assert.StartsWith(LocalPostgreSqlTestDatabase.SchemaPrefix, factory.SchemaName, StringComparison.Ordinal);
     }
 
     [Fact]

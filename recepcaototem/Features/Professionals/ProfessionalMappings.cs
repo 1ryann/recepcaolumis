@@ -16,5 +16,5 @@ internal static class ProfessionalMappings
         professional.ApplicationUserId is not null,
         professional.CreatedAt,
         professional.UpdatedAt,
-        ConcurrencyToken.Encode(professional.RowVersion));
+        ConcurrencyToken.Encode(professional.Version));
 }

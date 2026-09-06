@@ -40,23 +40,26 @@ public sealed class AdminCliSecurityTests
     }
 
     [Fact]
-    public void Production_connection_requires_integrated_security()
+    public void Development_connection_requires_local_LumisDev()
     {
         ConnectionStringGuard.Validate(
-            "Server=localhost\\SQLEXPRESS;Database=GestaoPredioAuthTests;Integrated Security=True;Encrypt=True;TrustServerCertificate=True",
-            "Production");
+            "Host=localhost;Database=LumisDev;Username=postgres;Password=not-used",
+            "Development");
         Assert.Throws<InvalidOperationException>(() => ConnectionStringGuard.Validate(
-            "Server=localhost\\SQLEXPRESS;Database=GestaoPredioAuthTests;User Id=user;Password=secret",
-            "Production"));
+            "Host=db.example.test;Database=LumisDev;Username=postgres;Password=not-used",
+            "Development"));
+        Assert.Throws<InvalidOperationException>(() => ConnectionStringGuard.Validate(
+            "Host=localhost;Database=GestaoPredioDB;Username=postgres;Password=not-used",
+            "Development"));
     }
 
     [Fact]
     public async Task Bootstrap_creates_roles_admin_and_audit_once()
     {
-        const string connection = "Server=localhost\\SQLEXPRESS;Database=GestaoPredioAuthTestsCli;Integrated Security=True;Encrypt=True;TrustServerCertificate=True";
+        await using var database = await LocalPostgreSqlTestDatabase.CreateAsync();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(connection));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(database.ConnectionString));
         services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure)
             .AddRoles<IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
         services.AddSingleton(TimeProvider.System);
@@ -64,7 +67,7 @@ public sealed class AdminCliSecurityTests
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.Database.MigrateAsync();
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AuditEntries]; DELETE FROM [AspNetUserRoles]; DELETE FROM [AspNetUsers]; DELETE FROM [AspNetRoles]");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditEntries\"; DELETE FROM \"AspNetUserRoles\"; DELETE FROM \"AspNetUsers\"; DELETE FROM \"AspNetRoles\"");
         var bootstrapper = ActivatorUtilities.CreateInstance<AdminBootstrapper>(scope.ServiceProvider);
 
         Assert.Equal(BootstrapOutcome.Created,

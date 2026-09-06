@@ -17,7 +17,7 @@ public sealed class Room
     public bool IsActive { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
-    public byte[] RowVersion { get; private set; } = [];
+    public uint Version { get; private set; }
 
     public static Room Create(string name, string? description, decimal hourlyRate, decimal dailyRate, DateTimeOffset occurredAt)
     {
@@ -25,8 +25,8 @@ public sealed class Room
         {
             Id = Guid.NewGuid(),
             IsActive = true,
-            CreatedAt = occurredAt.ToUniversalTime(),
-            UpdatedAt = occurredAt.ToUniversalTime()
+            CreatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt),
+            UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt)
         };
 
         room.SetDetails(name, description, hourlyRate, dailyRate);
@@ -36,7 +36,7 @@ public sealed class Room
     public void Update(string name, string? description, decimal hourlyRate, decimal dailyRate, DateTimeOffset occurredAt)
     {
         SetDetails(name, description, hourlyRate, dailyRate);
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     public void Activate(DateTimeOffset occurredAt) => SetActive(true, occurredAt);
@@ -72,6 +72,6 @@ public sealed class Room
     private void SetActive(bool isActive, DateTimeOffset occurredAt)
     {
         IsActive = isActive;
-        UpdatedAt = occurredAt.ToUniversalTime();
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 }

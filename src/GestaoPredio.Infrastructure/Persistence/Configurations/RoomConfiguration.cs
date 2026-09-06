@@ -10,8 +10,8 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
     {
         entity.ToTable("Rooms", table =>
         {
-            table.HasCheckConstraint("CK_Rooms_HourlyRate_NonNegative", "[HourlyRate] >= 0");
-            table.HasCheckConstraint("CK_Rooms_DailyRate_NonNegative", "[DailyRate] >= 0");
+            table.HasCheckConstraint("CK_Rooms_HourlyRate_NonNegative", "\"HourlyRate\" >= 0");
+            table.HasCheckConstraint("CK_Rooms_DailyRate_NonNegative", "\"DailyRate\" >= 0");
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
@@ -19,7 +19,7 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
         entity.Property(x => x.Description).HasMaxLength(1000);
         entity.Property(x => x.HourlyRate).HasPrecision(18, 2);
         entity.Property(x => x.DailyRate).HasPrecision(18, 2);
-        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.Version).IsRowVersion();
         entity.HasIndex(x => x.NormalizedName).IsUnique().HasDatabaseName("UX_Rooms_NormalizedName");
     }
 }

@@ -14,5 +14,5 @@ internal static class RoomMappings
         room.IsActive,
         room.CreatedAt,
         room.UpdatedAt,
-        ConcurrencyToken.Encode(room.RowVersion));
+        ConcurrencyToken.Encode(room.Version));
 }

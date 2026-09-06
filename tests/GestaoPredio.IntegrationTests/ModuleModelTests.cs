@@ -13,20 +13,39 @@ namespace GestaoPredio.IntegrationTests;
 public sealed class ModuleModelTests
 {
     [Fact]
+    public void Design_time_factory_uses_connection_from_process_environment_when_present()
+    {
+        const string key = "ConnectionStrings__DefaultConnection";
+        const string connection = "Host=localhost;Port=5432;Database=LumisDev;Username=test;Password=not-used";
+        var previous = Environment.GetEnvironmentVariable(key);
+        try
+        {
+            Environment.SetEnvironmentVariable(key, connection);
+            using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+
+            Assert.Equal(connection, db.Database.GetConnectionString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(key, previous);
+        }
+    }
+
+    [Fact]
     public void Professional_columns_preserve_input_and_expanded_search_keys()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
         var entity = Entity<Professional>(db);
         Assert.Equal("Professionals", entity.GetTableName());
-        AssertColumn(entity, "Name", "nvarchar(200)", 200);
-        AssertColumn(entity, "NormalizedName", "nvarchar(400)", 400);
-        AssertColumn(entity, "Profession", "nvarchar(150)", 150);
-        AssertColumn(entity, "NormalizedProfession", "nvarchar(300)", 300);
-        AssertColumn(entity, "WhatsApp", "varchar(16)", 16);
+        AssertColumn(entity, "Name", "character varying(200)", 200);
+        AssertColumn(entity, "NormalizedName", "character varying(400)", 400);
+        AssertColumn(entity, "Profession", "character varying(150)", 150);
+        AssertColumn(entity, "NormalizedProfession", "character varying(300)", 300);
+        AssertColumn(entity, "WhatsApp", "character varying(16)", 16);
         Assert.False(entity.FindProperty("WhatsApp")!.IsUnicode());
-        AssertColumn(entity, "ApplicationUserId", "nvarchar(450)", 450, nullable: true);
+        AssertColumn(entity, "ApplicationUserId", "character varying(450)", 450, nullable: true);
         Assert.True(entity.FindProperty("PhotoFileId")!.IsNullable);
-        AssertRowVersion(entity);
+        AssertPostgreSqlVersion(entity);
     }
 
     [Fact]
@@ -35,20 +54,20 @@ public sealed class ModuleModelTests
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
         var entity = Entity<Room>(db);
         Assert.Equal("Rooms", entity.GetTableName());
-        AssertColumn(entity, "Name", "nvarchar(100)", 100);
-        AssertColumn(entity, "NormalizedName", "nvarchar(200)", 200);
-        AssertColumn(entity, "Description", "nvarchar(1000)", 1000, nullable: true);
+        AssertColumn(entity, "Name", "character varying(100)", 100);
+        AssertColumn(entity, "NormalizedName", "character varying(200)", 200);
+        AssertColumn(entity, "Description", "character varying(1000)", 1000, nullable: true);
         foreach (var name in new[] { "HourlyRate", "DailyRate" })
         {
             var rate = entity.FindProperty(name)!;
-            Assert.Equal("decimal(18,2)", rate.GetColumnType());
+            Assert.Equal("numeric(18,2)", rate.GetColumnType());
             Assert.Equal(18, rate.GetPrecision());
             Assert.Equal(2, rate.GetScale());
             Assert.False(rate.IsNullable);
-            Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == $"[{name}] >= 0");
+            Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == $"\"{name}\" >= 0");
         }
         AssertIndex(entity, "UX_Rooms_NormalizedName", true, null, "NormalizedName");
-        AssertRowVersion(entity);
+        AssertPostgreSqlVersion(entity);
     }
 
     [Fact]
@@ -56,8 +75,8 @@ public sealed class ModuleModelTests
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
         var entity = Entity<Professional>(db);
-        AssertIndex(entity, "UX_Professionals_ApplicationUserId", true, "[ApplicationUserId] IS NOT NULL", "ApplicationUserId");
-        AssertIndex(entity, "UX_Professionals_PhotoFileId", true, "[PhotoFileId] IS NOT NULL", "PhotoFileId");
+        AssertIndex(entity, "UX_Professionals_ApplicationUserId", true, null, "ApplicationUserId");
+        AssertIndex(entity, "UX_Professionals_PhotoFileId", true, null, "PhotoFileId");
         Assert.Equal(2, entity.GetIndexes().Count(index => index.IsUnique));
         var foreignKeys = entity.GetForeignKeys().ToArray();
         Assert.Equal(2, foreignKeys.Length);
@@ -74,12 +93,12 @@ public sealed class ModuleModelTests
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
         var entity = Entity<PrivateFile>(db);
         Assert.Equal("PrivateFiles", entity.GetTableName());
-        AssertColumn(entity, "StorageKey", "varchar(64)", 64);
-        AssertColumn(entity, "MimeType", "varchar(20)", 20);
-        AssertColumn(entity, "Purpose", "varchar(50)", 50);
+        AssertColumn(entity, "StorageKey", "character varying(64)", 64);
+        AssertColumn(entity, "MimeType", "character varying(20)", 20);
+        AssertColumn(entity, "Purpose", "character varying(50)", 50);
         Assert.Equal("bigint", entity.FindProperty("Length")!.GetColumnType());
-        Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "[Purpose] = 'PROFESSIONAL_PHOTO'");
-        Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "[Length] > 0");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "\"Purpose\" = 'PROFESSIONAL_PHOTO'");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "\"Length\" > 0");
         AssertIndex(entity, "UX_PrivateFiles_StorageKey", true, null, "StorageKey");
     }
 
@@ -88,8 +107,8 @@ public sealed class ModuleModelTests
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
         var entity = Entity<AuditEntry>(db);
-        AssertColumn(entity, "TargetEntityType", "nvarchar(50)", 50, nullable: true);
-        AssertColumn(entity, "ChangedFields", "nvarchar(500)", 500, nullable: true);
+        AssertColumn(entity, "TargetEntityType", "character varying(50)", 50, nullable: true);
+        AssertColumn(entity, "ChangedFields", "character varying(500)", 500, nullable: true);
         Assert.True(entity.FindProperty("TargetEntityId")!.IsNullable);
         AssertIndex(entity, "IX_AuditEntries_TargetEntity", false, null, "TargetEntityType", "TargetEntityId", "OccurredAt");
         AssertIndex(entity, "IX_AuditEntries_OccurredAt", false, null, "OccurredAt");
@@ -122,10 +141,11 @@ public sealed class ModuleModelTests
         Assert.Equal(nullable, property.IsNullable);
     }
 
-    private static void AssertRowVersion(IEntityType entity)
+    private static void AssertPostgreSqlVersion(IEntityType entity)
     {
-        var property = entity.FindProperty("RowVersion")!;
-        Assert.Equal("rowversion", property.GetColumnType());
+        var property = entity.FindProperty("Version")!;
+        Assert.Equal(typeof(uint), property.ClrType);
+        Assert.Equal("xid", property.GetColumnType());
         Assert.True(property.IsConcurrencyToken);
         Assert.Equal(ValueGenerated.OnAddOrUpdate, property.ValueGenerated);
         Assert.False(property.IsNullable);

@@ -3,7 +3,10 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace GestaoPredio.Infrastructure.Persistence;
 public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<ApplicationDbContext> {
  public ApplicationDbContext CreateDbContext(string[] args) {
-  // Generation requires a provider, not a connection. Deployment must pass --connection explicitly.
-  return new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
+  var connection = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+  var options = new DbContextOptionsBuilder<ApplicationDbContext>();
+  if (string.IsNullOrWhiteSpace(connection)) options.UseNpgsql();
+  else options.UseNpgsql(connection);
+  return new ApplicationDbContext(options.Options);
  }
 }

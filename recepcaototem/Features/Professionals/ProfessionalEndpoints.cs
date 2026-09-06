@@ -94,7 +94,7 @@ public static class ProfessionalEndpoints
 
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return Modified();
+        if (professional.Version != expectedVersion) return Modified();
         if (!ProfessionalInput.TryValidate(request.Name, request.Profession, request.WhatsApp, out var input))
             return InvalidProfessional();
 
@@ -104,7 +104,7 @@ public static class ProfessionalEndpoints
         if (!string.Equals(professional.WhatsApp, input.WhatsApp, StringComparison.Ordinal)) changedFields.Add(AuditFields.WhatsApp);
         if (changedFields.Count == 0) return Results.Ok(professional.ToResponse());
 
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         professional.Update(input.Name, input.Profession, input.WhatsApp, now);
         var audit = CreateAudit(context, professional.Id, "PROFESSIONAL_UPDATED", now);
@@ -158,10 +158,10 @@ public static class ProfessionalEndpoints
 
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return Modified();
+        if (professional.Version != expectedVersion) return Modified();
         if (professional.IsActive == isActive) return Results.Ok(professional.ToResponse());
 
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         if (isActive) professional.Activate(now); else professional.Deactivate(now);
         db.AuditEntries.Add(CreateAudit(context, professional.Id,

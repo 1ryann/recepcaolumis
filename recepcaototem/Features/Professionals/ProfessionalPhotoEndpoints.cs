@@ -108,7 +108,7 @@ public static class ProfessionalPhotoEndpoints
             await DiscardSafely(storage, upload.Staged);
             return Results.NotFound();
         }
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion))
+        if (professional.Version != expectedVersion)
         {
             await DiscardSafely(storage, upload.Staged);
             return ProfessionalEndpoints.Modified();
@@ -161,7 +161,7 @@ public static class ProfessionalPhotoEndpoints
         var now = timeProvider.GetUtcNow();
         var newFile = PrivateFile.Create(newStorageKey, validated.MimeType, validated.Length,
             PrivateFilePurposes.ProfessionalPhoto, now);
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         professional.SetPhoto(newFile.Id, now);
         db.PrivateFiles.Add(newFile);
         db.AuditEntries.Add(ProfessionalEndpoints.CreateAudit(context, professional.Id,
@@ -206,7 +206,7 @@ public static class ProfessionalPhotoEndpoints
 
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
-        if (!professional.RowVersion.AsSpan().SequenceEqual(expectedVersion)) return ProfessionalEndpoints.Modified();
+        if (professional.Version != expectedVersion) return ProfessionalEndpoints.Modified();
         if (professional.PhotoFileId is null) return Results.Ok(professional.ToResponse());
 
         var previousFile = await db.PrivateFiles.AsNoTracking()
@@ -215,7 +215,7 @@ public static class ProfessionalPhotoEndpoints
                 StringComparison.Ordinal))
             return PhotoUnavailable(loggerFactory, context, professional.Id, professional.PhotoFileId.Value);
 
-        db.Entry(professional).Property(x => x.RowVersion).OriginalValue = expectedVersion;
+        db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
         professional.RemovePhoto(now);
         db.AuditEntries.Add(ProfessionalEndpoints.CreateAudit(context, professional.Id,

@@ -1,26 +1,27 @@
+using System.Buffers.Binary;
+
 namespace recepcaototem.Features.Common;
 
 public static class ConcurrencyToken
 {
-    public const int RowVersionLength = 8;
+    public const int VersionLength = sizeof(uint);
 
-    public static string Encode(byte[] rowVersion)
+    public static string Encode(uint version)
     {
-        ArgumentNullException.ThrowIfNull(rowVersion);
-        if (rowVersion.Length != RowVersionLength)
-            throw new ArgumentException("A rowversion deve possuir oito bytes.", nameof(rowVersion));
-        return Convert.ToBase64String(rowVersion);
+        Span<byte> bytes = stackalloc byte[VersionLength];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, version);
+        return Convert.ToBase64String(bytes);
     }
 
-    public static bool TryDecode(string? token, out byte[] rowVersion)
+    public static bool TryDecode(string? token, out uint version)
     {
-        rowVersion = [];
+        version = 0;
         if (string.IsNullOrWhiteSpace(token)) return false;
         try
         {
             var decoded = Convert.FromBase64String(token);
-            if (decoded.Length != RowVersionLength) return false;
-            rowVersion = decoded;
+            if (decoded.Length != VersionLength) return false;
+            version = BinaryPrimitives.ReadUInt32BigEndian(decoded);
             return true;
         }
         catch (FormatException)

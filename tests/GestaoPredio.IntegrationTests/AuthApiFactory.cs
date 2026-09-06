@@ -5,7 +5,6 @@ using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,16 +19,25 @@ public sealed class AuthDatabaseCollection : ICollectionFixture<AuthApiFactory>
 
 public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.IndexModel>, IAsyncLifetime
 {
-    public const string TestConnection =
-        "Server=localhost\\SQLEXPRESS;Database=GestaoPredioAuthTests;Integrated Security=True;Encrypt=True;TrustServerCertificate=True";
+    private readonly string _baseConnection;
+    private readonly string _schemaName;
+    private readonly string _testConnection;
+    private bool _schemaCreated;
+
+    public AuthApiFactory()
+    {
+        _baseConnection = LocalPostgreSqlTestDatabase.LoadBaseConnection();
+        _schemaName = $"{LocalPostgreSqlTestDatabase.SchemaPrefix}{Guid.NewGuid():N}";
+        _testConnection = LocalPostgreSqlTestDatabase.WithSchema(_baseConnection, _schemaName);
+    }
 
     public HttpClient Client { get; private set; } = null!;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        ValidateTestConnection(TestConnection);
+        ValidateTestConnection(_testConnection);
         builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnection);
+        builder.UseSetting("ConnectionStrings:DefaultConnection", _testConnection);
         builder.UseSetting("AllowedHosts", "localhost");
         builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Auth-Test-Keys"));
         builder.UseSetting("Storage:PrivateFilesPath", Path.Combine(Path.GetTempPath(), "Lumis-Auth-Test-PrivateFiles"));
@@ -38,20 +46,19 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
-            services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(TestConnection));
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(_testConnection));
         });
     }
 
     public static void ValidateTestConnection(string connection)
     {
-        var parsed = new SqlConnectionStringBuilder(connection);
-        if (string.Equals(parsed.InitialCatalog, "GestaoPredioDB", StringComparison.OrdinalIgnoreCase) ||
-            !parsed.InitialCatalog.StartsWith("GestaoPredioAuthTests", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Authentication tests require a GestaoPredioAuthTests database.");
+        LocalPostgreSqlTestDatabase.Validate(connection);
     }
 
     public async Task InitializeAsync()
     {
+        await LocalPostgreSqlTestDatabase.CreateSchemaAsync(_baseConnection, _schemaName);
+        _schemaCreated = true;
         Client = CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
@@ -68,6 +75,8 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
     async Task IAsyncLifetime.DisposeAsync()
     {
         Client.Dispose();
+        if (_schemaCreated)
+            await LocalPostgreSqlTestDatabase.DropSchemaAsync(_baseConnection, _schemaName);
         await base.DisposeAsync();
     }
 
@@ -84,10 +93,12 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
 
     private static async Task ResetAsync(ApplicationDbContext db)
     {
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AuditEntries]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetUserRoles]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetUsers]");
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM [AspNetRoles]");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Professionals\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"PrivateFiles\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditEntries\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetUserRoles\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetUsers\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetRoles\"");
     }
 
     private static async Task EnsureRolesAsync(IServiceProvider services)

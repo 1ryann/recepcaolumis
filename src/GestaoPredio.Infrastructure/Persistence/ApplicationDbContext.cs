@@ -15,6 +15,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<PrivateFile> PrivateFiles => Set<PrivateFile>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
+  builder.HasPostgresExtension("extensions", "unaccent");
+  builder.HasDbFunction(typeof(PostgreSqlText).GetMethod(nameof(PostgreSqlText.Unaccent))!)
+   .HasName("unaccent")
+   .HasSchema("extensions");
   builder.ApplyConfiguration(new ProfessionalConfiguration());
   builder.ApplyConfiguration(new RoomConfiguration());
   builder.ApplyConfiguration(new PrivateFileConfiguration());
