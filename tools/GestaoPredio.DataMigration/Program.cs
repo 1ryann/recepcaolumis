@@ -39,7 +39,7 @@ public static class Program
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"Migration failed safely ({exception.GetType().Name}). No connection values or row data were logged.");
+            Console.Error.WriteLine(MigrationFailureFormatter.Format(exception));
             return 4;
         }
     }
