@@ -7,6 +7,7 @@ import { ChangePassword } from './pages/ChangePassword'
 import { Login } from './pages/Login'
 import { Professionals } from './pages/admin/Professionals'
 import { Rooms } from './pages/admin/Rooms'
+import { Leases } from './pages/admin/Leases'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./dev/DevelopmentApp')) : null
 
@@ -21,7 +22,7 @@ function ProductionApp() {
           <Route index element={<ModuleUnavailable title="Visão geral" />} />
           <Route path="salas" element={<Rooms />} />
           <Route path="profissionais" element={<Professionals />} />
-          <Route path="locacoes" element={<ModuleUnavailable title="Locações" />} />
+          <Route path="locacoes" element={<Leases />} />
           <Route path="visitas" element={<ModuleUnavailable title="Visitas" />} />
           <Route path="configuracoes" element={<ModuleUnavailable title="Configurações" />} />
         </Route>
