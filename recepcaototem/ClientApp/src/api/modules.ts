@@ -65,8 +65,77 @@ export interface RoomInput {
   dailyRate: number
 }
 
+export type TenantKind = 'INDIVIDUAL' | 'LEGAL_ENTITY'
+export interface TenantDto {
+  id: string
+  name: string
+  kind: TenantKind
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  concurrencyToken: string
+}
+export interface TenantInput { name: string, kind: TenantKind }
+
+export type LeaseMode = 'MONTHLY' | 'DAILY' | 'HOURLY'
+export type LeaseStatus = 'AGENDADA' | 'ATIVA' | 'ENCERRAMENTO_PENDENTE' | 'ENCERRADA' | 'CANCELADA'
+export interface LeaseDto {
+  id: string
+  tenantId: string
+  tenantName: string
+  professionalId: string
+  professionalName: string
+  roomId: string
+  roomName: string
+  mode: LeaseMode
+  contractedRate: number
+  billingStartAt: string
+  billingDueDay: number | null
+  occupancyStartAt: string
+  occupancyEndAt: string | null
+  status: LeaseStatus
+  createdAt: string
+  updatedAt: string
+  concurrencyToken: string
+}
+export interface LeaseInput {
+  tenantId: string
+  professionalId: string
+  roomId: string
+  mode: LeaseMode
+  contractedRate: number
+  billingStartAt: string
+  billingDueDay: number | null
+  occupancyStartAt: string
+  occupancyEndAt: string | null
+}
+export interface LeaseListQuery {
+  search?: string
+  status: LeaseStatus | 'all'
+  roomId?: string
+  professionalId?: string
+  tenantId?: string
+  page: number
+  pageSize: number
+}
+export interface ProfessionalLeaseDto {
+  id: string
+  tenantName: string
+  roomId: string
+  roomName: string
+  mode: LeaseMode
+  contractedRate: number
+  billingStartAt: string
+  billingDueDay: number | null
+  occupancyStartAt: string
+  occupancyEndAt: string | null
+  status: LeaseStatus
+}
+
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
+const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
+const leasePath = (id: string) => `/api/admin/leases/${encodeURIComponent(id)}`
 
 export const professionalsApi = {
   list(query: ModuleListQuery, signal?: AbortSignal) {
@@ -125,5 +194,56 @@ export const roomsApi = {
   },
   changeStatus(id: string, active: boolean, concurrencyToken: string) {
     return apiClient.post<RoomDto>(`${roomPath(id)}/${active ? 'activate' : 'deactivate'}`, { concurrencyToken })
+  },
+}
+
+export const tenantsApi = {
+  list(query: ModuleListQuery, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<TenantDto>>('/api/admin/tenants', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<TenantDto>(tenantPath(id), { signal })
+  },
+  create(input: TenantInput) {
+    return apiClient.post<TenantDto>('/api/admin/tenants', input)
+  },
+  update(id: string, input: TenantInput & { concurrencyToken: string }) {
+    return apiClient.put<TenantDto>(tenantPath(id), input)
+  },
+  changeStatus(id: string, active: boolean, concurrencyToken: string) {
+    return apiClient.post<TenantDto>(`${tenantPath(id)}/${active ? 'activate' : 'deactivate'}`, { concurrencyToken })
+  },
+}
+
+export const leasesApi = {
+  list(query: LeaseListQuery, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<LeaseDto>>('/api/admin/leases', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<LeaseDto>(leasePath(id), { signal })
+  },
+  create(input: LeaseInput) {
+    return apiClient.post<LeaseDto>('/api/admin/leases', input)
+  },
+  update(id: string, input: LeaseInput & { concurrencyToken: string }) {
+    return apiClient.put<LeaseDto>(leasePath(id), input)
+  },
+  postpone(id: string, occupancyStartAt: string, concurrencyToken: string) {
+    return apiClient.post<LeaseDto>(`${leasePath(id)}/postpone-occupancy`, { occupancyStartAt, concurrencyToken })
+  },
+  cancel(id: string, concurrencyToken: string) {
+    return apiClient.post<LeaseDto>(`${leasePath(id)}/cancel`, { concurrencyToken })
+  },
+  end(id: string, endAt: string | null, concurrencyToken: string) {
+    return apiClient.post<LeaseDto>(`${leasePath(id)}/end`, { endAt, concurrencyToken })
+  },
+}
+
+export const professionalLeasesApi = {
+  list(query: { page: number, pageSize: number }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<ProfessionalLeaseDto>>('/api/professional/leases', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<ProfessionalLeaseDto>(`/api/professional/leases/${encodeURIComponent(id)}`, { signal })
   },
 }

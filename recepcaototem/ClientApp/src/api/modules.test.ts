@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
-import { professionalsApi, roomsApi } from './modules'
+import { leasesApi, professionalsApi, professionalLeasesApi, roomsApi, tenantsApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -64,4 +64,33 @@ test('room operations use server paging and opaque concurrency tokens', async ()
   })
   expect(apiClient.put).toHaveBeenCalledWith('/api/admin/rooms/r-1', expect.objectContaining({ concurrencyToken: 'rv' }))
   expect(apiClient.post).toHaveBeenCalledWith('/api/admin/rooms/r-1/activate', { concurrencyToken: 'rv2' })
+})
+
+test('tenant and lease clients use relative contracts and opaque concurrency tokens', async () => {
+  const signal = new AbortController().signal
+  await tenantsApi.list({ search: 'ana', status: 'active', page: 1, pageSize: 20 }, signal)
+  await tenantsApi.create({ name: 'Ana', kind: 'INDIVIDUAL' })
+  await tenantsApi.update('t-1', { name: 'Ana', kind: 'INDIVIDUAL', concurrencyToken: 'tv1' })
+  await leasesApi.list({ status: 'AGENDADA', page: 2, pageSize: 20, roomId: 'r-1' }, signal)
+  const lease = {
+    tenantId: 't-1', professionalId: 'p-1', roomId: 'r-1', mode: 'HOURLY' as const,
+    contractedRate: 150.5, billingStartAt: '2026-09-06T10:00:00Z', billingDueDay: 10,
+    occupancyStartAt: '2026-09-07T10:00:00Z', occupancyEndAt: '2026-09-07T12:00:00Z',
+  }
+  await leasesApi.create(lease)
+  await leasesApi.update('l-1', { ...lease, concurrencyToken: 'lv1' })
+  await leasesApi.postpone('l-1', '2026-09-07T11:00:00Z', 'lv2')
+  await leasesApi.cancel('l-1', 'lv3')
+  await leasesApi.end('l-1', null, 'lv4')
+  await professionalLeasesApi.list({ page: 1, pageSize: 20 }, signal)
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/leases', {
+    query: { status: 'AGENDADA', page: 2, pageSize: 20, roomId: 'r-1' }, signal,
+  })
+  expect(apiClient.put).toHaveBeenCalledWith('/api/admin/leases/l-1', expect.objectContaining({ concurrencyToken: 'lv1' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/leases/l-1/postpone-occupancy', {
+    occupancyStartAt: '2026-09-07T11:00:00Z', concurrencyToken: 'lv2',
+  })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/leases/l-1/cancel', { concurrencyToken: 'lv3' })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/leases/l-1/end', { endAt: null, concurrencyToken: 'lv4' })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/professional/leases', { query: { page: 1, pageSize: 20 }, signal })
 })
