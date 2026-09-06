@@ -17,6 +17,7 @@ using recepcaototem.Features.Users;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Professionals;
 using recepcaototem.Features.Rooms;
+using recepcaototem.Features.Tenants;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -114,6 +115,7 @@ app.MapProfessionalEndpoints();
 app.MapProfessionalUserLinkEndpoints();
 app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
+app.MapTenantEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
