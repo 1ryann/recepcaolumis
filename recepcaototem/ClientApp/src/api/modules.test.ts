@@ -1,6 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
-import { leasesApi, professionalsApi, professionalLeasesApi, roomsApi, tenantsApi } from './modules'
+import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
+  reservationsApi, roomsApi, tenantsApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -93,4 +94,31 @@ test('tenant and lease clients use relative contracts and opaque concurrency tok
   expect(apiClient.post).toHaveBeenCalledWith('/api/admin/leases/l-1/cancel', { concurrencyToken: 'lv3' })
   expect(apiClient.post).toHaveBeenCalledWith('/api/admin/leases/l-1/end', { endAt: null, concurrencyToken: 'lv4' })
   expect(apiClient.get).toHaveBeenCalledWith('/api/professional/leases', { query: { page: 1, pageSize: 20 }, signal })
+})
+
+test('reservation clients keep administrative and professional contracts separate', async () => {
+  const signal = new AbortController().signal
+  const period = { startAt: '2026-09-07T10:00:00Z', endAt: '2026-09-07T11:00:00Z' }
+  await reservationsApi.list({ status: 'PENDING', roomId: 'r-1', page: 1, pageSize: 20 }, signal)
+  await reservationsApi.create({ roomId: 'r-1', professionalId: 'p-1', ...period })
+  await reservationsApi.approve('x-1', 'rv1')
+  await reservationsApi.reject('x-2', 'Indisponível', 'rv2')
+  await reservationsApi.reschedule('x-3', { ...period, concurrencyToken: 'rv3' })
+  await reservationsApi.cancel('x-4', 'rv4')
+  await professionalReservationsApi.list({ page: 1, pageSize: 20 }, signal)
+  await professionalReservationsApi.create({ roomId: 'r-1', ...period })
+  await professionalReservationsApi.requestReschedule('x-5', { ...period, concurrencyToken: 'rv5' })
+  await professionalReservationsApi.requestCancellation('x-6', 'rv6')
+
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/reservations', {
+    query: { status: 'PENDING', roomId: 'r-1', page: 1, pageSize: 20 }, signal,
+  })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/reservations/x-1/approve', { concurrencyToken: 'rv1' })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/reservations/x-2/reject', {
+    reason: 'Indisponível', concurrencyToken: 'rv2',
+  })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/professional/reservations', { roomId: 'r-1', ...period })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/professional/reservations/x-6/cancel-request', {
+    concurrencyToken: 'rv6',
+  })
 })

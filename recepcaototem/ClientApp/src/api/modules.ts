@@ -132,10 +132,45 @@ export interface ProfessionalLeaseDto {
   status: LeaseStatus
 }
 
+export type ReservationKind = 'NEW' | 'RESCHEDULE' | 'CANCELLATION'
+export type ReservationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+export interface ReservationDto {
+  id: string
+  roomId: string
+  roomName: string
+  professionalId: string
+  professionalName: string
+  originalReservationId: string | null
+  kind: ReservationKind
+  status: ReservationStatus
+  startAt: string
+  endAt: string
+  requestedAt: string
+  decidedAt: string | null
+  rejectionReason: string | null
+  createdAt: string
+  updatedAt: string
+  concurrencyToken: string
+}
+export interface ReservationPeriodInput { startAt: string, endAt: string }
+export interface ReservationInput extends ReservationPeriodInput { roomId: string, professionalId: string }
+export interface ProfessionalReservationInput extends ReservationPeriodInput { roomId: string }
+export interface ReservationListQuery {
+  status: ReservationStatus | 'all'
+  roomId?: string
+  professionalId?: string
+  from?: string
+  to?: string
+  page: number
+  pageSize: number
+}
+
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
 const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
 const leasePath = (id: string) => `/api/admin/leases/${encodeURIComponent(id)}`
+const reservationPath = (id: string) => `/api/admin/reservations/${encodeURIComponent(id)}`
+const professionalReservationPath = (id: string) => `/api/professional/reservations/${encodeURIComponent(id)}`
 
 export const professionalsApi = {
   list(query: ModuleListQuery, signal?: AbortSignal) {
@@ -245,5 +280,48 @@ export const professionalLeasesApi = {
   },
   detail(id: string, signal?: AbortSignal) {
     return apiClient.get<ProfessionalLeaseDto>(`/api/professional/leases/${encodeURIComponent(id)}`, { signal })
+  },
+}
+
+export const reservationsApi = {
+  list(query: ReservationListQuery, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<ReservationDto>>('/api/admin/reservations', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<ReservationDto>(reservationPath(id), { signal })
+  },
+  create(input: ReservationInput) {
+    return apiClient.post<ReservationDto>('/api/admin/reservations', input)
+  },
+  approve(id: string, concurrencyToken: string) {
+    return apiClient.post<ReservationDto>(`${reservationPath(id)}/approve`, { concurrencyToken })
+  },
+  reject(id: string, reason: string, concurrencyToken: string) {
+    return apiClient.post<ReservationDto>(`${reservationPath(id)}/reject`, { reason, concurrencyToken })
+  },
+  reschedule(id: string, input: ReservationPeriodInput & { concurrencyToken: string }) {
+    return apiClient.post<ReservationDto>(`${reservationPath(id)}/reschedule`, input)
+  },
+  cancel(id: string, concurrencyToken: string) {
+    return apiClient.post<ReservationDto>(`${reservationPath(id)}/cancel`, { concurrencyToken })
+  },
+}
+
+export const professionalReservationsApi = {
+  list(query: { page: number, pageSize: number }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<ReservationDto>>('/api/professional/reservations',
+      { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<ReservationDto>(professionalReservationPath(id), { signal })
+  },
+  create(input: ProfessionalReservationInput) {
+    return apiClient.post<ReservationDto>('/api/professional/reservations', input)
+  },
+  requestReschedule(id: string, input: ReservationPeriodInput & { concurrencyToken: string }) {
+    return apiClient.post<ReservationDto>(`${professionalReservationPath(id)}/reschedule-request`, input)
+  },
+  requestCancellation(id: string, concurrencyToken: string) {
+    return apiClient.post<ReservationDto>(`${professionalReservationPath(id)}/cancel-request`, { concurrencyToken })
   },
 }

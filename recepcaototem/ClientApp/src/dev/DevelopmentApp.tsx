@@ -6,6 +6,7 @@ import { Login } from '../pages/Login'
 import { Reception } from '../pages/Reception'
 import { Dashboard } from '../pages/admin/Dashboard'
 import { Leases } from '../pages/admin/Leases'
+import { Reservations } from '../pages/admin/Reservations'
 import { Professionals } from '../pages/admin/Professionals'
 import { Rooms } from '../pages/admin/Rooms'
 import { Settings } from '../pages/admin/Settings'
@@ -25,6 +26,7 @@ export default function DevelopmentApp() {
             <Route path="salas" element={<Rooms />} />
             <Route path="profissionais" element={<Professionals />} />
             <Route path="locacoes" element={<Leases />} />
+            <Route path="reservas" element={<Reservations />} />
             <Route path="visitas" element={<Visits />} />
             <Route path="configuracoes" element={<Settings />} />
           </Route>
