@@ -111,6 +111,7 @@ public sealed class AuditFieldTests
             [AuditFields.RoomId, AuditFields.ContractedRate, AuditFields.TenantId]);
 
         Assert.Equal(AuditTargetTypes.Lease, entry.TargetEntityType);
+        Assert.Equal("SUCCEEDED", entry.Result);
         Assert.Equal(leaseId, entry.TargetEntityId);
         Assert.Equal("ContractedRate,RoomId,TenantId", entry.ChangedFields);
         Assert.DoesNotContain("127.0.0.1", entry.ChangedFields);

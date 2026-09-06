@@ -34,7 +34,7 @@ public static class LeaseAudit
             ActorUserId = actorUserId,
             IpAddress = ipAddress,
             Action = action,
-            Result = "SUCCESS",
+            Result = "SUCCEEDED",
             OccurredAt = occurredAt.ToUniversalTime(),
             CorrelationId = correlationId,
             TargetEntityType = AuditTargetTypes.Lease,
