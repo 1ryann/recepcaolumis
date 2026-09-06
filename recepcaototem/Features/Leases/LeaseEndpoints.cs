@@ -44,6 +44,9 @@ public static partial class LeaseEndpoints
     {
         if (!TryCreateQuery(page, pageSize, status, search, out var query, out var error))
             return Results.BadRequest(error);
+        if (tenantId == Guid.Empty || professionalId == Guid.Empty || roomId == Guid.Empty)
+            return Results.BadRequest(new ApiError(
+                "INVALID_RESOURCE_FILTER", "O filtro de recurso informado é inválido."));
 
         var now = timeProvider.GetUtcNow();
         var leases = db.Leases.AsNoTracking();

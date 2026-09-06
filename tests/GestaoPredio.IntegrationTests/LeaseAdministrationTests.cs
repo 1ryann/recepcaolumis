@@ -113,6 +113,22 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
             (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).StatusCode);
     }
 
+    [Theory]
+    [InlineData("tenantId")]
+    [InlineData("professionalId")]
+    [InlineData("roomId")]
+    public async Task Empty_resource_filter_is_rejected(string filter)
+    {
+        await factory.ResetAsync();
+        await LoginAsync(SystemRoles.Administrador);
+
+        var response = await factory.Client.GetAsync(
+            $"/api/admin/leases?{filter}=00000000-0000-0000-0000-000000000000");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("INVALID_RESOURCE_FILTER", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
     [Fact]
     public async Task Scheduled_lease_can_be_updated_and_stale_token_is_rejected_without_success_audit()
     {
