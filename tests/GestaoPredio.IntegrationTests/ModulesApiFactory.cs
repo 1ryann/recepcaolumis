@@ -65,8 +65,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("Security:DataProtectionPath", Path.Combine(PrivateFilesRoot, "keys"));
         builder.UseSetting("Storage:PrivateFilesPath", PrivateFilesRoot);
         builder.UseSetting("Storage:ProfessionalPhotoMaxBytes", (5 * 1024 * 1024).ToString());
-        builder.UseSetting("RateLimiting:LoginPermitLimit", "100");
-        builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "100");
+        builder.UseSetting("RateLimiting:LoginPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "10000");
         builder.UseSetting("RateLimiting:PermitLimit", "10000");
         builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
         builder.ConfigureServices(services =>
