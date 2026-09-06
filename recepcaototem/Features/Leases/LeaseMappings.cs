@@ -47,4 +47,3 @@ internal static class LeaseMappings
             lease.UpdatedAt,
             ConcurrencyToken.Encode(lease.Version));
 }
-

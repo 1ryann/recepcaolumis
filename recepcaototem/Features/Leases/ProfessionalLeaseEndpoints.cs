@@ -90,4 +90,3 @@ public sealed record ProfessionalLeaseResponse(
     DateTimeOffset OccupancyStartAt,
     DateTimeOffset? OccupancyEndAt,
     string Status);
-
