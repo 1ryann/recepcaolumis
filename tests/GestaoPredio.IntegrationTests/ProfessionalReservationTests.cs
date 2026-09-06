@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GestaoPredio.Application.Leases;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
@@ -7,7 +8,10 @@ using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -96,6 +100,76 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
                 new { roomId = room.Id, startAt = start, endAt = start.AddHours(1) })).StatusCode);
     }
 
+    [Fact]
+    public async Task Owned_list_filters_by_status_in_the_database_and_rejects_invalid_status()
+    {
+        await factory.ResetAsync();
+        var seeded = await SeedLinkedProfessionalsAsync();
+        var now = DateTimeOffset.UtcNow;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Reservations.Add(Reservation.CreateApproved(
+                seeded.OwnerRoomId, seeded.OwnerProfessionalId, now.AddDays(3), now.AddDays(3).AddHours(1),
+                "admin", now));
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(seeded.OwnerEmail);
+        var start = now.AddHours(2);
+        (await factory.PostWithCsrfAsync("/api/professional/reservations",
+            new { roomId = seeded.OwnerRoomId, startAt = start, endAt = start.AddHours(1) })).EnsureSuccessStatusCode();
+
+        var pending = (await (await factory.Client.GetAsync("/api/professional/reservations?status=PENDING"))
+            .Content.ReadFromJsonAsync<ReservationPage>())!;
+        Assert.Single(pending.Items);
+        Assert.Equal("PENDING", pending.Items[0].Status);
+        var invalid = await factory.Client.GetAsync("/api/professional/reservations?status=UNKNOWN");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal("INVALID_STATUS", (await invalid.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
+    [Fact]
+    public async Task New_request_revalidates_the_current_identity_link_after_acquiring_the_resource_lock()
+    {
+        await factory.ResetAsync();
+        var seeded = await SeedLinkedProfessionalsAsync();
+        var blockingLock = new BlockingResourceLock();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ILeaseResourceLock>();
+            services.AddSingleton<ILeaseResourceLock>(blockingLock);
+        }));
+        using var client = app.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        await LoginAsync(client, seeded.OwnerEmail);
+        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var requestTask = PostWithCsrfAsync(client, "/api/professional/reservations",
+            new { roomId = seeded.OwnerRoomId, startAt = start, endAt = start.AddHours(1) });
+
+        await blockingLock.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var professional = await db.Professionals.SingleAsync(value => value.Id == seeded.OwnerProfessionalId);
+            professional.UnlinkUser(DateTimeOffset.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        blockingLock.Release.TrySetResult();
+
+        var response = await requestTask;
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await verificationDb.Reservations.AnyAsync(value =>
+            value.ProfessionalId == seeded.OwnerProfessionalId));
+        Assert.False(await verificationDb.AuditEntries.AnyAsync(value =>
+            value.Action == AuditActions.ReservationRequested));
+    }
+
     private async Task<SeededResources> SeedLinkedProfessionalsAsync()
     {
         var owner = await factory.CreateUserAsync($"owner-{Guid.NewGuid():N}@lumis.test", Password,
@@ -122,9 +196,43 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     private async Task LoginAsync(string email) =>
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
 
+    private static async Task LoginAsync(HttpClient client, string email)
+    {
+        var token = await GetCsrfTokenAsync(client);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email, password = Password })
+        };
+        request.Headers.Add("X-CSRF-TOKEN", token);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(request)).StatusCode);
+    }
+
+    private static async Task<HttpResponseMessage> PostWithCsrfAsync(HttpClient client, string path, object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-CSRF-TOKEN", await GetCsrfTokenAsync(client));
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<string> GetCsrfTokenAsync(HttpClient client) =>
+        (await (await client.GetAsync("/api/auth/csrf")).Content.ReadFromJsonAsync<CsrfPayload>())!.Token;
+
     private sealed record SeededResources(string OwnerEmail, Guid OwnerProfessionalId,
         Guid ForeignProfessionalId, Guid OwnerRoomId, Guid ForeignReservationId);
     private sealed record ReservationPage(IReadOnlyList<ReservationPayload> Items, int Page, int PageSize, int TotalCount);
     private sealed record ReservationPayload(Guid Id, Guid ProfessionalId, string Status);
     private sealed record ErrorPayload(string Code, string Message);
+    private sealed record CsrfPayload(string Token);
+
+    private sealed class BlockingResourceLock : ILeaseResourceLock
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task AcquireAsync(LeaseResourceLockRequest request, CancellationToken cancellationToken)
+        {
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+        }
+    }
 }

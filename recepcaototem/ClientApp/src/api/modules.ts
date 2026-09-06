@@ -308,7 +308,7 @@ export const reservationsApi = {
 }
 
 export const professionalReservationsApi = {
-  list(query: { page: number, pageSize: number }, signal?: AbortSignal) {
+  list(query: { status: ReservationStatus | 'all', page: number, pageSize: number }, signal?: AbortSignal) {
     return apiClient.get<PagedResponse<ReservationDto>>('/api/professional/reservations',
       { query: { ...query }, signal })
   },

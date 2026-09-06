@@ -55,7 +55,7 @@ export function Reservations() {
     setRefreshing(!loading)
     try {
       const response = professionalMode
-        ? await professionalReservationsApi.list({ page, pageSize }, signal)
+        ? await professionalReservationsApi.list({ status, page, pageSize }, signal)
         : await reservationsApi.list({
             status, page, pageSize,
             roomId: roomFilter || undefined,
@@ -182,24 +182,26 @@ export function Reservations() {
         <Plus size={18} /> {professionalMode ? 'Solicitar reserva' : 'Nova reserva'}
       </button>} />
     <section className="panel table-panel">
-      {!professionalMode && <div className="table-toolbar">
+      <div className="table-toolbar">
         <select className="field-input compact-select" value={status} aria-label="Status das reservas"
           onChange={event => { setStatus(event.target.value as ReservationStatus | 'all'); setPage(1) }}>
           <option value="all">Todos os status</option>
           {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <select className="field-input compact-select" value={professionalFilter} aria-label="Filtrar por profissional"
-          onChange={event => { setProfessionalFilter(event.target.value); setPage(1) }}>
-          <option value="">Todos os profissionais</option>
-          {professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        <select className="field-input compact-select" value={roomFilter} aria-label="Filtrar por sala"
-          onChange={event => { setRoomFilter(event.target.value); setPage(1) }}>
-          <option value="">Todas as salas</option>
-          {rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
+        {!professionalMode && <>
+          <select className="field-input compact-select" value={professionalFilter} aria-label="Filtrar por profissional"
+            onChange={event => { setProfessionalFilter(event.target.value); setPage(1) }}>
+            <option value="">Todos os profissionais</option>
+            {professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select className="field-input compact-select" value={roomFilter} aria-label="Filtrar por sala"
+            onChange={event => { setRoomFilter(event.target.value); setPage(1) }}>
+            <option value="">Todas as salas</option>
+            {rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </>}
         <span>{result.totalCount} reservas</span>
-      </div>}
+      </div>
       {loading ? <div className="empty-state" role="status">Carregando reservas…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void load()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhuma reserva encontrada.</EmptyState>

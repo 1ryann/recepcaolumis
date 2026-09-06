@@ -105,7 +105,7 @@ test('reservation clients keep administrative and professional contracts separat
   await reservationsApi.reject('x-2', 'Indisponível', 'rv2')
   await reservationsApi.reschedule('x-3', { ...period, concurrencyToken: 'rv3' })
   await reservationsApi.cancel('x-4', 'rv4')
-  await professionalReservationsApi.list({ page: 1, pageSize: 20 }, signal)
+  await professionalReservationsApi.list({ status: 'APPROVED', page: 1, pageSize: 20 }, signal)
   await professionalReservationsApi.create({ roomId: 'r-1', ...period })
   await professionalReservationsApi.requestReschedule('x-5', { ...period, concurrencyToken: 'rv5' })
   await professionalReservationsApi.requestCancellation('x-6', 'rv6')
@@ -118,6 +118,9 @@ test('reservation clients keep administrative and professional contracts separat
     reason: 'Indisponível', concurrencyToken: 'rv2',
   })
   expect(apiClient.post).toHaveBeenCalledWith('/api/professional/reservations', { roomId: 'r-1', ...period })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/professional/reservations', {
+    query: { status: 'APPROVED', page: 1, pageSize: 20 }, signal,
+  })
   expect(apiClient.post).toHaveBeenCalledWith('/api/professional/reservations/x-6/cancel-request', {
     concurrencyToken: 'rv6',
   })

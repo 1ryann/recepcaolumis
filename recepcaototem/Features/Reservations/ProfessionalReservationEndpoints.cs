@@ -12,6 +12,8 @@ namespace recepcaototem.Features.Reservations;
 
 public static class ProfessionalReservationEndpoints
 {
+    private static readonly string[] Statuses = ["all", "PENDING", "APPROVED", "REJECTED", "CANCELLED"];
+
     public static IEndpointRouteBuilder MapProfessionalReservationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/professional/reservations").RequireAuthorization("Professional");
@@ -26,6 +28,7 @@ public static class ProfessionalReservationEndpoints
     private static async Task<IResult> List(
         int? page,
         int? pageSize,
+        string? status,
         HttpContext context,
         ApplicationDbContext db,
         CancellationToken cancellationToken)
@@ -36,13 +39,23 @@ public static class ProfessionalReservationEndpoints
         var actualSize = pageSize ?? 20;
         if (actualSize is < 1 or > 100)
             return Results.BadRequest(new ApiError("INVALID_PAGE_SIZE", "O tamanho da página deve estar entre 1 e 100."));
+        var actualStatus = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToUpperInvariant();
+        if (actualStatus == "ALL") actualStatus = "all";
+        if (!Statuses.Contains(actualStatus, StringComparer.Ordinal))
+            return Results.BadRequest(new ApiError("INVALID_STATUS", "O status informado é inválido."));
         var professionalId = await ResolveProfessionalId(db, context, cancellationToken);
         if (professionalId is null)
             return Results.Ok(new PagedResponse<ReservationResponse>([], actualPage, actualSize, 0));
 
+        var reservations = db.Reservations.AsNoTracking()
+            .Where(value => value.ProfessionalId == professionalId.Value);
+        if (actualStatus != "all")
+        {
+            var parsedStatus = ParseStatus(actualStatus);
+            reservations = reservations.Where(value => value.Status == parsedStatus);
+        }
         var query =
-            from reservation in db.Reservations.AsNoTracking()
-                .Where(value => value.ProfessionalId == professionalId.Value)
+            from reservation in reservations
             join room in db.Rooms.AsNoTracking() on reservation.RoomId equals room.Id
             join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
             select new { Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name };
@@ -91,12 +104,11 @@ public static class ProfessionalReservationEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest(
             [], [request.RoomId], [professionalId.Value]), cancellationToken);
-        var resourcesActive = await db.Rooms.AnyAsync(
-                                  room => room.Id == request.RoomId && room.IsActive, cancellationToken) &&
-                              await db.Professionals.AnyAsync(
-                                  professional => professional.Id == professionalId && professional.IsActive,
-                                  cancellationToken);
-        if (!resourcesActive)
+        if (!await HasCurrentProfessionalLink(
+                db, professionalId.Value, Actor(context)!, cancellationToken))
+            return Results.NotFound();
+        if (!await db.Rooms.AnyAsync(
+                room => room.Id == request.RoomId && room.IsActive, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
         var conflict = await conflictDetector.FindConflictAsync(
@@ -186,6 +198,9 @@ public static class ProfessionalReservationEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest(
             [], [locator.RoomId], [professionalId.Value]), cancellationToken);
+        if (!await HasCurrentProfessionalLink(
+                db, professionalId.Value, Actor(context)!, cancellationToken))
+            return Results.NotFound();
         var original = await db.Reservations.SingleOrDefaultAsync(
             value => value.Id == id && value.ProfessionalId == professionalId, cancellationToken);
         if (original is null) return Results.NotFound();
@@ -241,6 +256,25 @@ public static class ProfessionalReservationEndpoints
     }
 
     private static string? Actor(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    private static Task<bool> HasCurrentProfessionalLink(
+        ApplicationDbContext db,
+        Guid professionalId,
+        string applicationUserId,
+        CancellationToken cancellationToken) =>
+        db.Professionals.AsNoTracking().AnyAsync(professional =>
+            professional.Id == professionalId &&
+            professional.ApplicationUserId == applicationUserId &&
+            professional.IsActive,
+            cancellationToken);
+
+    private static ReservationStatus ParseStatus(string status) => status switch
+    {
+        "PENDING" => ReservationStatus.Pending,
+        "APPROVED" => ReservationStatus.Approved,
+        "REJECTED" => ReservationStatus.Rejected,
+        "CANCELLED" => ReservationStatus.Cancelled,
+        _ => throw new InvalidOperationException("Status de reserva desconhecido.")
+    };
     private static IResult Invalid() => Results.BadRequest(new ApiError(
         "INVALID_RESERVATION", "Os dados da reserva são inválidos."));
     private static IResult Conflict() => Results.Json(new ApiError(

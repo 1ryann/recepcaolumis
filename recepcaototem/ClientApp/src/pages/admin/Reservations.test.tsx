@@ -80,6 +80,11 @@ test('professional mode uses only owned reservation endpoints and exposes reques
 
   expect(await screen.findByText('Sala Norte')).toBeInTheDocument()
   expect(reservationsApi.list).not.toHaveBeenCalled()
+  expect(professionalReservationsApi.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: 'all', page: 1, pageSize: 20 }), expect.any(AbortSignal))
+  fireEvent.change(screen.getByLabelText('Status das reservas'), { target: { value: 'APPROVED' } })
+  await waitFor(() => expect(professionalReservationsApi.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: 'APPROVED', page: 1, pageSize: 20 }), expect.any(AbortSignal)))
   expect(screen.getByRole('button', { name: /Solicitar reserva/i })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Solicitar remarcação de Sala Norte/i })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Solicitar cancelamento de Sala Norte/i }))
