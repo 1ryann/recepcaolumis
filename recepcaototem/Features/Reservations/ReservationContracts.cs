@@ -13,6 +13,13 @@ public sealed record RequestReservationRequest(
     DateTimeOffset StartAt,
     DateTimeOffset EndAt) : IStrictModuleRequest;
 
+public sealed record ReservationConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record RejectReservationRequest(string? Reason, string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record RescheduleReservationRequest(
+    DateTimeOffset StartAt,
+    DateTimeOffset EndAt,
+    string? ConcurrencyToken) : IStrictModuleRequest;
+
 public sealed record ReservationResponse(
     Guid Id,
     Guid RoomId,

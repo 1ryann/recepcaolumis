@@ -58,6 +58,22 @@ public sealed class Reservation
             occurredAt, ReservationKind.Reschedule, ReservationStatus.Pending, original.Id);
     }
 
+    public static Reservation CreateApprovedReschedule(
+        Reservation original,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        string actorUserId,
+        DateTimeOffset occurredAt)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        original.EnsureApprovedActualReservation();
+        var replacement = Create(original.RoomId, original.ProfessionalId, startAt, endAt, actorUserId,
+            occurredAt, ReservationKind.Reschedule, ReservationStatus.Approved, original.Id);
+        replacement.DecidedByUserId = actorUserId;
+        replacement.DecidedAt = replacement.CreatedAt;
+        return replacement;
+    }
+
     public static Reservation RequestCancellation(Reservation original, string requestedByUserId,
         DateTimeOffset occurredAt)
     {

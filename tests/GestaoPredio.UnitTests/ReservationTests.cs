@@ -82,4 +82,21 @@ public sealed class ReservationTests
         Assert.False(reservation.BlocksResources);
         Assert.Throws<InvalidOperationException>(() => reservation.Approve(ManagerUserId, Now.AddMinutes(11)));
     }
+
+    [Fact]
+    public void Administrative_reschedule_is_approved_and_preserves_the_original_identity()
+    {
+        var original = Reservation.CreateApproved(RoomId, ProfessionalId, Now.AddHours(3), Now.AddHours(4),
+            ManagerUserId, Now);
+
+        var replacement = Reservation.CreateApprovedReschedule(
+            original, Now.AddHours(5), Now.AddHours(6), ManagerUserId, Now.AddMinutes(1));
+
+        Assert.Equal(ReservationKind.Reschedule, replacement.Kind);
+        Assert.Equal(ReservationStatus.Approved, replacement.Status);
+        Assert.Equal(original.Id, replacement.OriginalReservationId);
+        Assert.Equal(original.RoomId, replacement.RoomId);
+        Assert.Equal(original.ProfessionalId, replacement.ProfessionalId);
+        Assert.Equal(ReservationStatus.Approved, original.Status);
+    }
 }

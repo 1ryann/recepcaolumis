@@ -18,6 +18,8 @@ public static class ProfessionalReservationEndpoints
         group.MapGet("", List);
         group.MapGet("/{id:guid}", Detail);
         group.MapPost("", RequestNew).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/reschedule-request", RequestReschedule).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/cancel-request", RequestCancellation).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -136,10 +138,120 @@ public static class ProfessionalReservationEndpoints
             .SingleOrDefaultAsync(cancellationToken);
     }
 
+    private static async Task<IResult> RequestReschedule(
+        Guid id,
+        RescheduleReservationRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        ILeaseResourceLock resourceLock,
+        IReservationConflictDetector conflictDetector,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        await RequestChange(id, request.ConcurrencyToken, request.StartAt, request.EndAt,
+            ReservationKind.Reschedule, context, db, resourceLock, conflictDetector, timeProvider, cancellationToken);
+
+    private static async Task<IResult> RequestCancellation(
+        Guid id,
+        ReservationConcurrencyRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        ILeaseResourceLock resourceLock,
+        IReservationConflictDetector conflictDetector,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        await RequestChange(id, request.ConcurrencyToken, null, null,
+            ReservationKind.Cancellation, context, db, resourceLock, conflictDetector, timeProvider, cancellationToken);
+
+    private static async Task<IResult> RequestChange(
+        Guid id,
+        string? concurrencyToken,
+        DateTimeOffset? startAt,
+        DateTimeOffset? endAt,
+        ReservationKind kind,
+        HttpContext context,
+        ApplicationDbContext db,
+        ILeaseResourceLock resourceLock,
+        IReservationConflictDetector conflictDetector,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!ConcurrencyToken.TryDecode(concurrencyToken, out var version)) return InvalidToken();
+        var professionalId = await ResolveProfessionalId(db, context, cancellationToken);
+        if (professionalId is null) return Results.NotFound();
+        var locator = await db.Reservations.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == id && value.ProfessionalId == professionalId, cancellationToken);
+        if (locator is null) return Results.NotFound();
+
+        var now = timeProvider.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest(
+            [], [locator.RoomId], [professionalId.Value]), cancellationToken);
+        var original = await db.Reservations.SingleOrDefaultAsync(
+            value => value.Id == id && value.ProfessionalId == professionalId, cancellationToken);
+        if (original is null) return Results.NotFound();
+        if (original.Version != version) return Modified();
+        if (await db.Reservations.AnyAsync(value =>
+                value.OriginalReservationId == original.Id && value.Status == ReservationStatus.Pending,
+                cancellationToken))
+            return InvalidTransition();
+
+        Reservation change;
+        try
+        {
+            if (kind == ReservationKind.Reschedule)
+            {
+                if (startAt is null || endAt is null || endAt <= startAt) return Invalid();
+                var conflict = await conflictDetector.FindConflictAsync(
+                    original.RoomId, original.ProfessionalId, startAt.Value, endAt.Value,
+                    original.Id, cancellationToken);
+                if (conflict.Any) return Conflict();
+                change = Reservation.RequestReschedule(
+                    original, startAt.Value, endAt.Value, Actor(context)!, now);
+            }
+            else
+            {
+                change = Reservation.RequestCancellation(original, Actor(context)!, now);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return InvalidTransition();
+        }
+        catch (ArgumentException)
+        {
+            return Invalid();
+        }
+
+        db.Reservations.Add(change);
+        var action = kind == ReservationKind.Reschedule
+            ? AuditActions.ReservationRescheduleRequested
+            : AuditActions.ReservationCancellationRequested;
+        db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
+            change.Id, action, now, context.TraceIdentifier,
+            Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var roomName = await db.Rooms.AsNoTracking().Where(room => room.Id == change.RoomId)
+            .Select(room => room.Name).SingleAsync(cancellationToken);
+        var professionalName = await db.Professionals.AsNoTracking()
+            .Where(professional => professional.Id == change.ProfessionalId)
+            .Select(professional => professional.Name).SingleAsync(cancellationToken);
+        return Results.Created($"/api/professional/reservations/{change.Id}",
+            change.ToResponse(roomName, professionalName));
+    }
+
     private static string? Actor(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier);
     private static IResult Invalid() => Results.BadRequest(new ApiError(
         "INVALID_RESERVATION", "Os dados da reserva são inválidos."));
     private static IResult Conflict() => Results.Json(new ApiError(
         "RESERVATION_RESOURCE_CONFLICT", "A sala ou o profissional já possui ocupação conflitante."),
+        statusCode: StatusCodes.Status409Conflict);
+    private static IResult InvalidToken() => Results.BadRequest(new ApiError(
+        "INVALID_CONCURRENCY_TOKEN", "O token de concorrência informado é inválido."));
+    private static IResult Modified() => Results.Json(new ApiError(
+        "RESOURCE_MODIFIED", "O registro foi alterado por outra operação. Recarregue os dados e tente novamente."),
+        statusCode: StatusCodes.Status409Conflict);
+    private static IResult InvalidTransition() => Results.Json(new ApiError(
+        "INVALID_RESERVATION_TRANSITION", "A reserva não permite esta operação no estado atual."),
         statusCode: StatusCodes.Status409Conflict);
 }

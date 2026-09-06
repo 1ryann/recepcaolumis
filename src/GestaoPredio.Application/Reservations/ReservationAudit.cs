@@ -12,7 +12,8 @@ public static class ReservationAudit
         AuditActions.ReservationRejected,
         AuditActions.ReservationCancelled,
         AuditActions.ReservationRescheduleRequested,
-        AuditActions.ReservationCancellationRequested
+        AuditActions.ReservationCancellationRequested,
+        AuditActions.ReservationRescheduled
     ];
 
     public static AuditEntry CreateSucceeded(

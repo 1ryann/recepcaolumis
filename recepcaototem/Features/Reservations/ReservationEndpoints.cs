@@ -20,6 +20,10 @@ public static partial class ReservationEndpoints
         group.MapGet("", List);
         group.MapGet("/{id:guid}", Detail);
         group.MapPost("", Create).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/approve", Approve).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/reject", Reject).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/cancel", Cancel).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/reschedule", Reschedule).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
