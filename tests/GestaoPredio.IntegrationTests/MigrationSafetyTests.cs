@@ -90,4 +90,37 @@ public sealed class MigrationSafetyTests
             index.Properties.Select(property => property.Name)
                 .SequenceEqual([nameof(AuditEntry.Action), nameof(AuditEntry.OccurredAt)]));
     }
+
+    [Fact]
+    public void Leases_migration_is_additive_and_scoped_to_the_new_module()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var assembly = db.GetService<IMigrationsAssembly>();
+        var metadata = Assert.Single(assembly.Migrations,
+            pair => pair.Key.EndsWith("_LeasesFoundation", StringComparison.Ordinal));
+        var migration = assembly.CreateMigration(metadata.Value, "Npgsql.EntityFrameworkCore.PostgreSQL");
+
+        Assert.NotEmpty(migration.UpOperations);
+        Assert.All(migration.UpOperations, operation =>
+        {
+            Assert.Contains(operation.GetType(), new[] { typeof(CreateTableOperation), typeof(CreateIndexOperation) });
+            Assert.False(operation.IsDestructiveChange);
+        });
+        var tables = migration.UpOperations.OfType<CreateTableOperation>().ToArray();
+        Assert.Equal(["LeaseOccurrences", "Leases", "Tenants"],
+            tables.Select(table => table.Name).Order(StringComparer.Ordinal));
+        Assert.DoesNotContain(tables, table => table.Name.StartsWith("AspNet", StringComparison.Ordinal));
+
+        var sql = db.GetService<IMigrator>().GenerateScript(
+            "PostgreSqlBaseline", "LeasesFoundation", MigrationsSqlGenerationOptions.Idempotent);
+        foreach (var forbidden in new[]
+                 {
+                     "DROP ", "TRUNCATE ", "DELETE FROM", "ALTER DATABASE", "ALTER TABLE", " COLLATE ",
+                     "sp_getapplock", "rowversion", "AspNetUsers\" ALTER"
+                 })
+            Assert.DoesNotContain(forbidden, sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE \"Tenants\"", sql);
+        Assert.Contains("CREATE TABLE \"Leases\"", sql);
+        Assert.Contains("CREATE TABLE \"LeaseOccurrences\"", sql);
+    }
 }
