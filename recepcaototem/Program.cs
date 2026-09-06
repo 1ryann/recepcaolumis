@@ -5,6 +5,9 @@ using GestaoPredio.Infrastructure.Auditing;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
 using GestaoPredio.Infrastructure.Files;
+using GestaoPredio.Infrastructure.Leases;
+using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Scheduling;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
@@ -18,6 +21,7 @@ using recepcaototem.Features.Common;
 using recepcaototem.Features.Professionals;
 using recepcaototem.Features.Rooms;
 using recepcaototem.Features.Tenants;
+using recepcaototem.Features.Leases;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -36,6 +40,14 @@ builder.Services.AddSingleton<LoginRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
+var operationalTimeZoneId = builder.Configuration["Scheduling:TimeZoneId"];
+if (string.IsNullOrWhiteSpace(operationalTimeZoneId))
+    throw new InvalidOperationException("Scheduling:TimeZoneId must be configured.");
+var operationalTimeZone = OperationalTimeZone.Resolve(operationalTimeZoneId);
+builder.Services.AddSingleton(operationalTimeZone);
+builder.Services.AddSingleton<ILeaseOccurrencePlanner>(new LeaseOccurrencePlanner(operationalTimeZone));
+builder.Services.AddScoped<ILeaseResourceLock, PostgreSqlLeaseResourceLock>();
+builder.Services.AddScoped<ILeaseConflictDetector, PostgreSqlLeaseConflictDetector>();
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -116,6 +128,7 @@ app.MapProfessionalUserLinkEndpoints();
 app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
 app.MapTenantEndpoints();
+app.MapLeaseEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

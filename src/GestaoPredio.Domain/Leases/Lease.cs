@@ -118,7 +118,7 @@ public sealed class Lease
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
-    internal void SetMaterializedThrough(DateTimeOffset? value)
+    public void SetMaterializedThrough(DateTimeOffset? value)
     {
         MaterializedThroughAt = value is null ? null : TimestampNormalizer.ToUtcMicroseconds(value.Value);
     }

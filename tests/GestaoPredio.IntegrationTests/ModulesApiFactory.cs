@@ -68,6 +68,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("RateLimiting:LoginPermitLimit", "100");
         builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "100");
         builder.UseSetting("RateLimiting:PermitLimit", "10000");
+        builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
