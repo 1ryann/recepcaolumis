@@ -144,6 +144,7 @@ public static partial class LeaseEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
+        ILeaseConflictDetector conflictDetector,
         ILeaseOccurrencePlanner planner,
         ILeaseLifecycleCoordinator lifecycle,
         TimeProvider timeProvider,
@@ -169,6 +170,9 @@ public static partial class LeaseEndpoints
                     var currentNames = await LoadNames(db, lease, cancellationToken);
                     return Results.Ok(lease.ToResponse(currentNames.Tenant, currentNames.Professional, currentNames.Room, now));
                 }
+                var conflict = await conflictDetector.FindConflictAsync(lease.RoomId, lease.ProfessionalId,
+                    lease.OccupancyStartAt, endAt, lease.Id, cancellationToken);
+                if (conflict.Any) return Conflict();
                 lease.ScheduleEnd(endAt, now);
                 ApplyPlan(db, lease, occurrences, planner.Plan(lease, now, occurrences), now);
                 action = AuditActions.LeaseEndScheduled;

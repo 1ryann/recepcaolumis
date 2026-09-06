@@ -207,6 +207,35 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
         Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.Action == "LEASE_ENDED"));
     }
 
+    [Fact]
+    public async Task Scheduled_end_cannot_extend_into_another_lease()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        var now = DateTimeOffset.UtcNow;
+        var current = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
+            LeaseMode.Hourly, 100m, now.AddDays(-1), null, now.AddHours(-1), now.AddHours(1), null, now.AddDays(-1));
+        var future = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
+            LeaseMode.Hourly, 100m, now, null, now.AddHours(2), now.AddHours(4), null, now);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Leases.AddRange(current, future);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(SystemRoles.Administrador);
+        var detail = (await (await factory.Client.GetAsync($"/api/admin/leases/{current.Id}"))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+
+        var response = await factory.PostWithCsrfAsync($"/api/admin/leases/{current.Id}/end", new
+        {
+            endAt = now.AddHours(3), concurrencyToken = detail.ConcurrencyToken
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("LEASE_RESOURCE_CONFLICT", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
     private static CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(
         value.Tenant.Id, value.Professional.Id, value.Room.Id, "HOURLY", 150.50m,
         DateTimeOffset.UtcNow.AddDays(-1), 10, DateTimeOffset.UtcNow.AddDays(1),
