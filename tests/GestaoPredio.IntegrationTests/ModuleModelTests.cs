@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Availability;
 using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
@@ -235,6 +236,46 @@ public sealed class ModuleModelTests
         AssertColumn(transition, "Reason", "character varying(500)", 500, nullable: true);
         Assert.Equal(DeleteBehavior.NoAction, Assert.Single(transition.GetForeignKeys()).DeleteBehavior);
         AssertIndex(transition, "IX_VisitTransitions_Visit_OccurredAt", false, null, "VisitId", "OccurredAt");
+    }
+
+    [Fact]
+    public void Operating_hours_model_uses_local_civil_time_and_postgresql_concurrency()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var schedule = Entity<OperatingHoursSchedule>(db);
+        Assert.Equal("OperatingHoursSchedules", schedule.GetTableName());
+        AssertPostgreSqlVersion(schedule);
+
+        var interval = Entity<OperatingHourInterval>(db);
+        Assert.Equal("OperatingHourIntervals", interval.GetTableName());
+        Assert.Equal("smallint", interval.FindProperty("DayOfWeek")!.GetColumnType());
+        Assert.Equal("time without time zone", interval.FindProperty("OpensAt")!.GetColumnType());
+        Assert.Equal("time without time zone", interval.FindProperty("ClosesAt")!.GetColumnType());
+        Assert.Contains(interval.GetCheckConstraints(), check => check.Name == "CK_OperatingHourIntervals_Period");
+        Assert.Equal(DeleteBehavior.Cascade, Assert.Single(interval.GetForeignKeys()).DeleteBehavior);
+        AssertIndex(interval, "UX_OperatingHourIntervals_Schedule_Day_Open", true, null,
+            "ScheduleId", "DayOfWeek", "OpensAt");
+    }
+
+    [Fact]
+    public void Room_block_model_preserves_room_history_and_supports_overlap_queries()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<RoomBlock>(db);
+        Assert.Equal("RoomBlocks", entity.GetTableName());
+        AssertColumn(entity, "Reason", "character varying(500)", 500);
+        AssertColumn(entity, "Status", "character varying(20)", 20);
+        AssertColumn(entity, "CreatedBy", "character varying(450)", 450);
+        AssertColumn(entity, "CancelledBy", "character varying(450)", 450, nullable: true);
+        Assert.Equal("timestamp with time zone", entity.FindProperty("StartAt")!.GetColumnType());
+        Assert.Equal("timestamp with time zone", entity.FindProperty("EndAt")!.GetColumnType());
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_RoomBlocks_Period");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_RoomBlocks_Status");
+        Assert.Equal(DeleteBehavior.NoAction, Assert.Single(entity.GetForeignKeys()).DeleteBehavior);
+        AssertIndex(entity, "IX_RoomBlocks_Room_Status_Start", false, null,
+            "RoomId", "Status", "StartAt");
+        AssertIndex(entity, "IX_RoomBlocks_Room_End", false, null, "RoomId", "EndAt");
+        AssertPostgreSqlVersion(entity);
     }
 
     private static IEntityType Entity<T>(ApplicationDbContext db) =>
