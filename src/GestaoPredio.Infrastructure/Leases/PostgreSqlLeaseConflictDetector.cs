@@ -23,8 +23,9 @@ public sealed class PostgreSqlLeaseConflictDetector(ApplicationDbContext db) : I
             .Where(lease => lease.LifecycleState == LeaseLifecycleState.Open ||
                             lease.LifecycleState == LeaseLifecycleState.EndingPending)
             .Where(lease => excludedLeaseId == null || lease.Id != excludedLeaseId)
-            .Where(lease => lease.OccupancyEndAt == null || occupancyStartAt < lease.OccupancyEndAt)
-            .Where(lease => occupancyEndAt == null || lease.OccupancyStartAt < occupancyEndAt);
+            .Where(lease => lease.LifecycleState == LeaseLifecycleState.EndingPending ||
+                ((lease.OccupancyEndAt == null || occupancyStartAt < lease.OccupancyEndAt) &&
+                 (occupancyEndAt == null || lease.OccupancyStartAt < occupancyEndAt)));
 
         var roomConflict = await blocking.AnyAsync(lease => lease.RoomId == roomId, cancellationToken);
         var professionalConflict = await blocking.AnyAsync(

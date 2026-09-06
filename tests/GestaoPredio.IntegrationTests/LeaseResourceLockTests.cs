@@ -106,6 +106,28 @@ public sealed class LeaseResourceLockTests : IAsyncLifetime
         await transaction.RollbackAsync();
     }
 
+    [Fact]
+    public async Task Ending_pending_blocks_resources_even_after_the_contract_end()
+    {
+        var roomId = Guid.NewGuid();
+        var professionalId = Guid.NewGuid();
+        var end = DateTimeOffset.UtcNow.AddDays(-1);
+        await using var db = CreateDbContext();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "Leases" ("Id", "RoomId", "ProfessionalId", "LifecycleState", "OccupancyStartAt", "OccupancyEndAt")
+            VALUES ({Guid.NewGuid()}, {roomId}, {professionalId}, {"ENDING_PENDING"}, {end.AddHours(-1)}, {end})
+            """);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
+        var conflict = await new PostgreSqlLeaseConflictDetector(db).FindConflictAsync(
+            roomId, professionalId, DateTimeOffset.UtcNow.AddYears(1), DateTimeOffset.UtcNow.AddYears(1).AddHours(1),
+            null, CancellationToken.None);
+
+        Assert.True(conflict.Room);
+        Assert.True(conflict.Professional);
+        await transaction.RollbackAsync();
+    }
+
     private ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

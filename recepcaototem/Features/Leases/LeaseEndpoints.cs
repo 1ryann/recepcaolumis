@@ -98,6 +98,7 @@ public static partial class LeaseEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         ILeaseConflictDetector conflictDetector,
+        ILeaseLifecycleCoordinator lifecycle,
         ILeaseOccurrencePlanner occurrencePlanner,
         TimeZoneInfo operationalTimeZone,
         TimeProvider timeProvider,
@@ -117,6 +118,27 @@ public static partial class LeaseEndpoints
             await transaction.RollbackAsync(cancellationToken);
             return Results.BadRequest(new ApiError("INVALID_LEASE_RESOURCE", "Os recursos informados para a locação são inválidos."));
         }
+
+        var overdue = await db.Leases
+            .Where(x => (x.RoomId == request.RoomId || x.ProfessionalId == request.ProfessionalId) &&
+                        (x.LifecycleState == LeaseLifecycleState.EndingPending ||
+                         (x.LifecycleState == LeaseLifecycleState.Open && x.OccupancyEndAt != null && x.OccupancyEndAt <= now)))
+            .ToListAsync(cancellationToken);
+        foreach (var previous in overdue)
+        {
+            var previousState = previous.LifecycleState;
+            var previousOccurrences = await db.LeaseOccurrences.Where(x => x.LeaseId == previous.Id).ToListAsync(cancellationToken);
+            var reconciliation = await lifecycle.ReconcileAsync(previous, previousOccurrences, now, cancellationToken);
+            if (previous.LifecycleState != previousState)
+            {
+                var action = reconciliation == LeaseLifecycleReconciliation.EndingPending
+                    ? AuditActions.LeaseEndingPending
+                    : AuditActions.LeaseEnded;
+                db.AuditEntries.Add(LeaseAudit.CreateSucceeded(previous.Id, action, now, context.TraceIdentifier,
+                    context.User.FindFirstValue(ClaimTypes.NameIdentifier), context.Connection.RemoteIpAddress?.ToString()));
+            }
+        }
+        if (overdue.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
         var conflict = await conflictDetector.FindConflictAsync(
             request.RoomId, request.ProfessionalId, contract!.OccupancyStartAt,

@@ -236,6 +236,30 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
         Assert.Equal("LEASE_RESOURCE_CONFLICT", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
     }
 
+    [Fact]
+    public async Task Creation_reconciles_an_expired_lease_before_reusing_its_resources()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        var now = DateTimeOffset.UtcNow;
+        var expired = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
+            LeaseMode.Hourly, 100m, now.AddDays(-2), null, now.AddDays(-1).AddHours(-1), now.AddDays(-1), null, now.AddDays(-2));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Leases.Add(expired);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(SystemRoles.Administrador);
+
+        (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).EnsureSuccessStatusCode();
+
+        await using var verification = factory.Services.CreateAsyncScope();
+        var verificationDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(LeaseLifecycleState.Ended, (await verificationDb.Leases.SingleAsync(x => x.Id == expired.Id)).LifecycleState);
+        Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.TargetEntityId == expired.Id && x.Action == "LEASE_ENDED"));
+    }
+
     private static CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(
         value.Tenant.Id, value.Professional.Id, value.Room.Id, "HOURLY", 150.50m,
         DateTimeOffset.UtcNow.AddDays(-1), 10, DateTimeOffset.UtcNow.AddDays(1),
