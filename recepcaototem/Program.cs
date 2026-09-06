@@ -131,6 +131,7 @@ app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
 app.MapTenantEndpoints();
 app.MapLeaseEndpoints();
+app.MapProfessionalLeaseEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
