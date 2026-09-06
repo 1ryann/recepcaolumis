@@ -7,8 +7,10 @@ using GestaoPredio.Infrastructure.Persistence;
 using GestaoPredio.Infrastructure.Files;
 using GestaoPredio.Infrastructure.Leases;
 using GestaoPredio.Infrastructure.Reservations;
+using GestaoPredio.Infrastructure.OperationalAlerts;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
+using GestaoPredio.Application.OperationalAlerts;
 using GestaoPredio.Application.Scheduling;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -26,6 +28,7 @@ using recepcaototem.Features.Tenants;
 using recepcaototem.Features.Leases;
 using recepcaototem.Features.Reservations;
 using recepcaototem.Features.Visits;
+using recepcaototem.Features.OperationalAlerts;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -53,6 +56,7 @@ builder.Services.AddSingleton<ILeaseOccurrencePlanner>(new LeaseOccurrencePlanne
 builder.Services.AddScoped<ILeaseResourceLock, PostgreSqlLeaseResourceLock>();
 builder.Services.AddScoped<ILeaseConflictDetector, PostgreSqlLeaseConflictDetector>();
 builder.Services.AddScoped<IReservationConflictDetector, PostgreSqlReservationConflictDetector>();
+builder.Services.AddScoped<IOperationalAlertReader, PostgreSqlOperationalAlertReader>();
 builder.Services.AddSingleton<ILeaseOpenVisitProbe, NoOpenVisitProbe>();
 builder.Services.AddScoped<ILeaseLifecycleCoordinator, LeaseLifecycleCoordinator>();
 builder.Services.AddAntiforgery(options =>
@@ -140,6 +144,7 @@ app.MapProfessionalLeaseEndpoints();
 app.MapReservationEndpoints();
 app.MapProfessionalReservationEndpoints();
 app.MapVisitEndpoints();
+app.MapOperationalAlertEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
