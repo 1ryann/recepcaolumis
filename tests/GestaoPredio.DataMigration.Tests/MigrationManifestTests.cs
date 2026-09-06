@@ -45,4 +45,19 @@ public sealed class MigrationManifestTests
         Assert.Equal(DateTimeKind.Utc, normalized.Kind);
         Assert.Equal(unspecified.Ticks, normalized.Ticks);
     }
+
+    [Fact]
+    public void Timestamps_are_truncated_to_postgresql_microsecond_precision_without_changing_the_instant()
+    {
+        var offset = new DateTimeOffset(2026, 9, 6, 12, 30, 0, TimeSpan.Zero).AddTicks(7);
+        var dateTime = offset.UtcDateTime;
+
+        var normalizedOffset = Assert.IsType<DateTimeOffset>(MigrationValue.Normalize(offset));
+        var normalizedDateTime = Assert.IsType<DateTime>(MigrationValue.Normalize(dateTime));
+
+        Assert.Equal(offset.UtcTicks - 7, normalizedOffset.UtcTicks);
+        Assert.Equal(dateTime.Ticks - 7, normalizedDateTime.Ticks);
+        Assert.Equal(TimeSpan.Zero, normalizedOffset.Offset);
+        Assert.Equal(DateTimeKind.Utc, normalizedDateTime.Kind);
+    }
 }
