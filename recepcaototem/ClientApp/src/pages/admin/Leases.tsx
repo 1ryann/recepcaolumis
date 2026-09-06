@@ -19,7 +19,12 @@ const statusLabels: Record<LeaseStatus, string> = {
 const modeLabels: Record<LeaseMode, string> = { MONTHLY: 'Mensal', DAILY: 'Diária', HOURLY: 'Por hora' }
 const formatBrl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('pt-BR') : 'Sem término definido'
-const toInputDate = (value: string | null) => value ? value.slice(0, 16) : ''
+export const toInputDate = (value: string | null) => {
+  if (!value) return ''
+  const date = new Date(value)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 const toIso = (value: string) => new Date(value).toISOString()
 
 type FormState = {
