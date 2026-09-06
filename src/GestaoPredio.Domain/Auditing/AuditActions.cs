@@ -31,4 +31,9 @@ public static class AuditActions
     public const string ReservationRescheduleRequested = "RESERVATION_RESCHEDULE_REQUESTED";
     public const string ReservationCancellationRequested = "RESERVATION_CANCELLATION_REQUESTED";
     public const string ReservationRescheduled = "RESERVATION_RESCHEDULED";
+    public const string VisitArrived = "VISIT_ARRIVED";
+    public const string VisitServiceStarted = "VISIT_SERVICE_STARTED";
+    public const string VisitEnded = "VISIT_ENDED";
+    public const string VisitCancelled = "VISIT_CANCELLED";
+    public const string VisitCorrected = "VISIT_CORRECTED";
 }

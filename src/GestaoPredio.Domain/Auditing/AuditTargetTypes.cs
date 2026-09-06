@@ -6,4 +6,5 @@ public static class AuditTargetTypes
     public const string Room = "ROOM";
     public const string Lease = "LEASE";
     public const string Reservation = "RESERVATION";
+    public const string Visit = "VISIT";
 }
