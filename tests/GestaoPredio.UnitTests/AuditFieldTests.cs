@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Application.Leases;
 
 namespace GestaoPredio.UnitTests;
 
@@ -95,6 +96,36 @@ public sealed class AuditFieldTests
         Assert.Equal("PROFESSIONAL_CREATED", AuditActions.ProfessionalCreated);
         Assert.Equal("PROFESSIONAL_USER_REPLACED", AuditActions.ProfessionalUserReplaced);
         Assert.Equal("ROOM_DEACTIVATED", AuditActions.RoomDeactivated);
+        Assert.Equal("LEASE", AuditTargetTypes.Lease);
+        Assert.Equal("LEASE_CREATED", AuditActions.LeaseCreated);
+        Assert.Equal("LEASE_ENDED", AuditActions.LeaseEnded);
+    }
+
+    [Fact]
+    public void Lease_update_audit_contains_only_sorted_approved_field_names()
+    {
+        var leaseId = Guid.NewGuid();
+
+        var entry = LeaseAudit.CreateSucceeded(
+            leaseId, AuditActions.LeaseUpdated, DateTimeOffset.UtcNow, "trace-1", "actor-1", "127.0.0.1",
+            [AuditFields.RoomId, AuditFields.ContractedRate, AuditFields.TenantId]);
+
+        Assert.Equal(AuditTargetTypes.Lease, entry.TargetEntityType);
+        Assert.Equal(leaseId, entry.TargetEntityId);
+        Assert.Equal("ContractedRate,RoomId,TenantId", entry.ChangedFields);
+        Assert.DoesNotContain("127.0.0.1", entry.ChangedFields);
+        Assert.DoesNotContain("actor-1", entry.ChangedFields);
+    }
+
+    [Fact]
+    public void Lease_audit_rejects_values_tokens_and_unapproved_fields()
+    {
+        Assert.Throws<ArgumentException>(() => LeaseAudit.CreateSucceeded(
+            Guid.NewGuid(), AuditActions.LeaseUpdated, DateTimeOffset.UtcNow, "trace", null, null,
+            ["RoomId:00000000-0000-0000-0000-000000000001"]));
+        Assert.Throws<ArgumentException>(() => LeaseAudit.CreateSucceeded(
+            Guid.NewGuid(), AuditActions.LeaseUpdated, DateTimeOffset.UtcNow, "trace", null, null,
+            ["ConcurrencyToken"]));
     }
 
     private static AuditEntry CreateAuthEntry() => new()

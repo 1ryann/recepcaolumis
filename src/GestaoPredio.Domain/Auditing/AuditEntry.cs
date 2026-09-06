@@ -9,7 +9,10 @@ public sealed class AuditEntry
  {
   AuditFields.Name, AuditFields.Profession, AuditFields.WhatsApp,
   AuditFields.Description, AuditFields.HourlyRate, AuditFields.DailyRate,
-  AuditFields.IsActive, AuditFields.PhotoFileId, AuditFields.ApplicationUserId
+  AuditFields.IsActive, AuditFields.PhotoFileId, AuditFields.ApplicationUserId,
+  AuditFields.TenantId, AuditFields.ProfessionalId, AuditFields.RoomId, AuditFields.Mode,
+  AuditFields.ContractedRate, AuditFields.BillingStartAt, AuditFields.BillingDueDay,
+  AuditFields.OccupancyStartAt, AuditFields.OccupancyEndAt
  }.ToFrozenSet(StringComparer.Ordinal);
 
  public Guid Id { get; set; }
@@ -60,5 +63,14 @@ public static class AuditFields
  public const string IsActive = "IsActive";
  public const string PhotoFileId = "PhotoFileId";
  public const string ApplicationUserId = "ApplicationUserId";
+ public const string TenantId = "TenantId";
+ public const string ProfessionalId = "ProfessionalId";
+ public const string RoomId = "RoomId";
+ public const string Mode = "Mode";
+ public const string ContractedRate = "ContractedRate";
+ public const string BillingStartAt = "BillingStartAt";
+ public const string BillingDueDay = "BillingDueDay";
+ public const string OccupancyStartAt = "OccupancyStartAt";
+ public const string OccupancyEndAt = "OccupancyEndAt";
 
 }
