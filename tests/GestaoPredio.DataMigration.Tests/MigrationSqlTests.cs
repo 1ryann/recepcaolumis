@@ -55,4 +55,12 @@ public sealed class MigrationSqlTests
         Assert.Equal(DBNull.Value, parameter.Value);
         Assert.Equal(NpgsqlDbType.Unknown, parameter.NpgsqlDbType);
     }
+
+    [Fact]
+    public void Final_replacement_deletes_only_the_mapped_table_by_quoted_name()
+    {
+        var professional = MigrationManifest.Tables.Single(x => x.Name == "Professionals");
+
+        Assert.Equal("DELETE FROM \"Professionals\";", MigrationSql.TargetDelete(professional));
+    }
 }

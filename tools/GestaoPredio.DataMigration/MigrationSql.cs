@@ -21,6 +21,9 @@ public static class MigrationSql
     public static string TargetCount(MigrationTable table) =>
         $"SELECT COUNT(*) FROM {PostgreSqlIdentifier(table.Name)};";
 
+    public static string TargetDelete(MigrationTable table) =>
+        $"DELETE FROM {PostgreSqlIdentifier(table.Name)};";
+
     private static string SqlServerIdentifier(string value) => $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
     private static string PostgreSqlIdentifier(string value) => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 }

@@ -4,6 +4,7 @@ public static class Program
 {
     private const string PrepareConfirmation = "PREPARE_LUMIS_PRODUCTION_SCHEMA";
     private const string ExecuteConfirmation = "MIGRATE_GESTAOPREDIODB_TO_LUMIS_PRODUCTION";
+    private const string ReplaceConfirmation = "REPLACE_LUMIS_PRODUCTION_PRELOAD_AFTER_IIS_STOP";
 
     public static async Task<int> Main(string[] args)
     {
@@ -21,6 +22,7 @@ public static class Program
                 "--dry-run" => await DryRunAsync(settings, cancellation.Token),
                 "--prepare-target-schema" => await PrepareTargetAsync(settings, args, cancellation.Token),
                 "--execute" => await ExecuteAsync(settings, args, cancellation.Token),
+                "--replace-import" => await ReplaceAsync(settings, args, cancellation.Token),
                 "--reconcile" => await ReconcileAsync(settings, cancellation.Token),
                 _ => Usage()
             };
@@ -123,6 +125,20 @@ public static class Program
         return await PrintReconciliationAsync(results, targetConnection, ct);
     }
 
+    private static async Task<int> ReplaceAsync(MigrationSettings settings, string[] args, CancellationToken ct)
+    {
+        RequireConfirmation(args, ReplaceConfirmation);
+        var sourceConnection = settings.RequireSource();
+        var targetConnection = settings.RequireTarget();
+        var source = MigrationGuard.ValidateSource(sourceConnection);
+        var target = settings.ValidateTarget();
+        Console.WriteLine($"SOURCE: {source.SafeDescription}");
+        Console.WriteLine($"TARGET: {target.SafeDescription}");
+        Console.WriteLine("MODE: FINAL CONTROLLED REPLACEMENT; IIS MUST ALREADY BE STOPPED");
+        var results = await DataMigrationRunner.ExecuteFinalReplacementAsync(sourceConnection, targetConnection, ct);
+        return await PrintReconciliationAsync(results, targetConnection, ct);
+    }
+
     private static async Task<int> PrintReconciliationAsync(IReadOnlyList<TableReconciliation> results,
         string targetConnection, CancellationToken ct)
     {
@@ -151,7 +167,7 @@ public static class Program
 
     private static int Usage()
     {
-        Console.Error.WriteLine("Use --fingerprint-target, --validate-source, --validate-target, --dry-run, --prepare-target-schema, --execute, or --reconcile.");
+        Console.Error.WriteLine("Use --fingerprint-target, --validate-source, --validate-target, --dry-run, --prepare-target-schema, --execute, --replace-import, or --reconcile.");
         return 1;
     }
 }

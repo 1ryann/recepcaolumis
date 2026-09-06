@@ -11,10 +11,31 @@ public static class DataMigrationRunner
 {
     public static async Task<IReadOnlyList<TableReconciliation>> ExecuteInitialLoadAsync(
         string sourceConnectionString, string targetConnectionString, CancellationToken cancellationToken = default)
+        => await ExecuteLoadAsync(sourceConnectionString, targetConnectionString, false, cancellationToken);
+
+    public static async Task<IReadOnlyList<TableReconciliation>> ExecuteFinalReplacementAsync(
+        string sourceConnectionString, string targetConnectionString, CancellationToken cancellationToken = default)
+        => await ExecuteLoadAsync(sourceConnectionString, targetConnectionString, true, cancellationToken);
+
+    private static async Task<IReadOnlyList<TableReconciliation>> ExecuteLoadAsync(
+        string sourceConnectionString, string targetConnectionString, bool replaceExisting,
+        CancellationToken cancellationToken)
     {
         var sourceInventory = await DatabaseInventoryReader.ReadSourceAsync(sourceConnectionString, cancellationToken);
         var targetInventory = await DatabaseInventoryReader.ReadTargetAsync(targetConnectionString, cancellationToken);
-        DatabaseInventoryReader.EnsureTargetEmptyForInitialLoad(targetInventory);
+        if (replaceExisting)
+        {
+            DatabaseInventoryReader.EnsureTargetSchemaReady(targetInventory);
+            var outOfScopeData = new[] { "Tenants", "Leases", "LeaseOccurrences" }
+                .Where(table => targetInventory.Counts.GetValueOrDefault(table) != 0).ToArray();
+            if (outOfScopeData.Length != 0)
+                throw new MigrationSafetyException(
+                    "Final replacement refused because PostgreSQL-only modules already contain data.");
+        }
+        else
+        {
+            DatabaseInventoryReader.EnsureTargetEmptyForInitialLoad(targetInventory);
+        }
 
         await using var source = new SqlConnection(sourceConnectionString);
         await source.OpenAsync(cancellationToken);
@@ -28,6 +49,14 @@ public static class DataMigrationRunner
         await using var transaction = await target.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            if (replaceExisting)
+            {
+                foreach (var table in MigrationManifest.Tables.Reverse())
+                {
+                    await using var delete = new NpgsqlCommand(MigrationSql.TargetDelete(table), target, transaction);
+                    await delete.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
             foreach (var table in MigrationManifest.Tables)
                 await CopyRowsAsync(target, transaction, table, sourceSnapshot[table.Name], cancellationToken);
             foreach (var table in MigrationManifest.Tables.Where(x => x.HasGeneratedIntegerKey))
