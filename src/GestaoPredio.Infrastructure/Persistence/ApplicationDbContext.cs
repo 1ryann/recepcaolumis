@@ -1,7 +1,9 @@
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Files;
+using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
+using GestaoPredio.Domain.Tenants;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -13,6 +15,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<Professional> Professionals => Set<Professional>();
  public DbSet<Room> Rooms => Set<Room>();
  public DbSet<PrivateFile> PrivateFiles => Set<PrivateFile>();
+ public DbSet<Tenant> Tenants => Set<Tenant>();
+ public DbSet<Lease> Leases => Set<Lease>();
+ public DbSet<LeaseOccurrence> LeaseOccurrences => Set<LeaseOccurrence>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -22,6 +27,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new ProfessionalConfiguration());
   builder.ApplyConfiguration(new RoomConfiguration());
   builder.ApplyConfiguration(new PrivateFileConfiguration());
+  builder.ApplyConfiguration(new TenantConfiguration());
+  builder.ApplyConfiguration(new LeaseConfiguration());
+  builder.ApplyConfiguration(new LeaseOccurrenceConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);

@@ -1,7 +1,9 @@
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Files;
+using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
+using GestaoPredio.Domain.Tenants;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -128,6 +130,59 @@ public sealed class ModuleModelTests
         Assert.True(professional.NormalizedName.Length <= Entity<Professional>(db).FindProperty("NormalizedName")!.GetMaxLength());
         Assert.True(professional.NormalizedProfession.Length <= Entity<Professional>(db).FindProperty("NormalizedProfession")!.GetMaxLength());
         Assert.True(room.NormalizedName.Length <= Entity<Room>(db).FindProperty("NormalizedName")!.GetMaxLength());
+    }
+
+    [Fact]
+    public void Tenant_model_uses_bounded_columns_checks_and_postgresql_concurrency()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<Tenant>(db);
+
+        Assert.Equal("Tenants", entity.GetTableName());
+        AssertColumn(entity, "Name", "character varying(200)", 200);
+        AssertColumn(entity, "NormalizedName", "character varying(400)", 400);
+        AssertColumn(entity, "Kind", "character varying(20)", 20);
+        Assert.Equal("timestamp with time zone", entity.FindProperty("CreatedAt")!.GetColumnType());
+        Assert.Equal("timestamp with time zone", entity.FindProperty("UpdatedAt")!.GetColumnType());
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Tenants_Kind");
+        AssertIndex(entity, "IX_Tenants_NormalizedName", false, null, "NormalizedName", "Id");
+        AssertPostgreSqlVersion(entity);
+    }
+
+    [Fact]
+    public void Lease_model_has_controlled_values_checks_no_action_links_and_query_indexes()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<Lease>(db);
+
+        Assert.Equal("Leases", entity.GetTableName());
+        AssertColumn(entity, "Mode", "character varying(10)", 10);
+        AssertColumn(entity, "LifecycleState", "character varying(20)", 20);
+        var rate = entity.FindProperty("ContractedRate")!;
+        Assert.Equal("numeric(18,2)", rate.GetColumnType());
+        Assert.Equal("timestamp with time zone", entity.FindProperty("BillingStartAt")!.GetColumnType());
+        Assert.Equal("smallint", entity.FindProperty("BillingDueDay")!.GetColumnType());
+        Assert.Equal("smallint", entity.FindProperty("MonthlyAnchorDay")!.GetColumnType());
+        Assert.Equal(5, entity.GetCheckConstraints().Count());
+        Assert.Equal(3, entity.GetForeignKeys().Count());
+        Assert.All(entity.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+        AssertIndex(entity, "IX_Leases_Room_State_Start", false, null, "RoomId", "LifecycleState", "OccupancyStartAt");
+        AssertIndex(entity, "IX_Leases_Professional_State_Start", false, null, "ProfessionalId", "LifecycleState", "OccupancyStartAt");
+        AssertIndex(entity, "IX_Leases_Tenant_State_Billing", false, null, "TenantId", "LifecycleState", "BillingStartAt");
+        AssertPostgreSqlVersion(entity);
+    }
+
+    [Fact]
+    public void Lease_occurrence_model_is_unique_per_start_and_never_cascades()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<LeaseOccurrence>(db);
+
+        Assert.Equal("LeaseOccurrences", entity.GetTableName());
+        AssertColumn(entity, "State", "character varying(20)", 20);
+        AssertIndex(entity, "UX_LeaseOccurrences_LeaseId_StartAt", true, null, "LeaseId", "StartAt");
+        Assert.Equal(DeleteBehavior.NoAction, Assert.Single(entity.GetForeignKeys()).DeleteBehavior);
+        AssertPostgreSqlVersion(entity);
     }
 
     private static IEntityType Entity<T>(ApplicationDbContext db) =>
