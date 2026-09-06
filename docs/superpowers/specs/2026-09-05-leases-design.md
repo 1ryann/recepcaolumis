@@ -25,12 +25,12 @@ Cadastro mínimo de locatário, reutilizável por várias locações:
 ```text
 Tenant
   Id: GUID
-  Name: nvarchar(200)
-  NormalizedName: nvarchar(400)
+  Name: varchar(200)
+  NormalizedName: varchar(400)
   Kind: INDIVIDUAL | LEGAL_ENTITY
-  IsActive: bit
-  CreatedAt, UpdatedAt: datetimeoffset
-  RowVersion: rowversion
+  IsActive: boolean
+  CreatedAt, UpdatedAt: timestamptz
+  Version: xmin (uint, token opaco Base64 na API)
 ```
 
 `NormalizedName` é calculado somente por `TextNormalizer`. Não há unicidade por nome, documento, telefone ou e-mail. Documentos, endereço, contatos e dados financeiros não fazem parte desta etapa.
@@ -46,16 +46,16 @@ Lease
   ProfessionalId: GUID
   RoomId: GUID
   Mode: MONTHLY | DAILY | HOURLY
-  ContractedRate: decimal(18,2)
-  BillingStartAt: datetimeoffset
-  BillingDueDay: tinyint?          // 1..31; somente metadado contratual
-  OccupancyStartAt: datetimeoffset
-  OccupancyEndAt: datetimeoffset? // null significa prazo indeterminado
+  ContractedRate: numeric(18,2)
+  BillingStartAt: timestamptz
+  BillingDueDay: smallint?         // 1..31; somente metadado contratual
+  OccupancyStartAt: timestamptz
+  OccupancyEndAt: timestamptz?    // null significa prazo indeterminado
   LifecycleState: OPEN | ENDING_PENDING | ENDED | CANCELLED
-  MonthlyAnchorDay: tinyint?       // calculado para MONTHLY; 1..31
-  MaterializedThroughAt: datetimeoffset?
-  CreatedAt, UpdatedAt: datetimeoffset
-  RowVersion: rowversion
+  MonthlyAnchorDay: smallint?      // calculado para MONTHLY; 1..31
+  MaterializedThroughAt: timestamptz?
+  CreatedAt, UpdatedAt: timestamptz
+  Version: xmin (uint, token opaco Base64 na API)
 ```
 
 `ContractedRate` aceita zero, no máximo duas casas e o mesmo teto comercial de `RoomRate.Maximum`. A tarifa da sala é apenas uma sugestão no formulário; nunca atualiza retroativamente uma locação.
@@ -72,10 +72,10 @@ Representação operacional materializada para agenda, Visitas e Totem futuros:
 LeaseOccurrence
   Id: GUID
   LeaseId: GUID
-  StartAt, EndAt: datetimeoffset
+  StartAt, EndAt: timestamptz
   State: PLANNED | CANCELLED | COMPLETED
-  CreatedAt, UpdatedAt: datetimeoffset
-  RowVersion: rowversion
+  CreatedAt, UpdatedAt: timestamptz
+  Version: xmin (uint, token opaco Base64 na API)
 ```
 
 Uma ocorrência não estabelece exclusividade contratual. Apenas `Lease` e seu intervalo de ocupação definem disponibilidade. Ocorrências passadas são preservadas; ocorrências futuras canceladas são marcadas `CANCELLED`, nunca removidas.
@@ -84,7 +84,7 @@ Uma ocorrência não estabelece exclusividade contratual. Apenas `Lease` e seu i
 
 ### Fuso operacional
 
-`Scheduling:TimeZoneId` é uma configuração obrigatória validada no startup quando o módulo for ativado. O valor de Development é `America/Porto_Velho`. A configuração é usada para converter datas civis e calcular limites mensais; instantes persistidos permanecem UTC em `datetimeoffset`.
+`Scheduling:TimeZoneId` é uma configuração obrigatória validada no startup quando o módulo for ativado. O valor de Development é `America/Porto_Velho`. A configuração é usada para converter datas civis e calcular limites mensais; instantes persistidos permanecem UTC em `timestamptz`.
 
 Não há fuso implícito no cliente. O frontend usa a configuração operacional recebida em DTO de metadados ou apresenta campos de data/hora no fuso configurado; ele não converte datas financeiras para `Date` sem necessidade.
 
@@ -147,25 +147,18 @@ São inválidas duas locações válidas e sobrepostas para a mesma sala ou para
 
 ## Concorrência e transações
 
-SQL Server não possui constraint de exclusão por intervalo. A garantia definitiva usa uma única transação de banco e `sp_getapplock` com proprietário `Transaction`.
+A garantia definitiva usa uma única transação PostgreSQL e locks de linha com `SELECT ... FOR UPDATE` sobre os registros existentes que participam da operação. Antes de validar estado e sobreposição, a operação bloqueia, sem duplicatas, locatários, salas e profissionais envolvidos nesta ordem fixa de tipos; dentro de cada tipo, ordena os GUIDs de forma determinística.
 
-Antes de validar sobreposição, a operação adquire locks para os recursos envolvidos, em ordem ordinal determinística e sem duplicatas:
+Em troca de sala, profissional ou locatário, bloqueia recursos antigos e novos. A criação também bloqueia o locatário, a sala e o profissional antes de validar se continuam ativos. Depois dos locks, a operação reconcilia encerramentos vencidos pertinentes, consulta sobreposições e grava contrato, auditoria e ocorrências na mesma transação. Falha operacional de lock ou violação de regra retorna erro controlado, sem SQL interno. Não se usa `sp_getapplock`, advisory lock com hash ou recurso específico de SQL Server.
 
-```text
-LumisLease:professional:{ProfessionalId}
-LumisLease:room:{RoomId}
-```
-
-Em troca de sala ou profissional, bloqueia recursos antigos e novos. Depois do lock, a operação reconcilia encerramentos vencidos pertinentes, consulta sobreposições e grava contrato, auditoria e ocorrências na mesma transação. Falha ao adquirir lock ou violação de regra retorna erro controlado, sem SQL interno.
-
-Toda mutação pública também exige o `concurrencyToken` Base64 do `rowversion` de `Lease`. Token ausente ou inválido retorna `400 INVALID_CONCURRENCY_TOKEN`; token desatualizado retorna `409 RESOURCE_MODIFIED`. Nenhuma auditoria de sucesso é criada para mutação rejeitada.
+Toda mutação pública também exige o `concurrencyToken` Base64 derivado do `xmin` de `Lease`, seguindo o padrão PostgreSQL já usado por Profissionais e Salas. Token ausente ou inválido retorna `400 INVALID_CONCURRENCY_TOKEN`; token desatualizado retorna `409 RESOURCE_MODIFIED`. Nenhuma auditoria de sucesso é criada para mutação rejeitada.
 
 ## Persistência, constraints e índices
 
 A migration será somente aditiva e não alterará collation, Identity nem tabelas existentes além de acrescentar valores controlados à auditoria quando necessário.
 
 - FKs `Lease -> Tenant`, `Lease -> Professional`, `Lease -> Room` e `LeaseOccurrence -> Lease` usam `NoAction`.
-- `Tenant`, `Lease` e `LeaseOccurrence` possuem `rowversion`.
+- `Tenant`, `Lease` e `LeaseOccurrence` usam a coluna de sistema PostgreSQL `xmin` como token otimista; a migration não cria uma coluna física `rowversion`.
 - Checks: enums controlados, tarifa não negativa, dia de vencimento entre 1 e 31, início financeiro não posterior ao efetivo, término posterior ao início e regras obrigatórias de término para `DAILY` e `HOURLY`.
 - `DAILY` persiste término obrigatório calculado no fuso operacional; somente `MONTHLY` pode usar término nulo.
 - `UX_LeaseOccurrences_LeaseId_StartAt` impede duplicação de materialização.
@@ -227,7 +220,7 @@ Ela contém listagem paginada, busca com debounce, filtros server-side por statu
 ## Estratégia de testes
 
 - Unidade: validações de entidade, tarifas, transições, status derivado, âncoras mensais, geração de janela e campos de auditoria.
-- Integração SQL Server de testes: FKs, checks, migration, paginação, filtros, DTOs, CSRF, JSON estrito, policies e BOLA.
+- Integração PostgreSQL em schemas isolados do `LumisDev`: FKs, checks, migration, paginação, filtros, DTOs, CSRF, JSON estrito, policies e BOLA.
 - Concorrência: duas requisições concorrentes para mesma sala/profissional, alteração estrutural concorrente, token obsoleto e ausência de auditoria falsa.
 - Recorrência: janela limitada, preservação de passado, cancelamento apenas futuro e conflito além da janela.
 - Frontend: cliente relativo/CSRF, estados de loading/erro/vazio, filtros, `RESOURCE_MODIFIED`, ações permitidas e ausência de AppStore.
@@ -240,7 +233,7 @@ Ela contém listagem paginada, busca com debounce, filtros server-side por statu
 | Status agendado sem job | Status é derivado de `OccupancyStartAt`. |
 | Término com data futura e sem job | Fim vencido deixa de ser utilizável; coordenador reconcilia sob lock. |
 | Prazo indeterminado | `OccupancyEndAt = null` ocupa até cancelamento/encerramento; participa de conflito como infinito. |
-| Race condition de intervalos | `sp_getapplock` por sala e profissional, em ordem determinística, dentro da transação. |
+| Race condition de intervalos | `SELECT ... FOR UPDATE` em locatário, sala e profissional, com tipos e GUIDs em ordem determinística, dentro da transação PostgreSQL. |
 | IDOR/BOLA profissional | Associação é resolvida no backend pelo usuário autenticado; não há `ProfessionalId` no request. |
 | Fuso e recorrência | Fuso configurável validado; datas civis e âncora mensal usam o fuso operacional. |
 | Reescrita de histórico | Updates estruturais somente enquanto agendada; contratos ativos exigem encerramento e nova locação. |
