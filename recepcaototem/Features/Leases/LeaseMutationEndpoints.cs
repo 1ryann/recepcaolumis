@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Common;
@@ -19,6 +20,7 @@ public static partial class LeaseEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         ILeaseConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         ILeaseOccurrencePlanner planner,
         TimeZoneInfo timeZone,
         TimeProvider timeProvider,
@@ -42,6 +44,10 @@ public static partial class LeaseEndpoints
             [lease.ProfessionalId, request.ProfessionalId]), cancellationToken);
         if (!await ResourcesAreActive(db, request.TenantId, request.ProfessionalId, request.RoomId, cancellationToken))
             return InvalidResource();
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
+            contract!.OccupancyStartAt, contract.OccupancyEndAt, null,
+            enforceOperatingHours: contract.Mode == LeaseMode.Hourly, cancellationToken);
+        if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
         var conflict = await conflictDetector.FindConflictAsync(request.RoomId, request.ProfessionalId,
             contract!.OccupancyStartAt, contract.OccupancyEndAt, lease.Id, cancellationToken);
         if (conflict.Any) return Conflict();
@@ -72,6 +78,7 @@ public static partial class LeaseEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         ILeaseConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         ILeaseOccurrencePlanner planner,
         TimeZoneInfo timeZone,
         TimeProvider timeProvider,
@@ -96,6 +103,11 @@ public static partial class LeaseEndpoints
         }
         else if (lease.Mode == LeaseMode.Monthly)
             anchor = TimeZoneInfo.ConvertTime(newStart, timeZone).Day;
+
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(lease.RoomId,
+            newStart, lease.OccupancyEndAt, null,
+            enforceOperatingHours: lease.Mode == LeaseMode.Hourly, cancellationToken);
+        if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
 
         var conflict = await conflictDetector.FindConflictAsync(lease.RoomId, lease.ProfessionalId,
             newStart, lease.OccupancyEndAt, lease.Id, cancellationToken);
@@ -145,6 +157,7 @@ public static partial class LeaseEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         ILeaseConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         ILeaseOccurrencePlanner planner,
         ILeaseLifecycleCoordinator lifecycle,
         TimeProvider timeProvider,
@@ -173,6 +186,10 @@ public static partial class LeaseEndpoints
                 var conflict = await conflictDetector.FindConflictAsync(lease.RoomId, lease.ProfessionalId,
                     lease.OccupancyStartAt, endAt, lease.Id, cancellationToken);
                 if (conflict.Any) return Conflict();
+                var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(lease.RoomId,
+                    lease.OccupancyStartAt, endAt, null,
+                    enforceOperatingHours: lease.Mode == LeaseMode.Hourly, cancellationToken);
+                if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
                 lease.ScheduleEnd(endAt, now);
                 ApplyPlan(db, lease, occurrences, planner.Plan(lease, now, occurrences), now);
                 action = AuditActions.LeaseEndScheduled;

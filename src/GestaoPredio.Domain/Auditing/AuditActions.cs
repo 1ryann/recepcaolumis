@@ -36,4 +36,8 @@ public static class AuditActions
     public const string VisitEnded = "VISIT_ENDED";
     public const string VisitCancelled = "VISIT_CANCELLED";
     public const string VisitCorrected = "VISIT_CORRECTED";
+    public const string OperatingHoursUpdated = "OPERATING_HOURS_UPDATED";
+    public const string RoomBlockCreated = "ROOM_BLOCK_CREATED";
+    public const string RoomBlockUpdated = "ROOM_BLOCK_UPDATED";
+    public const string RoomBlockCancelled = "ROOM_BLOCK_CANCELLED";
 }

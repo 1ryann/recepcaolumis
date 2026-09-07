@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Reservations;
@@ -93,6 +94,7 @@ public static class ProfessionalReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -111,6 +113,9 @@ public static class ProfessionalReservationEndpoints
                 room => room.Id == request.RoomId && room.IsActive, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
+            request.StartAt, request.EndAt, null, enforceOperatingHours: true, cancellationToken);
+        if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
         var conflict = await conflictDetector.FindConflictAsync(
             request.RoomId, professionalId.Value, request.StartAt, request.EndAt, null, cancellationToken);
         if (conflict.Any) return Conflict();
@@ -157,10 +162,12 @@ public static class ProfessionalReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken) =>
         await RequestChange(id, request.ConcurrencyToken, request.StartAt, request.EndAt,
-            ReservationKind.Reschedule, context, db, resourceLock, conflictDetector, timeProvider, cancellationToken);
+            ReservationKind.Reschedule, context, db, resourceLock, conflictDetector, roomAvailability,
+            timeProvider, cancellationToken);
 
     private static async Task<IResult> RequestCancellation(
         Guid id,
@@ -169,10 +176,12 @@ public static class ProfessionalReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken) =>
         await RequestChange(id, request.ConcurrencyToken, null, null,
-            ReservationKind.Cancellation, context, db, resourceLock, conflictDetector, timeProvider, cancellationToken);
+            ReservationKind.Cancellation, context, db, resourceLock, conflictDetector, roomAvailability,
+            timeProvider, cancellationToken);
 
     private static async Task<IResult> RequestChange(
         Guid id,
@@ -184,6 +193,7 @@ public static class ProfessionalReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -216,6 +226,9 @@ public static class ProfessionalReservationEndpoints
             if (kind == ReservationKind.Reschedule)
             {
                 if (startAt is null || endAt is null || endAt <= startAt) return Invalid();
+                var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(original.RoomId,
+                    startAt.Value, endAt.Value, null, enforceOperatingHours: true, cancellationToken);
+                if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
                 var conflict = await conflictDetector.FindConflictAsync(
                     original.RoomId, original.ProfessionalId, startAt.Value, endAt.Value,
                     original.Id, cancellationToken);
@@ -280,6 +293,16 @@ public static class ProfessionalReservationEndpoints
     private static IResult Conflict() => Results.Json(new ApiError(
         "RESERVATION_RESOURCE_CONFLICT", "A sala ou o profissional já possui ocupação conflitante."),
         statusCode: StatusCodes.Status409Conflict);
+    private static IResult AvailabilityConflict(RoomAvailabilityConflict conflict) => conflict switch
+    {
+        RoomAvailabilityConflict.OutsideOperatingHours => Results.Json(new ApiError(
+            "ROOM_OUTSIDE_OPERATING_HOURS", "O período está fora do horário de funcionamento."),
+            statusCode: StatusCodes.Status409Conflict),
+        RoomAvailabilityConflict.RoomBlock => Results.Json(new ApiError(
+            "ROOM_BLOCKED", "A sala está bloqueada no período informado."),
+            statusCode: StatusCodes.Status409Conflict),
+        _ => throw new InvalidOperationException("Conflito de disponibilidade inesperado.")
+    };
     private static IResult InvalidToken() => Results.BadRequest(new ApiError(
         "INVALID_CONCURRENCY_TOKEN", "O token de concorrência informado é inválido."));
     private static IResult Modified() => Results.Json(new ApiError(

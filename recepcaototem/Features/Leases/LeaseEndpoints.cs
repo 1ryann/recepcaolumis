@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Common;
@@ -101,6 +102,7 @@ public static partial class LeaseEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         ILeaseConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         ILeaseLifecycleCoordinator lifecycle,
         ILeaseOccurrencePlanner occurrencePlanner,
         TimeZoneInfo operationalTimeZone,
@@ -143,6 +145,12 @@ public static partial class LeaseEndpoints
         }
         if (overdue.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
+            contract!.OccupancyStartAt, contract.OccupancyEndAt, null,
+            enforceOperatingHours: contract.Mode == LeaseMode.Hourly, cancellationToken);
+        if (roomConflict != RoomAvailabilityConflict.None)
+            return AvailabilityConflict(roomConflict);
+
         var conflict = await conflictDetector.FindConflictAsync(
             request.RoomId, request.ProfessionalId, contract!.OccupancyStartAt,
             contract.OccupancyEndAt, null, cancellationToken);
@@ -173,6 +181,17 @@ public static partial class LeaseEndpoints
         return Results.Created($"/api/admin/leases/{lease.Id}",
             lease.ToResponse(names.Tenant, names.Professional, names.Room, now));
     }
+
+    private static IResult AvailabilityConflict(RoomAvailabilityConflict conflict) => conflict switch
+    {
+        RoomAvailabilityConflict.OutsideOperatingHours => Results.Json(new ApiError(
+            "ROOM_OUTSIDE_OPERATING_HOURS", "O período está fora do horário de funcionamento."),
+            statusCode: StatusCodes.Status409Conflict),
+        RoomAvailabilityConflict.RoomBlock => Results.Json(new ApiError(
+            "ROOM_BLOCKED", "A sala está bloqueada no período informado."),
+            statusCode: StatusCodes.Status409Conflict),
+        _ => throw new InvalidOperationException("Conflito de disponibilidade inesperado.")
+    };
 
     private static IQueryable<Lease> ApplyStatus(IQueryable<Lease> query, string status, DateTimeOffset now) => status switch
     {

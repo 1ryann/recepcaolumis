@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Infrastructure.Persistence;
@@ -98,6 +99,7 @@ public static partial class ReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -109,6 +111,10 @@ public static partial class ReservationEndpoints
         if (!await ResourcesAreActive(db, request.RoomId, request.ProfessionalId, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
+            request.StartAt, request.EndAt, null, enforceOperatingHours: true, cancellationToken);
+        if (roomConflict == RoomAvailabilityConflict.OutsideOperatingHours) return OutsideOperatingHours();
+        if (roomConflict == RoomAvailabilityConflict.RoomBlock) return RoomBlocked();
         var conflict = await conflictDetector.FindConflictAsync(
             request.RoomId, request.ProfessionalId, request.StartAt, request.EndAt, null, cancellationToken);
         if (conflict.Any) return Conflict();
@@ -136,6 +142,13 @@ public static partial class ReservationEndpoints
 
     private static bool ValidPeriod(Guid roomId, Guid professionalId, DateTimeOffset startAt, DateTimeOffset endAt) =>
         roomId != Guid.Empty && professionalId != Guid.Empty && endAt > startAt;
+
+    internal static IResult OutsideOperatingHours() => Results.Json(new ApiError(
+        "ROOM_OUTSIDE_OPERATING_HOURS", "O período está fora do horário de funcionamento."),
+        statusCode: StatusCodes.Status409Conflict);
+    internal static IResult RoomBlocked() => Results.Json(new ApiError(
+        "ROOM_BLOCKED", "A sala está bloqueada no período informado."),
+        statusCode: StatusCodes.Status409Conflict);
 
     private static async Task<bool> ResourcesAreActive(
         ApplicationDbContext db, Guid roomId, Guid professionalId, CancellationToken cancellationToken) =>

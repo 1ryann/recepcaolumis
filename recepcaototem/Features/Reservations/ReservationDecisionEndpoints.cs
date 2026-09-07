@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Reservations;
@@ -19,6 +20,7 @@ public static partial class ReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -39,6 +41,10 @@ public static partial class ReservationEndpoints
         if (!await ResourcesAreActive(db, original.RoomId, original.ProfessionalId, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
+        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(original.RoomId,
+            request.StartAt, request.EndAt, null, enforceOperatingHours: true, cancellationToken);
+        if (roomConflict == RoomAvailabilityConflict.OutsideOperatingHours) return OutsideOperatingHours();
+        if (roomConflict == RoomAvailabilityConflict.RoomBlock) return RoomBlocked();
         var conflict = await conflictDetector.FindConflictAsync(
             original.RoomId, original.ProfessionalId, request.StartAt, request.EndAt,
             original.Id, cancellationToken);
@@ -89,6 +95,7 @@ public static partial class ReservationEndpoints
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
         IReservationConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -121,6 +128,10 @@ public static partial class ReservationEndpoints
             if (!await ResourcesAreActive(db, reservation.RoomId, reservation.ProfessionalId, cancellationToken))
                 return Results.BadRequest(new ApiError(
                     "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
+            var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(reservation.RoomId,
+                reservation.StartAt, reservation.EndAt, null, enforceOperatingHours: true, cancellationToken);
+            if (roomConflict == RoomAvailabilityConflict.OutsideOperatingHours) return OutsideOperatingHours();
+            if (roomConflict == RoomAvailabilityConflict.RoomBlock) return RoomBlocked();
             var conflict = await conflictDetector.FindConflictAsync(
                 reservation.RoomId, reservation.ProfessionalId, reservation.StartAt, reservation.EndAt,
                 original?.Id, cancellationToken);
