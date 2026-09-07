@@ -69,14 +69,19 @@ public sealed class AdminCliSecurityTests
         await db.Database.MigrateAsync();
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditEntries\"; DELETE FROM \"AspNetUserRoles\"; DELETE FROM \"AspNetUsers\"; DELETE FROM \"AspNetRoles\"");
         var bootstrapper = ActivatorUtilities.CreateInstance<AdminBootstrapper>(scope.ServiceProvider);
+        var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
         Assert.Equal(BootstrapOutcome.Created,
             await bootstrapper.BootstrapAsync("First Admin", "first.admin@lumis.test", "Valid-Password-123!", default));
+
+        var customerRole = await roles.FindByNameAsync(SystemRoles.Customer);
+        Assert.NotNull(customerRole);
+        Assert.True((await roles.DeleteAsync(customerRole)).Succeeded);
+
         Assert.Equal(BootstrapOutcome.AlreadyProvisioned,
             await bootstrapper.BootstrapAsync("Second Admin", "second.admin@lumis.test", "Valid-Password-456!", default));
 
-        var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        foreach (var role in SystemRoles.All) Assert.True(await roles.RoleExistsAsync(role));
+        foreach (var role in SystemRoles.AuthenticationRoles) Assert.True(await roles.RoleExistsAsync(role));
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var admins = await users.GetUsersInRoleAsync(SystemRoles.Administrador);
         Assert.Single(admins);

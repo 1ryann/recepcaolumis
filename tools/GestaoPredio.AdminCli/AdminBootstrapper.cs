@@ -38,7 +38,11 @@ public sealed class AdminBootstrapper(
 
         if ((await users.GetUsersInRoleAsync(SystemRoles.Administrador)).Count > 0)
         {
-            await transaction.RollbackAsync(cancellationToken);
+            // Role provisioning is independent from creating the first admin.
+            // Commit any missing roles even when the administrator already exists;
+            // otherwise a newly introduced role (such as CUSTOMER) is silently
+            // discarded and its public registration flow remains unavailable.
+            await transaction.CommitAsync(cancellationToken);
             return BootstrapOutcome.AlreadyProvisioned;
         }
 

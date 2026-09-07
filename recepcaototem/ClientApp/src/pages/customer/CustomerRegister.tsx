@@ -4,7 +4,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { customerApi } from '../../api/modules'
 
-const passwordHint = 'Use pelo menos 8 caracteres, com letras e números.'
+const passwordHint = 'Use pelo menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'
+
+function isValidCustomerPassword(password: string) {
+  return password.length >= 12
+    && /[a-z]/.test(password)
+    && /[A-Z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password)
+}
 
 export function CustomerRegister() {
   const navigate = useNavigate()
@@ -19,7 +27,7 @@ export function CustomerRegister() {
     setError('')
     const name = form.name.trim()
     if (name.length < 2) return setError('Informe seu nome completo.')
-    if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) return setError(passwordHint)
+    if (!isValidCustomerPassword(form.password)) return setError(passwordHint)
     if (form.password !== form.confirmation) return setError('A confirmação de senha não confere.')
     setLoading(true)
     try {
