@@ -23,10 +23,12 @@ public static class CustomerEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> Register(CustomerRegisterRequest request, HttpContext context,
+    private static async Task<IResult> Register(CustomerRegisterRequest request, HttpContext context, CustomerPublicRateLimiter limiter,
         UserManager<ApplicationUser> users, RoleManager<IdentityRole> roles, ApplicationDbContext db,
         CancellationToken cancellationToken)
     {
+        using var rateLease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Email ?? string.Empty, cancellationToken);
+        if (!rateLease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         var name = request.Name?.Trim() ?? string.Empty;
         var email = request.Email?.Trim() ?? string.Empty;
         if (request.Password != request.Confirmation || name.Length is < 1 or > Customer.MaximumNameLength ||

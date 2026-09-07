@@ -45,19 +45,23 @@ public static class TotemEndpoints
         return await CustomerSchedulingEndpointsForTotem.Availability(request, db, availability, conflicts, timeZone, ct);
     }
 
-    private static async Task<IResult> ResolveCustomer(TotemCustomerResolveRequest request, ApplicationDbContext db, CancellationToken ct)
+    private static async Task<IResult> ResolveCustomer(TotemCustomerResolveRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, CancellationToken ct)
     {
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Phone ?? string.Empty, ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         if (!GestaoPredio.Domain.Professionals.WhatsAppNormalizer.TryNormalize(request.Phone, out var phone)) return Invalid();
         var customer = await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedPhone == phone && x.IsActive, ct);
         if (customer is null) return Results.Ok(new { exists = false });
         return Results.Ok(new { exists = true, maskedName = MaskName(customer.Name) });
     }
 
-    private static async Task<IResult> CreateReservation(TotemReservationRequest request, ApplicationDbContext db,
+    private static async Task<IResult> CreateReservation(TotemReservationRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db,
         ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts, IRoomAvailabilityService availability,
         TimeProvider time, CancellationToken ct)
     {
-        if (!WhatsApp(request.Phone, out var phone) || request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Invalid();
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Phone ?? string.Empty, ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+        if (!WhatsApp(request.Phone ?? string.Empty, out var phone) || request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Invalid();
         var professional = await db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
         var customer = await db.Customers.SingleOrDefaultAsync(x => x.NormalizedPhone == phone, ct);
@@ -82,16 +86,20 @@ public static class TotemEndpoints
         return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
     }
 
-    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var result = await FindCheckIn(request.Token, db, time, ct);
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+        var result = await FindCheckIn(request.Token ?? string.Empty, db, time, ct);
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var result = await FindCheckIn(request.Token, db, time, ct);
+        var result = await FindCheckIn(request.Token ?? string.Empty, db, time, ct);
         if (result is null) return InvalidCheckIn();
         var (token, reservation, customer, preview) = result.Value;
         var existing = await db.Visits.SingleOrDefaultAsync(x => x.ReservationId == reservation.Id && x.IsOpen, ct);

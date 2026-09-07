@@ -55,6 +55,7 @@ builder.Services.AddLumisIdentity();
 builder.Services.AddLumisAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<LoginRateLimiter>();
+builder.Services.AddSingleton<CustomerPublicRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
