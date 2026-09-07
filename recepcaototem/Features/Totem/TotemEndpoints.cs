@@ -42,7 +42,7 @@ public static class TotemEndpoints
         TimeZoneInfo timeZone, CancellationToken ct)
     {
         var request = new CustomerAvailabilityRequest(professionalId, date, durationMinutes);
-        return await CustomerSchedulingEndpointsForTotem.Availability(request, db, availability, conflicts, timeZone, ct);
+        return await CustomerSchedulingEndpoints.Availability(request, db, availability, conflicts, timeZone, ct);
     }
 
     private static async Task<IResult> ResolveCustomer(TotemCustomerResolveRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, CancellationToken ct)
@@ -110,7 +110,9 @@ public static class TotemEndpoints
         var result = await FindCheckIn(request.Token ?? string.Empty, db, time, ct);
         if (result is null) return InvalidCheckIn();
         var (token, reservation, customer, preview) = result.Value;
-        var existing = await db.Visits.SingleOrDefaultAsync(x => x.ReservationId == reservation.Id && x.IsOpen, ct);
+        var existing = await db.Visits.SingleOrDefaultAsync(
+            x => x.ReservationId == reservation.Id &&
+                 (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService), ct);
         if (existing is not null) return Results.Ok(new { visitId = existing.Id, status = existing.Status.ToString().ToUpperInvariant() });
         if (token.UsedAt is not null) return InvalidCheckIn();
         var visit = Visit.Arrive(reservation.ProfessionalId, reservation.RoomId, reservation.Id, customer.Name, "TOTEM", time.GetUtcNow(), customer.Id);
@@ -147,28 +149,4 @@ public static class TotemEndpoints
     private static bool WhatsApp(string input, out string phone) => GestaoPredio.Domain.Professionals.WhatsAppNormalizer.TryNormalize(input, out phone);
     private static IResult Invalid() => Results.BadRequest(new ApiError("INVALID_TOTEM_REQUEST", "Não foi possível concluir a operação."));
     private static IResult InvalidCheckIn() => Results.BadRequest(new ApiError("INVALID_CHECK_IN", "Não foi possível validar o check-in."));
-}
-
-internal static class CustomerSchedulingEndpointsForTotem
-{
-    internal static async Task<IResult> Availability(CustomerAvailabilityRequest request, ApplicationDbContext db, IRoomAvailabilityService availability, IReservationConflictDetector conflicts, TimeZoneInfo timeZone, CancellationToken ct)
-    {
-        if (request.ProfessionalId == Guid.Empty || request.DurationMinutes is < 15 or > 480 || request.DurationMinutes % 15 != 0) return Results.BadRequest(new ApiError("INVALID_AVAILABILITY", "Os dados de disponibilidade são inválidos."));
-        if (!await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct)) return Results.NotFound();
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var intervals = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct); var slots = new List<AvailabilitySlotResponse>();
-        var localStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified); var evaluator = new OperatingHoursEvaluator(timeZone);
-        var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive).Select(x => x.Id).ToListAsync(ct);
-        for (var minute = 0; minute < 1440; minute += 15)
-        {
-            var startLocal = localStart.AddMinutes(minute); var endLocal = startLocal.AddMinutes(request.DurationMinutes); if (endLocal.Date != localStart.Date) continue;
-            var start = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(startLocal, timeZone)); var end = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(endLocal, timeZone));
-            if (!evaluator.Contains(intervals, start, end)) continue;
-            foreach (var room in rooms)
-            {
-                if (await availability.CheckScheduleAndBlocksAsync(room, start, end, null, true, ct) == RoomAvailabilityConflict.None && !(await conflicts.FindConflictAsync(room, request.ProfessionalId, start, end, null, ct)).Any) { slots.Add(new AvailabilitySlotResponse(start, end)); break; }
-            }
-        }
-        return Results.Ok(slots.ToArray());
-    }
 }
