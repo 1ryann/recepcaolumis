@@ -160,6 +160,24 @@ public static class VisitEndpoints
             await LoadResponse(db, visit.Id, null, cancellationToken));
     }
 
+    internal static Task<IResult> StartForReception(Guid id, VisitConcurrencyRequest request, HttpContext context,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        Mutate(id, request.ConcurrencyToken, VisitMutation.Start, null, null, context, db, resourceLock,
+            timeProvider, cancellationToken);
+
+    internal static Task<IResult> EndForReception(Guid id, VisitConcurrencyRequest request, HttpContext context,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        Mutate(id, request.ConcurrencyToken, VisitMutation.End, null, null, context, db, resourceLock,
+            timeProvider, cancellationToken);
+
+    internal static Task<IResult> CancelForReception(Guid id, VisitConcurrencyRequest request, HttpContext context,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+        Mutate(id, request.ConcurrencyToken, VisitMutation.Cancel, null, null, context, db, resourceLock,
+            timeProvider, cancellationToken);
+
     private static Task<IResult> StartAdmin(Guid id, VisitConcurrencyRequest request, HttpContext context,
         ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
         CancellationToken cancellationToken) =>

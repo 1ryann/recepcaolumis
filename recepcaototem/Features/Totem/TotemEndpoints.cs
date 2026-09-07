@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Leases;
@@ -17,7 +18,7 @@ namespace recepcaototem.Features.Totem;
 public sealed record TotemCustomerResolveRequest(string Name, string Phone) : IStrictModuleRequest;
 public sealed record TotemReservationRequest(string Name, string Phone, Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt) : IStrictModuleRequest;
 public sealed record TotemCheckInRequest(string Token) : IStrictModuleRequest;
-public sealed record TotemProfessionalResponse(Guid Id, string Name, string Profession);
+public sealed record TotemProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
 public sealed record TotemCheckInPreview(string Professional, string Room, DateTimeOffset StartAt, DateTimeOffset EndAt, bool Eligible);
 
 public static class TotemEndpoints
@@ -35,7 +36,7 @@ public static class TotemEndpoints
 
     private static async Task<IResult> Professionals(ApplicationDbContext db, CancellationToken ct) =>
         Results.Ok(await db.Professionals.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.NormalizedName)
-            .Select(x => new TotemProfessionalResponse(x.Id, x.Name, x.Profession)).ToArrayAsync(ct));
+            .Select(x => new TotemProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
 
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,
         ApplicationDbContext db, IRoomAvailabilityService availability, IReservationConflictDetector conflicts,
@@ -61,6 +62,19 @@ public static class TotemEndpoints
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Phone ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+        return await CreateReservationCore(request, context, db, resourceLock, conflicts, availability, time, ct, "TOTEM");
+    }
+
+    internal static Task<IResult> CreateAssistedReservation(TotemReservationRequest request, HttpContext context,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
+        IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
+        CreateReservationCore(request, context, db, resourceLock, conflicts, availability, time, ct,
+            context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "RECEPTION");
+
+    private static async Task<IResult> CreateReservationCore(TotemReservationRequest request, HttpContext context, ApplicationDbContext db,
+        ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts, IRoomAvailabilityService availability,
+        TimeProvider time, CancellationToken ct, string actor)
+    {
         if (!WhatsApp(request.Phone ?? string.Empty, out var phone) || request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Invalid();
         var professional = await db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
@@ -84,7 +98,7 @@ public static class TotemEndpoints
         {
             if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None) continue;
             if ((await conflicts.FindConflictAsync(roomId, request.ProfessionalId, request.StartAt, request.EndAt, null, ct)).Any) continue;
-            var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt, "TOTEM", time.GetUtcNow(), customer.Id);
+            var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt, actor, time.GetUtcNow(), customer.Id);
             db.Reservations.Add(reservation);
             db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
             await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
