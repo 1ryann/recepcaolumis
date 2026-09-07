@@ -156,14 +156,15 @@ public static class CustomerSchedulingEndpoints
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
         if (reservation is null) return Results.NotFound();
-        if (reservation.Status != ReservationStatus.Approved || reservation.EndAt <= time.GetUtcNow())
+        var now = time.GetUtcNow();
+        if (reservation.Status != ReservationStatus.Approved || reservation.EndAt <= now || now < reservation.StartAt.Subtract(TimeSpan.FromHours(1)))
             return Results.BadRequest(new ApiError("CHECK_IN_NOT_ELIGIBLE", "O check-in não está disponível para esta reserva."));
         var raw = RandomNumberGenerator.GetBytes(32);
         var hash = SHA256.HashData(raw);
         var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
-        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, time.GetUtcNow(), reservation.EndAt));
-        else token.Rotate(hash, time.GetUtcNow(), reservation.EndAt);
-        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
+        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, now, reservation.EndAt));
+        else token.Rotate(hash, now, reservation.EndAt);
+        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = now, CorrelationId = context.TraceIdentifier });
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });
     }
