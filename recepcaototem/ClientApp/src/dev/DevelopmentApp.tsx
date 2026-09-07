@@ -11,8 +11,12 @@ import { Professionals } from '../pages/admin/Professionals'
 import { Rooms } from '../pages/admin/Rooms'
 import { Settings } from '../pages/admin/Settings'
 import { Visits } from '../pages/admin/Visits'
-import { CustomerComingSoon, CustomerHome, CustomerReservations, CustomerShell } from '../pages/customer/CustomerHome'
+import { ReceptionMonitor } from '../pages/admin/ReceptionMonitor'
+import { CustomerHome, CustomerReservations, CustomerShell } from '../pages/customer/CustomerHome'
 import { CustomerRegister } from '../pages/customer/CustomerRegister'
+import { CustomerBooking } from '../pages/customer/CustomerBooking'
+import { CustomerReservationDetail } from '../pages/customer/CustomerReservationDetail'
+import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from '../pages/professional/ProfessionalHome'
 import { DevelopmentAppStore } from './DevelopmentAppStore'
 
@@ -24,12 +28,14 @@ export default function DevelopmentApp() {
         <Route path="/login" element={<Login />} />
         <Route path="/cliente/login" element={<Login audience="customer" />} />
         <Route path="/cliente/cadastro" element={<CustomerRegister />} />
+        <Route path="/totem/check-in" element={<TotemCheckIn />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
           <Route path="/cliente" element={<CustomerShell />}>
             <Route index element={<CustomerHome />} />
             <Route path="agendamentos" element={<CustomerReservations />} />
-            <Route path="agendar" element={<CustomerComingSoon title="Agendar atendimento" />} />
+            <Route path="agendar" element={<CustomerBooking />} />
+            <Route path="agendamentos/:id" element={<CustomerReservationDetail />} />
           </Route>
         </Route>
         <Route element={<ProtectedRoute allowedRoles={['PROFISSIONAL']} />}>
@@ -51,6 +57,7 @@ export default function DevelopmentApp() {
             <Route path="locacoes" element={<Leases />} />
             <Route path="reservas" element={<Reservations />} />
             <Route path="visitas" element={<Visits />} />
+            <Route path="recepcao" element={<ReceptionMonitor />} />
             <Route path="configuracoes" element={<Settings />} />
           </Route>
         </Route>

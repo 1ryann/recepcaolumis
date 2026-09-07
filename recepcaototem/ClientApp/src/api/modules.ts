@@ -54,6 +54,24 @@ export interface CustomerRegisterInput {
   confirmation: string
 }
 
+export interface AvailabilitySlotDto {
+  startAt: string
+  endAt: string
+}
+
+export interface CheckInPreviewDto {
+  professional: string
+  room: string
+  startAt: string
+  endAt: string
+  eligible: boolean
+}
+
+export interface CheckInResultDto {
+  visitId: string
+  status: VisitStatus
+}
+
 export interface ProfessionalInput {
   name: string
   profession: string
@@ -202,6 +220,38 @@ export interface VisitListQuery {
   page: number; pageSize: number
 }
 export interface VisitInput { professionalId: string, roomId: string | null, reservationId: string | null, visitorName: string }
+
+export interface ReceptionVisitDto {
+  id: string
+  professionalId: string
+  professionalName: string
+  roomId: string | null
+  roomName: string | null
+  reservationId: string | null
+  customerId: string | null
+  customerName: string | null
+  visitorName: string
+  status: VisitStatus
+  arrivedAt: string
+  serviceStartedAt: string | null
+  endedAt: string | null
+  concurrencyToken: string
+}
+
+export interface ReceptionOverviewDto {
+  visitorsWaiting: number
+  visitsInService: number
+  professionalsAvailable: number
+  professionalsInService: number
+  roomsAvailable: number
+  roomsOccupied: number
+  reservationsToday: number
+  upcomingReservations: unknown[]
+  waitingVisits: ReceptionVisitDto[]
+  currentVisits: ReceptionVisitDto[]
+  warningAlerts: number
+  criticalAlerts: number
+}
 
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
@@ -398,7 +448,43 @@ export const customerApi = {
   professionals(signal?: AbortSignal) {
     return apiClient.get<CustomerProfessionalDto[]>('/api/customer/professionals', { signal })
   },
+  availability(query: { professionalId: string, date: string, durationMinutes: number }, signal?: AbortSignal) {
+    return apiClient.get<AvailabilitySlotDto[]>('/api/customer/availability', { query, signal })
+  },
   reservations(query: { page: number, pageSize: number }, signal?: AbortSignal) {
     return apiClient.get<PagedResponse<ReservationDto>>('/api/customer/reservations', { query, signal })
+  },
+  reservation(id: string, signal?: AbortSignal) {
+    return apiClient.get<ReservationDto>(`/api/customer/reservations/${encodeURIComponent(id)}`, { signal })
+  },
+  createReservation(input: { professionalId: string, startAt: string, endAt: string }) {
+    return apiClient.post<ReservationDto>('/api/customer/reservations', input)
+  },
+  issueCheckInToken(id: string) {
+    return apiClient.post<{ token: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
+  },
+}
+
+export const totemApi = {
+  resolveCheckIn(token: string) {
+    return apiClient.post<CheckInPreviewDto>('/api/totem/check-in/resolve', { token })
+  },
+  confirmCheckIn(token: string) {
+    return apiClient.post<CheckInResultDto>('/api/totem/check-in/confirm', { token })
+  },
+}
+
+export const receptionApi = {
+  overview(signal?: AbortSignal) {
+    return apiClient.get<ReceptionOverviewDto>('/api/reception/overview', { signal })
+  },
+  visits(query: { status?: VisitStatus | 'all', page: number, pageSize: number }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<ReceptionVisitDto>>('/api/reception/visits', { query, signal })
+  },
+  startVisit(id: string, concurrencyToken: string) {
+    return apiClient.post<ReceptionVisitDto>(`/api/reception/visits/${encodeURIComponent(id)}/start`, { concurrencyToken })
+  },
+  endVisit(id: string, concurrencyToken: string) {
+    return apiClient.post<ReceptionVisitDto>(`/api/reception/visits/${encodeURIComponent(id)}/end`, { concurrencyToken })
   },
 }

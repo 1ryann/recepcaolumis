@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Camera, Check, DoorOpen, MoveHorizontal, Phone, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Camera, Check, DoorOpen, MoveHorizontal, Phone, QrCode, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react'
 import { type FormEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type { Professional } from '../dev/mock'
 import { useAppStore } from '../dev/AppStore'
@@ -154,6 +154,7 @@ export function Reception() {
         <div className="lumis-gallery-actions">
           <label className="lumis-gallery-search"><Search size={25} /><input value={professionalQuery} onChange={(event) => setProfessionalQuery(event.target.value)} placeholder="Buscar profissional ou sala" aria-label="Buscar profissional ou sala" />{professionalQuery && <button type="button" onClick={() => setProfessionalQuery('')} aria-label="Limpar busca">×</button>}</label>
           <a className="lumis-gallery-customer" href="/cliente/login"><UserRound size={21} /><span><small>Para quem já tem cadastro</small><strong>Área do cliente</strong></span><ArrowRight size={19} /></a>
+          <a className="lumis-gallery-customer" href="/totem/check-in"><QrCode size={21} /><span><small>Já tem horário marcado?</small><strong>Fazer check-in</strong></span><ArrowRight size={19} /></a>
           <button className="lumis-gallery-rent" type="button" onClick={() => setRentalOpen(true)}><BriefcaseBusiness size={23} /><span><small>Espaços profissionais</small><strong>Quero alugar um espaço</strong></span><ArrowRight size={21} /></button>
         </div>
       </section> : <>
