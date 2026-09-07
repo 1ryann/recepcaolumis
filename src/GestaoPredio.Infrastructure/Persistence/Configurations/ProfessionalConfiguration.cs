@@ -16,6 +16,7 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
         entity.Property(x => x.NormalizedName).HasMaxLength(400).IsRequired();
         entity.Property(x => x.Profession).HasMaxLength(150).IsRequired();
         entity.Property(x => x.NormalizedProfession).HasMaxLength(300).IsRequired();
+        entity.Property(x => x.Description).HasMaxLength(500);
         entity.Property(x => x.WhatsApp).HasMaxLength(16).IsUnicode(false).IsRequired();
         entity.Property(x => x.ApplicationUserId).HasMaxLength(450);
         entity.Property(x => x.Version).IsRowVersion();

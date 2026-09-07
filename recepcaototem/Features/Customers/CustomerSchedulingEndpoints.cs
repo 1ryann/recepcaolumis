@@ -21,7 +21,7 @@ public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOff
 public sealed record CustomerReservationRescheduleRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationPageResponse(ReservationResponse[] Items, int Page, int PageSize, int TotalCount);
-public sealed record CustomerProfessionalResponse(Guid Id, string Name, string Profession);
+public sealed record CustomerProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
 public sealed record AvailabilitySlotResponse(DateTimeOffset StartAt, DateTimeOffset EndAt);
 
 public static class CustomerSchedulingEndpoints
@@ -43,7 +43,7 @@ public static class CustomerSchedulingEndpoints
     private static async Task<IResult> ListProfessionals(ApplicationDbContext db, CancellationToken ct) =>
         Results.Ok(await db.Professionals.AsNoTracking().Where(x => x.IsActive)
             .OrderBy(x => x.NormalizedName).ThenBy(x => x.Id)
-            .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession)).ToArrayAsync(ct));
+            .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
 
     internal static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request, ApplicationDbContext db,
         IRoomAvailabilityService availability, IReservationConflictDetector conflicts, TimeZoneInfo timeZone,

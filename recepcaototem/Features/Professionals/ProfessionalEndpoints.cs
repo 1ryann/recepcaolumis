@@ -68,11 +68,11 @@ public static class ProfessionalEndpoints
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
-        if (!ProfessionalInput.TryValidate(request.Name, request.Profession, request.WhatsApp, out var input))
+        if (!ProfessionalInput.TryValidate(request.Name, request.Profession, request.WhatsApp, request.Description, out var input))
             return InvalidProfessional();
 
         var now = timeProvider.GetUtcNow();
-        var professional = Professional.Create(input!.Name, input.Profession, input.WhatsApp, now);
+        var professional = Professional.Create(input!.Name, input.Profession, input.WhatsApp, now, input.Description);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.Professionals.Add(professional);
         db.AuditEntries.Add(CreateAudit(context, professional.Id, "PROFESSIONAL_CREATED", now));
@@ -95,18 +95,19 @@ public static class ProfessionalEndpoints
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
         if (professional.Version != expectedVersion) return Modified();
-        if (!ProfessionalInput.TryValidate(request.Name, request.Profession, request.WhatsApp, out var input))
+        if (!ProfessionalInput.TryValidate(request.Name, request.Profession, request.WhatsApp, request.Description, out var input))
             return InvalidProfessional();
 
-        var changedFields = new List<string>(3);
+        var changedFields = new List<string>(4);
         if (!string.Equals(professional.Name, input!.Name, StringComparison.Ordinal)) changedFields.Add(AuditFields.Name);
         if (!string.Equals(professional.Profession, input.Profession, StringComparison.Ordinal)) changedFields.Add(AuditFields.Profession);
         if (!string.Equals(professional.WhatsApp, input.WhatsApp, StringComparison.Ordinal)) changedFields.Add(AuditFields.WhatsApp);
+        if (!string.Equals(professional.Description, input.Description, StringComparison.Ordinal)) changedFields.Add("Description");
         if (changedFields.Count == 0) return Results.Ok(professional.ToResponse());
 
         db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
-        professional.Update(input.Name, input.Profession, input.WhatsApp, now);
+        professional.Update(input.Name, input.Profession, input.WhatsApp, now, input.Description);
         var audit = CreateAudit(context, professional.Id, "PROFESSIONAL_UPDATED", now);
         audit.SetChangedFields(changedFields);
         db.AuditEntries.Add(audit);

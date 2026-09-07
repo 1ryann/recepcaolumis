@@ -40,7 +40,8 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
 
         var response = await factory.PostWithCsrfAsync("/api/admin/professionals", new
         {
-            name = "  Ána   Silva ", profession = " Fisióterapia ", whatsApp = "(65) 99999-9999"
+            name = "  Ána   Silva ", profession = " Fisióterapia ", whatsApp = "(65) 99999-9999",
+            description = "  Atendimento clínico  "
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -48,6 +49,7 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
         Assert.NotEqual(Guid.Empty, created.Id);
         Assert.True(created.IsActive);
         Assert.Equal("+5565999999999", created.WhatsApp);
+        Assert.Equal("Atendimento clínico", created.Description);
         Assert.NotEmpty(created.ConcurrencyToken);
         Assert.Equal($"/api/admin/professionals/{created.Id}", response.Headers.Location?.ToString());
 
@@ -61,6 +63,37 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
         Assert.Equal(created.Id, audit.TargetEntityId);
         Assert.Null(audit.ChangedFields);
         Assert.DoesNotContain("+5565", System.Text.Json.JsonSerializer.Serialize(audit));
+    }
+
+    [Fact]
+    public async Task Description_is_exposed_consistently_by_reception_totem_and_customer_projections()
+    {
+        await factory.ResetAsync();
+        await LoginAsAsync(SystemRoles.Administrador, $"admin-description-{Guid.NewGuid():N}@lumis.test");
+
+        var create = await factory.PostWithCsrfAsync("/api/admin/professionals", new
+        {
+            name = "Profissional Descrição", profession = "Fisioterapia", whatsApp = "65999999999",
+            description = "  Atendimento especializado  "
+        });
+        var created = (await create.Content.ReadFromJsonAsync<ProfessionalPayload>())!;
+
+        var reception = await factory.Client.GetAsync("/api/reception/professionals");
+        Assert.Contains("Atendimento especializado", await reception.Content.ReadAsStringAsync());
+        var totem = await factory.Client.GetAsync("/api/totem/professionals");
+        Assert.Contains("Atendimento especializado", await totem.Content.ReadAsStringAsync());
+
+        var email = $"customer-description-{Guid.NewGuid():N}@lumis.test";
+        var register = await factory.PostWithCsrfAsync("/api/customer/register", new
+        {
+            name = "Cliente Descrição", phone = "69988887777", email,
+            password = Password, confirmation = Password
+        });
+        Assert.Equal(HttpStatusCode.Created, register.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
+        var customer = await factory.Client.GetAsync("/api/customer/professionals");
+        Assert.Contains("Atendimento especializado", await customer.Content.ReadAsStringAsync());
+        Assert.NotEqual(Guid.Empty, created.Id);
     }
 
     [Theory]
@@ -145,7 +178,7 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
         var response = await factory.PutWithCsrfAsync($"/api/admin/professionals/{created.Id}", new
         {
             name = " Bêatriz ", profession = " Terapía ", whatsApp = "(65) 98888-7777",
-            concurrencyToken = created.ConcurrencyToken
+            description = "  Nova descrição  ", concurrencyToken = created.ConcurrencyToken
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -158,7 +191,8 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
         Assert.Equal("BEATRIZ", stored.NormalizedName);
         Assert.Equal("TERAPIA", stored.NormalizedProfession);
         var audit = await db.AuditEntries.SingleAsync(x => x.Action == "PROFESSIONAL_UPDATED");
-        Assert.Equal("Name,Profession,WhatsApp", audit.ChangedFields);
+        Assert.Equal("Description,Name,Profession,WhatsApp", audit.ChangedFields);
+        Assert.Equal("Nova descrição", updated.Description);
         Assert.DoesNotContain("+5565", audit.ChangedFields!);
     }
 
@@ -206,6 +240,6 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
     }
 
     private sealed record ProfessionalPayload(Guid Id, string Name, string Profession, string WhatsApp,
-        bool IsActive, DateTimeOffset UpdatedAt, string ConcurrencyToken);
+        bool IsActive, DateTimeOffset UpdatedAt, string ConcurrencyToken, string? Description);
     private sealed record ErrorPayload(string Code, string Message);
 }

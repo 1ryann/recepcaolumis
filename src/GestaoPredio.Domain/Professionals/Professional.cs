@@ -13,6 +13,7 @@ public sealed class Professional
     public string NormalizedName { get; private set; } = "";
     public string Profession { get; private set; } = "";
     public string NormalizedProfession { get; private set; } = "";
+    public string? Description { get; private set; }
     public string WhatsApp { get; private set; } = "";
     public Guid? PhotoFileId { get; private set; }
     public string? ApplicationUserId { get; private set; }
@@ -21,7 +22,7 @@ public sealed class Professional
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
 
-    public static Professional Create(string name, string profession, string whatsApp, DateTimeOffset occurredAt)
+    public static Professional Create(string name, string profession, string whatsApp, DateTimeOffset occurredAt, string? description = null)
     {
         var professional = new Professional
         {
@@ -31,13 +32,13 @@ public sealed class Professional
             UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt)
         };
 
-        professional.SetProfile(name, profession, whatsApp);
+        professional.SetProfile(name, profession, whatsApp, description);
         return professional;
     }
 
-    public void Update(string name, string profession, string whatsApp, DateTimeOffset occurredAt)
+    public void Update(string name, string profession, string whatsApp, DateTimeOffset occurredAt, string? description = null)
     {
-        SetProfile(name, profession, whatsApp);
+        SetProfile(name, profession, whatsApp, description);
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
@@ -79,7 +80,7 @@ public sealed class Professional
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
-    private void SetProfile(string name, string profession, string whatsApp)
+    private void SetProfile(string name, string profession, string whatsApp, string? description)
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(profession);
@@ -103,7 +104,17 @@ public sealed class Professional
         NormalizedName = TextNormalizer.Normalize(name);
         Profession = profession;
         NormalizedProfession = TextNormalizer.Normalize(profession);
+        Description = NormalizeDescription(description);
         WhatsApp = canonicalWhatsApp;
+    }
+
+    private static string? NormalizeDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description)) return null;
+        var trimmed = description.Trim();
+        if (trimmed.Length > 500 || trimmed.Contains('<') || trimmed.Contains('>'))
+            throw new ArgumentOutOfRangeException(nameof(description), "A descrição deve ter até 500 caracteres e não conter HTML.");
+        return trimmed;
     }
 
     private void SetActive(bool isActive, DateTimeOffset occurredAt)

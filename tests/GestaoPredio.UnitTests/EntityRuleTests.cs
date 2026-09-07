@@ -26,6 +26,37 @@ public sealed class EntityRuleTests
     }
 
     [Fact]
+    public void Professional_description_is_trimmed_and_whitespace_becomes_null()
+    {
+        var occurredAt = new DateTimeOffset(2026, 9, 5, 17, 20, 0, TimeSpan.Zero);
+
+        var professional = Professional.Create(
+            "Ana Silva",
+            "Fisioterapeuta",
+            "(65) 99999-1234",
+            occurredAt,
+            "  Atendimento clínico e avaliação  ");
+
+        Assert.Equal("Atendimento clínico e avaliação", professional.Description);
+
+        professional.Update("Ana Silva", "Fisioterapeuta", "(65) 99999-1234", occurredAt.AddMinutes(1), " \t\r\n ");
+
+        Assert.Null(professional.Description);
+    }
+
+    [Fact]
+    public void Professional_description_rejects_html_and_more_than_500_characters()
+    {
+        var occurredAt = new DateTimeOffset(2026, 9, 5, 17, 20, 0, TimeSpan.Zero);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Professional.Create("Ana Silva", "Fisioterapeuta", "(65) 99999-1234", occurredAt, "<b>texto</b>"));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Professional.Create("Ana Silva", "Fisioterapeuta", "(65) 99999-1234", occurredAt, new string('x', 501)));
+    }
+
+    [Fact]
     public void Professional_allows_identical_records_while_assigning_distinct_technical_ids()
     {
         var occurredAt = new DateTimeOffset(2026, 9, 5, 17, 20, 0, TimeSpan.Zero);
