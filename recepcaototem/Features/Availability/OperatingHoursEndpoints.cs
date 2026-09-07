@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using GestaoPredio.Application.Availability;
+using GestaoPredio.Application.Leases;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Availability;
 using GestaoPredio.Infrastructure.Persistence;
@@ -32,7 +33,8 @@ public static class OperatingHoursEndpoints
     }
 
     private static async Task<IResult> Put(UpdateOperatingHoursRequest request, HttpContext context,
-        ApplicationDbContext db, IRoomAvailabilityService availability, TimeProvider timeProvider,
+        ApplicationDbContext db, IRoomAvailabilityService availability, ILeaseResourceLock resourceLock,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
         if (!TryBuildIntervals(request.Days, out var proposed)) return InvalidSchedule();
@@ -62,6 +64,9 @@ public static class OperatingHoursEndpoints
             schedule.MarkUpdated(now);
         }
 
+        var roomIds = await db.Rooms.AsNoTracking().OrderBy(value => value.Id)
+            .Select(value => value.Id).ToArrayAsync(cancellationToken);
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, []), cancellationToken);
         if (!await availability.CanApplyScheduleAsync(proposed, now, cancellationToken))
             return Results.Json(new ApiError("OPERATING_HOURS_CONFLICT",
                 "O novo horário deixaria uma reserva ou ocupação válida fora do funcionamento."),
