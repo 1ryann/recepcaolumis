@@ -146,8 +146,7 @@ public static partial class LeaseEndpoints
         if (overdue.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
         var roomConflict = await roomAvailability.CheckLeaseRoomAsync(request.RoomId,
-            contract!.OccupancyStartAt, contract.OccupancyEndAt,
-            enforceOperatingHours: contract.Mode == LeaseMode.Hourly, cancellationToken);
+            contract!.OccupancyStartAt, contract.OccupancyEndAt, contract.Mode, cancellationToken);
         if (roomConflict != RoomAvailabilityConflict.None)
             return AvailabilityConflict(roomConflict);
 

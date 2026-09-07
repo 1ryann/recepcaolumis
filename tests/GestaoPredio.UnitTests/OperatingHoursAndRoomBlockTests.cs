@@ -49,6 +49,18 @@ public sealed class OperatingHoursAndRoomBlockTests
     }
 
     [Fact]
+    public void Civil_day_is_open_when_it_has_at_least_one_local_interval()
+    {
+        var evaluator = new OperatingHoursEvaluator(TimeZone);
+        var intervals = OperatingHourInterval.CreateDay(OperatingHoursSchedule.SingletonId,
+            DayOfWeek.Monday, [new LocalTimeRange(new TimeOnly(8, 0), new TimeOnly(12, 0))]);
+        var mondayAtMidnightUtc = new DateTimeOffset(2027, 1, 4, 4, 0, 0, TimeSpan.Zero);
+
+        Assert.True(evaluator.IsCivilDayOpen(intervals, mondayAtMidnightUtc));
+        Assert.False(evaluator.IsCivilDayOpen(intervals, mondayAtMidnightUtc.AddDays(1)));
+    }
+
+    [Fact]
     public void Room_block_requires_a_valid_period_reason_and_supports_logical_cancellation()
     {
         var now = DateTimeOffset.UtcNow;

@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Availability;
+using GestaoPredio.Domain.Leases;
 
 namespace GestaoPredio.Application.Availability;
 
@@ -22,7 +23,7 @@ public interface IRoomAvailabilityService
         CancellationToken cancellationToken);
 
     Task<RoomAvailabilityConflict> CheckLeaseRoomAsync(Guid roomId,
-        DateTimeOffset startAt, DateTimeOffset? endAt, bool enforceOperatingHours,
+        DateTimeOffset startAt, DateTimeOffset? endAt, LeaseMode mode,
         CancellationToken cancellationToken);
 
     Task<bool> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,

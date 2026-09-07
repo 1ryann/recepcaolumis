@@ -291,6 +291,26 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Daily_lease_uses_the_civil_day_and_requires_that_day_to_be_open()
+    {
+        await factory.ResetAsync();
+        var openDay = await SeedResourcesAsync();
+        var closedDay = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Gerente);
+        (await factory.PutWithCsrfAsync("/api/admin/operating-hours", ScheduleBody())).EnsureSuccessStatusCode();
+
+        var monday = await factory.PostWithCsrfAsync("/api/admin/leases",
+            LeaseBody(openDay, "DAILY", MondayAtEight, MondayAtEight.AddHours(1)));
+        Assert.Equal(HttpStatusCode.Created, monday.StatusCode);
+
+        var sundayStart = MondayAtEight.AddDays(-1);
+        var sunday = await factory.PostWithCsrfAsync("/api/admin/leases",
+            LeaseBody(closedDay, "DAILY", sundayStart, sundayStart.AddHours(1)));
+        Assert.Equal(HttpStatusCode.Conflict, sunday.StatusCode);
+        Assert.Equal("ROOM_OUTSIDE_OPERATING_HOURS", (await sunday.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
+    [Fact]
     public async Task Professional_cannot_access_configuration_and_mutations_require_antiforgery()
     {
         await factory.ResetAsync();

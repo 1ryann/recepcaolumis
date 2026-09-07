@@ -65,12 +65,18 @@ public sealed class PostgreSqlRoomAvailabilityService(
     }
 
     public async Task<RoomAvailabilityConflict> CheckLeaseRoomAsync(Guid roomId,
-        DateTimeOffset startAt, DateTimeOffset? endAt, bool enforceOperatingHours,
+        DateTimeOffset startAt, DateTimeOffset? endAt, LeaseMode mode,
         CancellationToken cancellationToken)
     {
         var operational = await CheckScheduleAndBlocksAsync(roomId, startAt, endAt,
-            null, enforceOperatingHours, cancellationToken);
+            null, enforceOperatingHours: mode == LeaseMode.Hourly, cancellationToken);
         if (operational != RoomAvailabilityConflict.None) return operational;
+        if (mode == LeaseMode.Daily && await db.OperatingHoursSchedules.AsNoTracking().AnyAsync(cancellationToken))
+        {
+            var intervals = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(cancellationToken);
+            if (!operatingHours.IsCivilDayOpen(intervals, startAt))
+                return RoomAvailabilityConflict.OutsideOperatingHours;
+        }
         var reservation = await db.Reservations.AsNoTracking().AnyAsync(value =>
             value.RoomId == roomId && value.Status == ReservationStatus.Approved &&
             value.Kind != ReservationKind.Cancellation && startAt < value.EndAt &&
@@ -90,13 +96,16 @@ public sealed class PostgreSqlRoomAvailabilityService(
             if (!operatingHours.Contains(proposedIntervals, period.StartAt, period.EndAt)) return false;
 
         await foreach (var period in db.Leases.AsNoTracking()
-                           .Where(value => value.Mode == LeaseMode.Hourly &&
+                           .Where(value => (value.Mode == LeaseMode.Hourly || value.Mode == LeaseMode.Daily) &&
                                            (value.LifecycleState == LeaseLifecycleState.Open ||
                                             value.LifecycleState == LeaseLifecycleState.EndingPending) &&
                                            value.OccupancyEndAt != null && value.OccupancyEndAt > now)
-                           .Select(value => new { value.OccupancyStartAt, EndAt = value.OccupancyEndAt!.Value })
+                           .Select(value => new { value.Mode, value.OccupancyStartAt, EndAt = value.OccupancyEndAt!.Value })
                            .AsAsyncEnumerable().WithCancellation(cancellationToken))
-            if (!operatingHours.Contains(proposedIntervals, period.OccupancyStartAt, period.EndAt)) return false;
+            if (period.Mode == LeaseMode.Hourly
+                    ? !operatingHours.Contains(proposedIntervals, period.OccupancyStartAt, period.EndAt)
+                    : !operatingHours.IsCivilDayOpen(proposedIntervals, period.OccupancyStartAt))
+                return false;
 
         return true;
     }

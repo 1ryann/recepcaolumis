@@ -4,6 +4,14 @@ namespace GestaoPredio.Application.Availability;
 
 public sealed class OperatingHoursEvaluator(TimeZoneInfo timeZone)
 {
+    public bool IsCivilDayOpen(IReadOnlyCollection<OperatingHourInterval> intervals,
+        DateTimeOffset instantInDay)
+    {
+        ArgumentNullException.ThrowIfNull(intervals);
+        var day = TimeZoneInfo.ConvertTime(instantInDay, timeZone).DayOfWeek;
+        return intervals.Any(interval => interval.DayOfWeek == day);
+    }
+
     public bool Contains(IReadOnlyCollection<OperatingHourInterval> intervals,
         DateTimeOffset startAt, DateTimeOffset endAt)
     {
