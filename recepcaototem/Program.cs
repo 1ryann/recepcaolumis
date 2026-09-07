@@ -38,6 +38,7 @@ using recepcaototem.Features.OperationalAlerts;
 using recepcaototem.Features.Availability;
 using recepcaototem.Features.Finance;
 using recepcaototem.Features.Dashboard;
+using recepcaototem.Features.Customers;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -164,8 +165,10 @@ app.MapOperatingHoursEndpoints();
 app.MapRoomBlockEndpoints();
 app.MapFinanceEndpoints();
 app.MapDashboardEndpoints();
+app.MapCustomerEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 // No migrations, accounts, role creation, Identity UI or business endpoints during startup.
 app.Run();
+
