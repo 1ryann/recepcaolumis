@@ -68,6 +68,12 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, rescheduled.StatusCode);
         var replacement = (await rescheduled.Content.ReadFromJsonAsync<ReservationPayload>())!;
 
+        var staleReschedule = await factory.PostWithCsrfAsync(
+            $"/api/customer/reservations/{seed.ReservationId}/reschedule",
+            new { professionalId = seed.ProfessionalId, startAt = rescheduledStart.AddHours(1), endAt = rescheduledStart.AddHours(2), concurrencyToken = detail.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.Conflict, staleReschedule.StatusCode);
+        Assert.Equal("RESOURCE_MODIFIED", (await staleReschedule.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+
         var stale = await factory.PostWithCsrfAsync(
             $"/api/customer/reservations/{seed.ReservationId}/cancel",
             new { concurrencyToken = detail.ConcurrencyToken });
@@ -78,6 +84,29 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
             $"/api/customer/reservations/{replacement.Id}/cancel",
             new { concurrencyToken = replacement.ConcurrencyToken });
         Assert.Equal(HttpStatusCode.NoContent, current.StatusCode);
+    }
+
+    [Fact]
+    public async Task Customer_reschedule_revokes_the_old_qr_token()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddMinutes(-10));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
+        var issued = (await (await factory.PostWithCsrfAsync(
+            $"/api/customer/reservations/{seed.ReservationId}/check-in-token", new { }))
+            .Content.ReadFromJsonAsync<TokenPayload>())!;
+        var detail = (await (await factory.Client.GetAsync($"/api/customer/reservations/{seed.ReservationId}")).Content
+            .ReadFromJsonAsync<ReservationPayload>())!;
+        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var response = await factory.PostWithCsrfAsync($"/api/customer/reservations/{seed.ReservationId}/reschedule",
+            new { professionalId = seed.ProfessionalId, startAt = start, endAt = start.AddHours(1), concurrencyToken = detail.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issued.Token })).StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var token = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().CheckInTokens
+            .SingleAsync(x => x.ReservationId == seed.ReservationId);
+        Assert.NotNull(token.RevokedAt);
     }
 
     [Fact]
