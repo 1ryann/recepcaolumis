@@ -59,6 +59,8 @@ public static class IdentityConfiguration
                 .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
             options.AddPolicy(CustomerPolicy, policy => policy.RequireRole(SystemRoles.Customer)
                 .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
+            options.AddPolicy("ProfessionalApplicant", policy => policy.RequireRole(SystemRoles.ProfessionalApplicant)
+                .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
         });
     }
 }

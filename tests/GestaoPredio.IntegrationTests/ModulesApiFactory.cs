@@ -191,6 +191,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Visits\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Reservations\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Customers\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"ProfessionalRegistrationRequests\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"LeaseOccurrences\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Leases\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Tenants\"");

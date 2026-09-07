@@ -154,6 +154,28 @@ public sealed class ProfessionalUserLinkTests(ModulesApiFactory factory)
         Assert.Equal(1, responses.Count(x => x.StatusCode == HttpStatusCode.Conflict));
     }
 
+    [Fact]
+    public async Task Own_profile_requires_link_and_returns_only_linked_professional()
+    {
+        await PrepareAdminAsync("own-profile-admin@lumis.test");
+        var professional = await CreateProfessionalAsync("Perfil próprio");
+        var user = await factory.CreateUserAsync("own-profile@lumis.test", Password, [SystemRoles.Profissional]);
+        await LinkAsync(professional, user.Id);
+        await factory.LoginAsync("own-profile@lumis.test", Password);
+        var response = await factory.Client.GetAsync("/api/professional/me");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("Perfil próprio", json.GetProperty("name").GetString());
+        Assert.Equal("Fisio", json.GetProperty("profession").GetString());
+        Assert.True(json.TryGetProperty("description", out _));
+        Assert.False(json.TryGetProperty("applicationUserId", out _));
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync("/api/professional/me/photo")).StatusCode);
+        await factory.CreateUserAsync("unlinked-profile@lumis.test", Password, [SystemRoles.Profissional]);
+        await factory.LoginAsync("unlinked-profile@lumis.test", Password);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync("/api/professional/me")).StatusCode);
+        await factory.LoginAsync("own-profile-admin@lumis.test", Password);
+        Assert.Equal(HttpStatusCode.Forbidden, (await factory.Client.GetAsync("/api/professional/me")).StatusCode);
+    }
     private async Task PrepareAdminAsync(string email)
     {
         await factory.ResetAsync();

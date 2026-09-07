@@ -30,7 +30,7 @@ public static class ProfessionalPhotoEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> Get(
+    internal static async Task<IResult> Get(
         Guid id,
         HttpContext context,
         ApplicationDbContext db,

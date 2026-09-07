@@ -26,6 +26,13 @@ public sealed class AdminCliSecurityTests
     }
 
     [Fact]
+    public void Parser_accepts_only_single_provision_roles_command()
+    {
+        Assert.True(BootstrapCommandParser.IsProvisionRoles(["provision-roles"]));
+        Assert.False(BootstrapCommandParser.IsProvisionRoles(["provision-roles", "extra"]));
+    }
+
+    [Fact]
     public void Hidden_reader_requests_intercept_and_does_not_echo_characters()
     {
         var console = new RecordingConsole([
@@ -87,6 +94,24 @@ public sealed class AdminCliSecurityTests
         Assert.Single(admins);
         Assert.False(admins[0].MustChangePassword);
         Assert.Single(await db.AuditEntries.Where(x => x.Action == "BOOTSTRAP_ADMIN_CREATED").ToListAsync());
+    }
+
+    [Fact]
+    public async Task Provision_roles_adds_missing_authentication_roles_without_creating_users()
+    {
+        await using var database = await LocalPostgreSqlTestDatabase.CreateAsync();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(database.ConnectionString));
+        services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure).AddRoles<IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
+        await using var provider = services.BuildServiceProvider(); await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(); await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AspNetUserRoles\"; DELETE FROM \"AspNetUsers\"; DELETE FROM \"AspNetRoles\"");
+        var bootstrapper = ActivatorUtilities.CreateInstance<AdminBootstrapper>(scope.ServiceProvider);
+        Assert.True(await bootstrapper.ProvisionRolesAsync(default));
+        Assert.Equal(SystemRoles.AuthenticationRoles.Count, await db.Roles.CountAsync());
+        Assert.Empty(await db.Users.ToListAsync());
     }
 
     private sealed class RecordingConsole(IEnumerable<ConsoleKeyInfo> keys) : ISecretConsole

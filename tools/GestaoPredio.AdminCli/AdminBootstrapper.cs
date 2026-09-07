@@ -14,6 +14,22 @@ public sealed class AdminBootstrapper(
     RoleManager<IdentityRole> roles,
     TimeProvider timeProvider)
 {
+    public async Task<bool> ProvisionRolesAsync(CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        foreach (var role in SystemRoles.AuthenticationRoles)
+        {
+            if (await roles.RoleExistsAsync(role)) continue;
+            if (!(await roles.CreateAsync(new IdentityRole(role))).Succeeded)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<BootstrapOutcome> BootstrapAsync(
         string displayName,
         string email,
@@ -27,14 +43,8 @@ public sealed class AdminBootstrapper(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         foreach (var role in SystemRoles.AuthenticationRoles)
-        {
-            if (await roles.RoleExistsAsync(role)) continue;
-            if (!(await roles.CreateAsync(new IdentityRole(role))).Succeeded)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return BootstrapOutcome.Failed;
-            }
-        }
+            if (!await roles.RoleExistsAsync(role) && !(await roles.CreateAsync(new IdentityRole(role))).Succeeded)
+            { await transaction.RollbackAsync(cancellationToken); return BootstrapOutcome.Failed; }
 
         if ((await users.GetUsersInRoleAsync(SystemRoles.Administrador)).Count > 0)
         {

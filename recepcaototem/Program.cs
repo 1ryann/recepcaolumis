@@ -44,6 +44,7 @@ using recepcaototem.Features.Customers;
 using recepcaototem.Features.Totem;
 using recepcaototem.Features.Reception;
 using recepcaototem.Features.AccessControl;
+using recepcaototem.Features.ProfessionalRegistrations;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -159,6 +160,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check 
 app.MapAuthEndpoints();
 app.MapUserAdministrationEndpoints();
 app.MapProfessionalEndpoints();
+app.MapProfessionalProfileEndpoints();
+app.MapProfessionalRegistrationEndpoints();
 app.MapProfessionalUserLinkEndpoints();
 app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
@@ -183,4 +186,3 @@ app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 // No migrations, accounts, role creation, Identity UI or business endpoints during startup.
 app.Run();
-

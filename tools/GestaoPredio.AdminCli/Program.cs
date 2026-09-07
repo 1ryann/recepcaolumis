@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-if (!BootstrapCommandParser.IsBootstrapAdmin(args))
+if (!BootstrapCommandParser.IsBootstrapAdmin(args) && !BootstrapCommandParser.IsProvisionRoles(args))
 {
-    Console.Error.WriteLine("Uso: GestaoPredio.AdminCli bootstrap-admin");
+    Console.Error.WriteLine("Uso: GestaoPredio.AdminCli bootstrap-admin | provision-roles");
     return 2;
 }
 
@@ -20,6 +20,22 @@ catch (InvalidOperationException exception)
     return 3;
 }
 
+var services = new ServiceCollection();
+services.AddLogging();
+services.AddSingleton(TimeProvider.System);
+services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connection));
+services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure)
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<ApplicationDbContext>();
+await using var provider = services.BuildServiceProvider();
+await using var scope = provider.CreateAsyncScope();
+var bootstrapper = ActivatorUtilities.CreateInstance<AdminBootstrapper>(scope.ServiceProvider);
+if (BootstrapCommandParser.IsProvisionRoles(args))
+{
+    var provisioned = await bootstrapper.ProvisionRolesAsync(CancellationToken.None);
+    Console.WriteLine(provisioned ? "Roles de autenticação provisionadas." : "Não foi possível provisionar as roles.");
+    return provisioned ? 0 : 6;
+}
 Console.Write("Nome de exibição: ");
 var displayName = Console.ReadLine() ?? "";
 Console.Write("E-mail: ");
@@ -34,17 +50,6 @@ if (!string.Equals(password, confirmation, StringComparison.Ordinal))
     Console.Error.WriteLine("As senhas não conferem.");
     return 4;
 }
-
-var services = new ServiceCollection();
-services.AddLogging();
-services.AddSingleton(TimeProvider.System);
-services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connection));
-services.AddIdentityCore<ApplicationUser>(LumisIdentityOptions.Configure)
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>();
-await using var provider = services.BuildServiceProvider();
-await using var scope = provider.CreateAsyncScope();
-var bootstrapper = ActivatorUtilities.CreateInstance<AdminBootstrapper>(scope.ServiceProvider);
 var outcome = await bootstrapper.BootstrapAsync(displayName, email, password, CancellationToken.None);
 Console.WriteLine(outcome switch
 {
