@@ -166,6 +166,7 @@ app.MapRoomBlockEndpoints();
 app.MapFinanceEndpoints();
 app.MapDashboardEndpoints();
 app.MapCustomerEndpoints();
+app.MapCustomerSchedulingEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
