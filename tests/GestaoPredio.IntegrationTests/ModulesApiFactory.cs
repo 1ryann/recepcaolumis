@@ -185,9 +185,11 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"OperatingHoursSchedules\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomBlocks\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"FinancialCharges\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"CheckInTokens\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"VisitTransitions\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Visits\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Reservations\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Customers\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"LeaseOccurrences\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Leases\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Tenants\"");
@@ -203,7 +205,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     private static async Task EnsureRolesAsync(IServiceProvider services)
     {
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        foreach (var role in SystemRoles.All)
+        foreach (var role in SystemRoles.AuthenticationRoles)
             if (!await roleManager.RoleExistsAsync(role))
                 Assert.True((await roleManager.CreateAsync(new IdentityRole(role))).Succeeded);
     }

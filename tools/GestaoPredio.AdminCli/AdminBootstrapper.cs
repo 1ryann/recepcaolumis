@@ -26,7 +26,7 @@ public sealed class AdminBootstrapper(
             return BootstrapOutcome.InvalidInput;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        foreach (var role in SystemRoles.All)
+        foreach (var role in SystemRoles.AuthenticationRoles)
         {
             if (await roles.RoleExistsAsync(role)) continue;
             if (!(await roles.CreateAsync(new IdentityRole(role))).Succeeded)

@@ -93,6 +93,8 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
 
     private static async Task ResetAsync(ApplicationDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"CheckInTokens\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Customers\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Professionals\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"PrivateFiles\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditEntries\"");
@@ -104,7 +106,7 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
     private static async Task EnsureRolesAsync(IServiceProvider services)
     {
         var roles = services.GetRequiredService<RoleManager<IdentityRole>>();
-        foreach (var role in SystemRoles.All)
+        foreach (var role in SystemRoles.AuthenticationRoles)
             if (!await roles.RoleExistsAsync(role))
                 Assert.True((await roles.CreateAsync(new IdentityRole(role))).Succeeded);
     }
