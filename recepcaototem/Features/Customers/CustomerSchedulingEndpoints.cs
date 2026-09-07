@@ -18,6 +18,8 @@ namespace recepcaototem.Features.Customers;
 
 public sealed record CustomerAvailabilityRequest(Guid ProfessionalId, DateOnly Date, int DurationMinutes) : IStrictModuleRequest;
 public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt) : IStrictModuleRequest;
+public sealed record CustomerReservationRescheduleRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record CustomerReservationConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationPageResponse(ReservationResponse[] Items, int Page, int PageSize, int TotalCount);
 public sealed record CustomerProfessionalResponse(Guid Id, string Name, string Profession);
 public sealed record AvailabilitySlotResponse(DateTimeOffset StartAt, DateTimeOffset EndAt);
@@ -43,7 +45,7 @@ public static class CustomerSchedulingEndpoints
             .OrderBy(x => x.NormalizedName).ThenBy(x => x.Id)
             .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession)).ToArrayAsync(ct));
 
-    private static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request, ApplicationDbContext db,
+    internal static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request, ApplicationDbContext db,
         IRoomAvailabilityService availability, IReservationConflictDetector conflicts, TimeZoneInfo timeZone,
         CancellationToken ct)
     {
@@ -133,20 +135,25 @@ public static class CustomerSchedulingEndpoints
         return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
     }
 
-    private static async Task<IResult> CancelReservation(Guid id, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> CancelReservation(Guid id, CustomerReservationConcurrencyRequest request, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
         if (reservation is null) return Results.NotFound();
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return InvalidToken();
+        if (reservation.Version != version) return Modified();
+        db.Entry(reservation).Property(x => x.Version).OriginalValue = version;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         try
         {
             var now = time.GetUtcNow();
             reservation.Cancel(customer.ApplicationUserId!, now);
-            var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
-            token?.Revoke(now);
+            await ReservationCheckInTokenRevocation.RevokeAsync(db, id, now, ct);
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
             return Results.NoContent();
         }
+        catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); return Modified(); }
         catch (InvalidOperationException) { return Results.Json(new ApiError("INVALID_RESERVATION_STATE", "A reserva não pode ser cancelada."), statusCode: 409); }
     }
 
@@ -169,13 +176,15 @@ public static class CustomerSchedulingEndpoints
         return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });
     }
 
-    private static async Task<IResult> RescheduleReservation(Guid id, CustomerReservationRequest request, ClaimsPrincipal principal,
+    private static async Task<IResult> RescheduleReservation(Guid id, CustomerReservationRescheduleRequest request, ClaimsPrincipal principal,
         ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
         IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var original = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
         if (original is null) return Results.NotFound();
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return InvalidToken();
+        if (original.Version != version) return Modified();
         if (request.ProfessionalId != original.ProfessionalId || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
         var now = time.GetUtcNow();
         var roomIds = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
@@ -187,14 +196,19 @@ public static class CustomerSchedulingEndpoints
             return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
         try
         {
+            db.Entry(original).Property(x => x.Version).OriginalValue = version;
             var replacement = Reservation.CreateApprovedReschedule(original, request.StartAt, request.EndAt, customer.ApplicationUserId!, now);
             original.Cancel(customer.ApplicationUserId!, now);
-            var oldToken = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct); oldToken?.Revoke(now);
+            await ReservationCheckInTokenRevocation.RevokeAsync(db, id, now, ct);
             db.Reservations.Add(replacement); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
             var roomName = await db.Rooms.Where(x => x.Id == roomId).Select(x => x.Name).SingleAsync(ct);
             var professionalName = await db.Professionals.Where(x => x.Id == original.ProfessionalId).Select(x => x.Name).SingleAsync(ct);
             return Results.Ok(replacement.ToResponse(roomName, professionalName));
         }
+        catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); return Modified(); }
         catch (InvalidOperationException) { return Results.Json(new ApiError("INVALID_RESERVATION_STATE", "A reserva não pode ser reagendada."), statusCode: 409); }
     }
+
+    private static IResult InvalidToken() => Results.BadRequest(new ApiError("INVALID_CONCURRENCY_TOKEN", "O token de concorrência informado é inválido."));
+    private static IResult Modified() => Results.Json(new ApiError("RESOURCE_MODIFIED", "O registro foi alterado por outra operação. Recarregue os dados e tente novamente."), statusCode: StatusCodes.Status409Conflict);
 }

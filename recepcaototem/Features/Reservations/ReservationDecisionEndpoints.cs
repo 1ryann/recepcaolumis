@@ -57,6 +57,7 @@ public static partial class ReservationEndpoints
                 original, request.StartAt, request.EndAt, Actor(context)!, now);
             db.Entry(original).Property(value => value.Version).OriginalValue = version;
             original.Cancel(Actor(context)!, now);
+            await ReservationCheckInTokenRevocation.RevokeAsync(db, original.Id, now, cancellationToken);
         }
         catch (InvalidOperationException)
         {
@@ -145,6 +146,7 @@ public static partial class ReservationEndpoints
             if (original is not null)
             {
                 original.Cancel(Actor(context)!, now);
+                await ReservationCheckInTokenRevocation.RevokeAsync(db, original.Id, now, cancellationToken);
                 var originalAction = reservation.Kind == ReservationKind.Reschedule
                     ? AuditActions.ReservationRescheduled
                     : AuditActions.ReservationCancelled;
@@ -195,6 +197,7 @@ public static partial class ReservationEndpoints
         {
             return Invalid();
         }
+        await ReservationCheckInTokenRevocation.RevokeAsync(db, reservation.Id, now, cancellationToken);
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             reservation.Id, AuditActions.ReservationRejected, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));
@@ -229,6 +232,7 @@ public static partial class ReservationEndpoints
         {
             return InvalidTransition();
         }
+        await ReservationCheckInTokenRevocation.RevokeAsync(db, reservation.Id, now, cancellationToken);
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             reservation.Id, AuditActions.ReservationCancelled, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));

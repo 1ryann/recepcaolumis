@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
@@ -144,6 +146,13 @@ public sealed class ReservationWorkflowTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync(pending: false);
+        await using (var tokenScope = factory.Services.CreateAsyncScope())
+        {
+            var tokenDb = tokenScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            tokenDb.CheckInTokens.Add(CheckInToken.Create(seed.ReservationId,
+                SHA256.HashData(RandomNumberGenerator.GetBytes(32)), DateTimeOffset.UtcNow, seed.StartAt.AddHours(1)));
+            await tokenDb.SaveChangesAsync();
+        }
         await LoginAsync(seed.Manager);
         var newStart = seed.StartAt.AddHours(3);
 
@@ -157,6 +166,12 @@ public sealed class ReservationWorkflowTests(ModulesApiFactory factory)
         Assert.Equal("APPROVED", replacement.Status);
         Assert.Equal(seed.ReservationId, replacement.OriginalReservationId);
         await AssertStatusAsync(seed.ReservationId, ReservationStatus.Cancelled);
+        await using (var tokenScope = factory.Services.CreateAsyncScope())
+        {
+            var token = await tokenScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().CheckInTokens
+                .SingleAsync(value => value.ReservationId == seed.ReservationId);
+            Assert.NotNull(token.RevokedAt);
+        }
 
         var cancelledResponse = await factory.PostWithCsrfAsync(
             $"/api/admin/reservations/{replacement.Id}/cancel",
