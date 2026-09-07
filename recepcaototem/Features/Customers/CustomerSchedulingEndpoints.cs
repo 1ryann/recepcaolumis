@@ -33,6 +33,7 @@ public static class CustomerSchedulingEndpoints
         group.MapGet("/reservations/{id:guid}", ReservationDetail);
         group.MapPost("/reservations", CreateReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/cancel", CancelReservation).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/reservations/{id:guid}/reschedule", RescheduleReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/check-in-token", IssueToken).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
@@ -42,13 +43,14 @@ public static class CustomerSchedulingEndpoints
             .OrderBy(x => x.NormalizedName).ThenBy(x => x.Id)
             .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession)).ToArrayAsync(ct));
 
-    private static async Task<IResult> Availability(CustomerAvailabilityRequest request, ApplicationDbContext db,
+    private static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request, ApplicationDbContext db,
         IRoomAvailabilityService availability, IReservationConflictDetector conflicts, TimeZoneInfo timeZone,
         CancellationToken ct)
     {
         if (request.ProfessionalId == Guid.Empty || request.DurationMinutes is < 15 or > 480 || request.DurationMinutes % 15 != 0)
             return Results.BadRequest(new ApiError("INVALID_AVAILABILITY", "Os dados de disponibilidade são inválidos."));
         if (!await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct)) return Results.NotFound();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var intervals = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
         var slots = new List<AvailabilitySlotResponse>();
         var localStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
@@ -164,5 +166,34 @@ public static class CustomerSchedulingEndpoints
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });
+    }
+
+    private static async Task<IResult> RescheduleReservation(Guid id, CustomerReservationRequest request, ClaimsPrincipal principal,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
+        IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct)
+    {
+        var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
+        var original = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
+        if (original is null) return Results.NotFound();
+        if (request.ProfessionalId != original.ProfessionalId || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
+        var now = time.GetUtcNow();
+        var roomIds = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, [original.ProfessionalId]), ct);
+        var roomId = original.RoomId;
+        if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None ||
+            (await conflicts.FindConflictAsync(roomId, original.ProfessionalId, request.StartAt, request.EndAt, id, ct)).Any)
+            return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
+        try
+        {
+            var replacement = Reservation.CreateApprovedReschedule(original, request.StartAt, request.EndAt, customer.ApplicationUserId!, now);
+            original.Cancel(customer.ApplicationUserId!, now);
+            var oldToken = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct); oldToken?.Revoke(now);
+            db.Reservations.Add(replacement); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+            var roomName = await db.Rooms.Where(x => x.Id == roomId).Select(x => x.Name).SingleAsync(ct);
+            var professionalName = await db.Professionals.Where(x => x.Id == original.ProfessionalId).Select(x => x.Name).SingleAsync(ct);
+            return Results.Ok(replacement.ToResponse(roomName, professionalName));
+        }
+        catch (InvalidOperationException) { return Results.Json(new ApiError("INVALID_RESERVATION_STATE", "A reserva não pode ser reagendada."), statusCode: 409); }
     }
 }

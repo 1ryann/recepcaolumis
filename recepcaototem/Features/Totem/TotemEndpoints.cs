@@ -146,6 +146,7 @@ internal static class CustomerSchedulingEndpointsForTotem
     {
         if (request.ProfessionalId == Guid.Empty || request.DurationMinutes is < 15 or > 480 || request.DurationMinutes % 15 != 0) return Results.BadRequest(new ApiError("INVALID_AVAILABILITY", "Os dados de disponibilidade são inválidos."));
         if (!await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct)) return Results.NotFound();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var intervals = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct); var slots = new List<AvailabilitySlotResponse>();
         var localStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified); var evaluator = new OperatingHoursEvaluator(timeZone);
         var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive).Select(x => x.Id).ToListAsync(ct);

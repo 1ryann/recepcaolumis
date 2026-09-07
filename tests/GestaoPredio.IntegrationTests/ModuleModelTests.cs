@@ -221,7 +221,7 @@ public sealed class ModuleModelTests
         Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Kind");
         Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Status");
         Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_Reservations_Period");
-        Assert.Equal(3, entity.GetForeignKeys().Count());
+        Assert.Equal(4, entity.GetForeignKeys().Count());
         Assert.All(entity.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
         AssertIndex(entity, "IX_Reservations_Room_Status_Start", false, null, "RoomId", "Status", "StartAt");
         AssertIndex(entity, "IX_Reservations_Professional_Status_Start", false, null, "ProfessionalId", "Status", "StartAt");
@@ -239,7 +239,7 @@ public sealed class ModuleModelTests
         AssertColumn(visit, "Status", "character varying(20)", 20);
         Assert.True(visit.FindProperty("RoomId")!.IsNullable);
         Assert.True(visit.FindProperty("ReservationId")!.IsNullable);
-        Assert.Equal(3, visit.GetForeignKeys().Count());
+        Assert.Equal(4, visit.GetForeignKeys().Count());
         Assert.All(visit.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
         AssertIndex(visit, "IX_Visits_Status_ArrivedAt", false, null, "Status", "ArrivedAt");
         AssertIndex(visit, "IX_Visits_Professional_Status_ArrivedAt", false, null,
