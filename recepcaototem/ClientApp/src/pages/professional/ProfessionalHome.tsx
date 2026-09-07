@@ -1,3 +1,4 @@
+import { apiClient, ApiError } from '../../api/client'
 import { Activity, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, UserRound, UsersRound } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
@@ -18,6 +19,7 @@ const nav = [
 export function ProfessionalShell() {
   const session = useSession()
   const navigate = useNavigate()
+  const [profile, setProfile] = useState<{ name: string; profession: string; description: string | null; photoUrl: string | null } | null>(null)
   const [reservations, setReservations] = useState<ReservationDto[]>([])
   const [visits, setVisits] = useState<VisitDto[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,15 +27,16 @@ export function ProfessionalShell() {
   useEffect(() => {
     let active = true
     Promise.all([
+      apiClient.get<{ name: string; profession: string; description: string | null; photoUrl: string | null }>('/api/professional/me'),
       professionalReservationsApi.list({ status: 'all', page: 1, pageSize: 50 }),
       professionalVisitsApi.list({ status: 'all', page: 1, pageSize: 50 }),
-    ]).then(([reservationPage, visitPage]) => { if (active) { setReservations(reservationPage.items); setVisits(visitPage.items) } }).catch(() => { if (active) setError('Não foi possível carregar sua agenda agora.') }).finally(() => { if (active) setLoading(false) })
+    ]).then(([currentProfile, reservationPage, visitPage]) => { if (active) { setProfile(currentProfile); setReservations(reservationPage.items); setVisits(visitPage.items) } }).catch((failure) => { if (active) setError(failure instanceof ApiError && failure.code === 'PROFESSIONAL_PROFILE_NOT_LINKED' ? 'Seu acesso profissional não está vinculado corretamente. Procure a gerência.' : 'Não foi possível carregar sua agenda agora.') }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
   const logout = async () => { await session.logout(); navigate('/login', { replace: true }) }
-  const name = session.user?.displayName || 'Profissional'
+  const name = profile?.name || session.user?.displayName || 'Profissional'
   const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-  return <div className="professional-shell"><aside className="professional-sidebar"><Link className="professional-brand" to="/profissional"><img src="/lumis-logo-transparent.png" alt="LUMIS" /></Link><div className="professional-intro"><span>Área do profissional</span><strong>{name}</strong><small>Seu dia, com mais clareza.</small></div><nav className="professional-nav" aria-label="Navegação do profissional">{nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end}><Icon size={18} />{label}</NavLink>)}</nav><div className="professional-sidebar-footer"><span>{initials}</span><div><strong>{name}</strong><small>Profissional</small></div><button type="button" onClick={logout} aria-label="Sair"><LogOut size={17} /></button></div></aside><main className="professional-main"><header className="professional-topbar"><div><span className="eyebrow">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span><h1>{locationTitle(useLocation().pathname)}</h1></div><div className="professional-topbar-avatar">{initials}</div></header><div className="professional-content"><Outlet context={{ reservations, visits, loading, error }} /></div></main></div>
+  return <div className="professional-shell"><aside className="professional-sidebar"><Link className="professional-brand" to="/profissional"><img src="/lumis-logo-transparent.png" alt="LUMIS" /></Link><div className="professional-intro"><span>Área do profissional</span><strong>{name}</strong><small>{profile?.profession}</small>{profile?.description && <p>{profile.description}</p>}{profile?.photoUrl && <img src={profile.photoUrl} alt="Sua foto" width="72" height="72" />}</div><nav className="professional-nav" aria-label="Navegação do profissional">{nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end}><Icon size={18} />{label}</NavLink>)}</nav><div className="professional-sidebar-footer"><span>{initials}</span><div><strong>{name}</strong><small>Profissional</small></div><button type="button" onClick={logout} aria-label="Sair"><LogOut size={17} /></button></div></aside><main className="professional-main"><header className="professional-topbar"><div><span className="eyebrow">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span><h1>{locationTitle(useLocation().pathname)}</h1></div><div className="professional-topbar-avatar">{initials}</div></header><div className="professional-content"><Outlet context={{ reservations, visits, loading, error }} /></div></main></div>
 }
 
 export function ProfessionalDashboard() {

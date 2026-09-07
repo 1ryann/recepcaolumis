@@ -1,14 +1,16 @@
+import { CreateProfessionalAccess } from './CreateProfessionalAccess'
 import { useEffect, useState } from 'react'
 import type { EligibleUserDto, ProfessionalUserLinkDto } from '../../api/modules'
 
 export function ProfessionalUserLink({
-  link,
+  professionalName, link,
   eligible,
   pending,
   onSearch,
   onSave,
   onRemove,
 }: {
+  professionalName?: string
   link: ProfessionalUserLinkDto | null
   eligible: EligibleUserDto[]
   pending: boolean
@@ -36,7 +38,7 @@ export function ProfessionalUserLink({
   return <div className="link-editor">
     {link?.linked ? <p className="link-current">Conta vinculada: <strong>{link.displayName}</strong><br /><small>{link.email}</small></p>
       : <p className="link-current">Nenhuma conta está vinculada a este profissional.</p>}
-    <label className="field-label">Buscar conta profissional
+    {professionalName && !link?.linked && <CreateProfessionalAccess name={professionalName} onCreated={userId => { setSelected(userId); onSearch(search) }} />}<label className="field-label">Buscar conta profissional
       <input className="field-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome ou e-mail" />
     </label>
     <label className="field-label">Conta elegível

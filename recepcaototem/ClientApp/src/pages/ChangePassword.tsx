@@ -1,3 +1,4 @@
+import { homeForRoles } from '../auth/roleRoutes'
 import { type FormEvent, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { LockKeyhole } from 'lucide-react'
@@ -13,11 +14,11 @@ export function ChangePassword() {
   const [loading, setLoading] = useState(false)
   if (session.status === 'loading') return <div className="route-loading" role="status">Carregando…</div>
   if (session.status === 'anonymous') return <Navigate to="/login" replace />
-  if (session.status === 'authenticated') return <Navigate to="/admin" replace />
+  if (session.status === 'authenticated') return <Navigate to={homeForRoles(session.user?.roles ?? [])} replace />
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setLoading(true); setError('')
-    try { await session.changePassword(currentPassword, newPassword, confirmation); navigate('/admin', { replace: true }) }
+    try { const current = await session.changePassword(currentPassword, newPassword, confirmation); if (current) navigate(homeForRoles(current.roles), { replace: true }) }
     catch { setError('Não foi possível alterar a senha.') }
     finally { setLoading(false) }
   }

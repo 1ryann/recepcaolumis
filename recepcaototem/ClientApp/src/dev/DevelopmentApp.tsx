@@ -18,16 +18,20 @@ import { CustomerBooking } from '../pages/customer/CustomerBooking'
 import { CustomerReservationDetail } from '../pages/customer/CustomerReservationDetail'
 import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from '../pages/professional/ProfessionalHome'
+import { ProfessionalRegistration } from '../pages/professional/ProfessionalRegistration'
+import { ProfessionalApplicationStatus } from '../pages/professional/ProfessionalApplicationStatus'
+import { ProfessionalApplications } from '../pages/admin/ProfessionalApplications'
 import { DevelopmentAppStore } from './DevelopmentAppStore'
 
 export default function DevelopmentApp() {
   return (
     <DevelopmentAppStore>
       <Routes>
-        <Route path="/recepcao" element={<Reception />} />
-        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Reception />} />
+        <Route path="/login" element={<Login />} /><Route path="/profissional/login" element={<Login audience="professional" />} />
         <Route path="/cliente/login" element={<Login audience="customer" />} />
         <Route path="/cliente/cadastro" element={<CustomerRegister />} />
+        <Route path="/profissional/cadastro" element={<ProfessionalRegistration />} />
         <Route path="/totem/check-in" element={<TotemCheckIn />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
@@ -49,7 +53,10 @@ export default function DevelopmentApp() {
             <Route path="perfil" element={<ProfessionalPlaceholder title="Meu perfil" />} />
           </Route>
         </Route>
-        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}>
+        <Route element={<ProtectedRoute allowedRoles={['PROFESSIONAL_APPLICANT']} />}><Route path="/profissional/aguardando" element={<ProfessionalApplicationStatus />} /></Route>
+        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao" element={<ReceptionMonitor />} /></Route>
+        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} /></Route>
+<Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="salas" element={<Rooms />} />
@@ -58,11 +65,12 @@ export default function DevelopmentApp() {
             <Route path="reservas" element={<Reservations />} />
             <Route path="visitas" element={<Visits />} />
             <Route path="recepcao" element={<ReceptionMonitor />} />
+            <Route path="solicitacoes-profissionais" element={<ProfessionalApplications />} />
             <Route path="configuracoes" element={<Settings />} />
           </Route>
         </Route>
-        <Route path="/" element={<Navigate to="/recepcao" replace />} />
-        <Route path="*" element={<Navigate to="/recepcao" replace />} />
+        <Route path="/acesso-negado" element={<p>Acesso indisponível para esta conta.</p>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </DevelopmentAppStore>
   )

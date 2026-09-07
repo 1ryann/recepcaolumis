@@ -54,6 +54,27 @@ export interface CustomerRegisterInput {
   confirmation: string
 }
 
+export type ProfessionalApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export interface ProfessionalApplicationDto {
+  id: string
+  name: string
+  profession: string
+  description: string | null
+  status: ProfessionalApplicationStatus
+  createdAt: string
+  reviewedAt: string | null
+  concurrencyToken: string
+}
+export interface ProfessionalRegistrationInput {
+  name: string
+  profession: string
+  whatsApp: string
+  email: string
+  password: string
+  confirmation: string
+  description: string | null
+}
+
 export interface AvailabilitySlotDto {
   startAt: string
   endAt: string
@@ -471,6 +492,24 @@ export const totemApi = {
   },
   confirmCheckIn(token: string) {
     return apiClient.post<CheckInResultDto>('/api/totem/check-in/confirm', { token })
+  },
+}
+
+export const professionalRegistrationApi = {
+  register(input: ProfessionalRegistrationInput) {
+    return apiClient.post<ProfessionalApplicationDto>('/api/professional-registration/register', input)
+  },
+  me(signal?: AbortSignal) {
+    return apiClient.get<ProfessionalApplicationDto>('/api/professional-registration/me', { signal })
+  },
+  list(query: { status?: ProfessionalApplicationStatus | 'all', page?: number, pageSize?: number } = {}) {
+    return apiClient.get<PagedResponse<ProfessionalApplicationDto>>('/api/reception/professional-applications', { query })
+  },
+  approve(id: string, concurrencyToken: string) {
+    return apiClient.post<ProfessionalApplicationDto>(`/api/reception/professional-applications/${encodeURIComponent(id)}/approve`, { concurrencyToken })
+  },
+  reject(id: string, concurrencyToken: string) {
+    return apiClient.post<ProfessionalApplicationDto>(`/api/reception/professional-applications/${encodeURIComponent(id)}/reject`, { concurrencyToken })
   },
 }
 

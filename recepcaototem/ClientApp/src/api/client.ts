@@ -1,4 +1,5 @@
 let csrfToken: string | null = null
+export function resetCsrfToken() { csrfToken = null }
 
 type QueryValue = string | number | boolean | null | undefined
 
@@ -19,7 +20,7 @@ export interface GetOptions {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: 'same-origin' })
+  const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store' })
   if (!response.ok) throw await decodeError(response)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

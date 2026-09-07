@@ -1,4 +1,4 @@
-import { Activity, CalendarCheck2, CalendarRange, ChevronDown, DoorOpen, LayoutDashboard, LogOut, Menu, Settings, Users, UserRoundSearch, X } from 'lucide-react'
+import { Activity, CalendarCheck2, CalendarRange, ChevronDown, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, Settings, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
@@ -11,11 +11,12 @@ const navItems = [
   { to: '/admin/reservas', label: 'Reservas', icon: CalendarCheck2 },
   { to: '/admin/visitas', label: 'Visitas', icon: UserRoundSearch },
   { to: '/admin/recepcao', label: 'Recepção', icon: Activity },
+  { to: '/admin/solicitacoes-profissionais', label: 'Solicitações', icon: ClipboardCheck },
   { to: '/admin/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
 const pageNames: Record<string, string> = {
-  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/configuracoes': 'Configurações',
+  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/solicitacoes-profissionais': 'Solicitações de profissionais', '/admin/configuracoes': 'Configurações',
 }
 
 export function AdminLayout() {
@@ -38,11 +39,11 @@ export function AdminLayout() {
         </div>
         <nav className="admin-nav" aria-label="Navegação administrativa">
           <span className="nav-label">Gestão</span>
-          {navItems.slice(0, 7).map(({ to, label, icon: Icon, end }) => (
+          {navItems.slice(0, 8).map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}><Icon size={19} />{label}</NavLink>
           ))}
           <span className="nav-label nav-label-second">Preferências</span>
-          {navItems.slice(7).map(({ to, label, icon: Icon }) => (
+          {navItems.slice(8).map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} onClick={() => setOpen(false)}><Icon size={19} />{label}</NavLink>
           ))}
         </nav>

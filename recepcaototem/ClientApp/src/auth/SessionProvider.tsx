@@ -1,45 +1,97 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
-import { apiClient } from '../api/client'
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { apiClient, ApiError, resetCsrfToken } from '../api/client'
 
 export type SessionUser = { userId: string; displayName: string; email: string; roles: string[]; mustChangePassword: boolean }
-type SessionStatus = 'loading' | 'anonymous' | 'mustChangePassword' | 'authenticated'
+type SessionStatus = 'error' | 'loading' | 'anonymous' | 'mustChangePassword' | 'authenticated'
 type SessionContextValue = {
   status: SessionStatus
   user: SessionUser | null
-  refresh(): Promise<void>
-  login(email: string, password: string): Promise<void>
+  refresh(): Promise<SessionUser | null>
+  login(email: string, password: string): Promise<SessionUser>
   logout(): Promise<void>
-  changePassword(currentPassword: string, newPassword: string, confirmation: string): Promise<void>
+  changePassword(currentPassword: string, newPassword: string, confirmation: string): Promise<SessionUser | null>
 }
-
 const SessionContext = createContext<SessionContextValue | null>(null)
-
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>('loading')
   const [user, setUser] = useState<SessionUser | null>(null)
-
-  const refresh = async () => {
+  const generation = useRef(0)
+  const changingAccount = useRef(false)
+  const channel = useRef<BroadcastChannel | null>(null)
+  const invalidate = useCallback(() => { generation.current++; setUser(null); setStatus('loading') }, [])
+  const refresh = useCallback(async () => {
+    const version = ++generation.current
+    setStatus('loading')
     try {
       const current = await apiClient.get<SessionUser>('/api/auth/session')
+      if (version !== generation.current) return null
       setUser(current)
       setStatus(current.mustChangePassword ? 'mustChangePassword' : 'authenticated')
-    } catch {
-      setUser(null)
-      setStatus('anonymous')
+      return current
+    } catch (error) {
+      if (version === generation.current) { setUser(null); setStatus(error instanceof ApiError && error.status === 401 ? 'anonymous' : 'error') }
+      return null
     }
+  }, [])
+  const logout = async () => {
+    changingAccount.current = true
+    invalidate()
+    try {
+      try { await apiClient.post('/api/auth/logout', {}) }
+      catch (error) { if (!(error instanceof ApiError) || error.status !== 401) throw error }
+      resetCsrfToken()
+      // Only an explicit 401 confirms that the browser cookie is no longer authenticated.
+      try { await apiClient.get<SessionUser>('/api/auth/session') }
+      catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          setStatus('anonymous'); channel.current?.postMessage('session-changed'); return
+        }
+        throw error
+      }
+      throw new Error('Logout was not confirmed')
+    } catch (error) { setStatus('error'); throw error }
+    finally { changingAccount.current = false }
   }
-  const login = async (email: string, password: string) => { await apiClient.post('/api/auth/login', { email, password }); await refresh() }
-  const logout = async () => { await apiClient.post('/api/auth/logout', {}); setUser(null); setStatus('anonymous') }
+  const login = async (email: string, password: string) => {
+    if (user) throw new Error('Sign out before switching accounts')
+    changingAccount.current = true
+    invalidate()
+    try {
+      await apiClient.post('/api/auth/login', { email, password })
+      resetCsrfToken()
+      const current = await refresh()
+      if (!current) throw new Error('Session could not be confirmed')
+      channel.current?.postMessage('session-changed')
+      return current
+    } catch (error) { setUser(null); setStatus(error instanceof ApiError && error.status === 401 ? 'anonymous' : 'error'); throw error }
+    finally { changingAccount.current = false }
+  }
   const changePassword = async (currentPassword: string, newPassword: string, confirmation: string) => {
     await apiClient.post('/api/auth/change-password', { currentPassword, newPassword, confirmation })
-    await refresh()
+    resetCsrfToken()
+    return refresh()
   }
-
-  useEffect(() => { void refresh() }, [])
-  const value = useMemo(() => ({ status, user, refresh, login, logout, changePassword }), [status, user])
-  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+  useEffect(() => {
+    void refresh()
+    const revalidate = () => { if (!changingAccount.current) { invalidate(); void refresh() } }
+    const restored = (event: PageTransitionEvent) => { if (event.persisted) revalidate() }
+    window.addEventListener('pageshow', restored)
+    window.addEventListener('pagehide', invalidate)
+    window.addEventListener('focus', revalidate)
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel.current = new BroadcastChannel('lumis-session')
+      channel.current.onmessage = revalidate
+    }
+    return () => {
+      generation.current++
+      window.removeEventListener('pageshow', restored)
+      window.removeEventListener('pagehide', invalidate)
+      window.removeEventListener('focus', revalidate)
+      channel.current?.close(); channel.current = null
+    }
+  }, [refresh, invalidate])
+  return <SessionContext.Provider value={{ status, user, refresh, login, logout, changePassword }}>{children}</SessionContext.Provider>
 }
-
 export function useSession() {
   const value = useContext(SessionContext)
   if (!value) throw new Error('useSession must be used inside SessionProvider')
