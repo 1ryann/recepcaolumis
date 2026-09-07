@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GestaoPredio.Application.Notifications;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
@@ -114,6 +115,8 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddMinutes(-10));
+        var recorder = factory.Services.GetRequiredService<GestaoPredio.Infrastructure.Notifications.DemoNotificationRecorder>();
+        recorder.Clear();
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
 
         var tokenResponse = await factory.PostWithCsrfAsync(
@@ -138,6 +141,9 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         var second = (await replay.Content.ReadFromJsonAsync<VisitPayload>())!;
         Assert.Equal(first.VisitId, second.VisitId);
+        var attempt = Assert.Single(recorder.Attempts);
+        Assert.Equal(seed.ProfessionalId, attempt.ProfessionalId);
+        Assert.Equal(NotificationEventTypes.ProfessionalVisitWaiting, attempt.EventType);
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GestaoPredio.Application.Notifications;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
@@ -7,6 +8,7 @@ using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
+using GestaoPredio.Infrastructure.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -57,6 +59,8 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync(withVisit: false, withCustomer: true);
+        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
+        recorder.Clear();
         await LoginAsync(seed.Manager);
         var reservation = (await (await factory.Client.GetAsync($"/api/admin/reservations/{seed.ReservationId}")).Content.ReadFromJsonAsync<ReservationPayload>())!;
         var first = await factory.PostWithCsrfAsync($"/api/reception/reservations/{seed.ReservationId}/check-in",
@@ -70,6 +74,9 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
             new { concurrencyToken = reservation.ConcurrencyToken });
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
         Assert.Equal(firstVisit.Id, (await second.Content.ReadFromJsonAsync<ReceptionVisitPayload>())!.Id);
+        var attempt = Assert.Single(recorder.Attempts);
+        Assert.Equal(seed.ProfessionalId, attempt.ProfessionalId);
+        Assert.Equal(NotificationEventTypes.ProfessionalVisitWaiting, attempt.EventType);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Visits.CountAsync(x => x.ReservationId == seed.ReservationId));
     }
@@ -93,6 +100,28 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         var reservation = await db.Reservations.SingleAsync(x => x.Id == created.ReservationId);
         Assert.Equal(seed.CustomerId, reservation.CustomerId);
         Assert.Equal(1, await db.Customers.CountAsync(x => x.NormalizedPhone == seed.CustomerPhone));
+    }
+
+    [Fact]
+    public async Task Notification_failure_does_not_rollback_manual_checkin()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(withVisit: false, withCustomer: true);
+        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
+        recorder.Clear();
+        recorder.ForceFailure = true;
+        await LoginAsync(seed.Manager);
+        var reservation = (await (await factory.Client.GetAsync($"/api/admin/reservations/{seed.ReservationId}"))
+            .Content.ReadFromJsonAsync<ReservationPayload>())!;
+
+        var response = await factory.PostWithCsrfAsync($"/api/reception/reservations/{seed.ReservationId}/check-in",
+            new { concurrencyToken = reservation.ConcurrencyToken });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.False(Assert.Single(recorder.Attempts).Success);
+        await using var scope = factory.Services.CreateAsyncScope();
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Visits
+            .CountAsync(x => x.ReservationId == seed.ReservationId));
     }
 
     [Fact]

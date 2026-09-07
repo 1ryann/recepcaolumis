@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Notifications;
 using GestaoPredio.Application.Visits;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Reservations;
@@ -113,6 +114,7 @@ public static class VisitEndpoints
 
     private static async Task<IResult> Create(CreateVisitRequest request, HttpContext context,
         ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
+        INotificationService notifications,
         CancellationToken cancellationToken)
     {
         if (request.ProfessionalId == Guid.Empty || string.IsNullOrWhiteSpace(request.VisitorName)) return Invalid();
@@ -156,6 +158,9 @@ public static class VisitEndpoints
             context.TraceIdentifier, Actor(context), context.Connection.RemoteIpAddress?.ToString()));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await notifications.NotifyProfessionalAsync(new ProfessionalNotificationEvent(
+            visit.ProfessionalId, NotificationEventTypes.ProfessionalVisitWaiting,
+            visit.VisitorName, visit.ArrivedAt, visit.ReservationId), CancellationToken.None);
         return Results.Created($"/api/admin/visits/{visit.Id}",
             await LoadResponse(db, visit.Id, null, cancellationToken));
     }

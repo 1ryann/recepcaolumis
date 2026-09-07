@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Leases;
+using GestaoPredio.Application.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Customers;
@@ -116,7 +117,7 @@ public static class TotemEndpoints
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, INotificationService notifications, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
@@ -133,6 +134,9 @@ public static class TotemEndpoints
         db.Visits.Add(visit); token.MarkUsed(time.GetUtcNow());
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        await notifications.NotifyProfessionalAsync(new ProfessionalNotificationEvent(
+            visit.ProfessionalId, NotificationEventTypes.ProfessionalVisitWaiting,
+            visit.VisitorName, visit.ArrivedAt, visit.ReservationId), CancellationToken.None);
         return Results.Ok(new { visitId = visit.Id, status = "WAITING" });
     }
 

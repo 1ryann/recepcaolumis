@@ -11,6 +11,7 @@ using GestaoPredio.Infrastructure.OperationalAlerts;
 using GestaoPredio.Infrastructure.Availability;
 using GestaoPredio.Infrastructure.Finance;
 using GestaoPredio.Infrastructure.Dashboard;
+using GestaoPredio.Infrastructure.Notifications;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.OperationalAlerts;
@@ -78,6 +79,7 @@ builder.Services.AddScoped<IFinancialChargeCalculator, FinancialChargeCalculator
 builder.Services.AddScoped<IFinancialChargeMaterializer, PostgreSqlFinancialChargeMaterializer>();
 builder.Services.AddScoped<IFinancialSummaryReader, PostgreSqlFinancialSummaryReader>();
 builder.Services.AddScoped<IDashboardReader, PostgreSqlDashboardReader>();
+builder.Services.AddLumisNotifications(builder.Configuration, builder.Environment);
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
