@@ -44,8 +44,8 @@ public static partial class LeaseEndpoints
             [lease.ProfessionalId, request.ProfessionalId]), cancellationToken);
         if (!await ResourcesAreActive(db, request.TenantId, request.ProfessionalId, request.RoomId, cancellationToken))
             return InvalidResource();
-        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
-            contract!.OccupancyStartAt, contract.OccupancyEndAt, null,
+        var roomConflict = await roomAvailability.CheckLeaseRoomAsync(request.RoomId,
+            contract!.OccupancyStartAt, contract.OccupancyEndAt,
             enforceOperatingHours: contract.Mode == LeaseMode.Hourly, cancellationToken);
         if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
         var conflict = await conflictDetector.FindConflictAsync(request.RoomId, request.ProfessionalId,
@@ -104,8 +104,8 @@ public static partial class LeaseEndpoints
         else if (lease.Mode == LeaseMode.Monthly)
             anchor = TimeZoneInfo.ConvertTime(newStart, timeZone).Day;
 
-        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(lease.RoomId,
-            newStart, lease.OccupancyEndAt, null,
+        var roomConflict = await roomAvailability.CheckLeaseRoomAsync(lease.RoomId,
+            newStart, lease.OccupancyEndAt,
             enforceOperatingHours: lease.Mode == LeaseMode.Hourly, cancellationToken);
         if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
 
@@ -186,8 +186,8 @@ public static partial class LeaseEndpoints
                 var conflict = await conflictDetector.FindConflictAsync(lease.RoomId, lease.ProfessionalId,
                     lease.OccupancyStartAt, endAt, lease.Id, cancellationToken);
                 if (conflict.Any) return Conflict();
-                var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(lease.RoomId,
-                    lease.OccupancyStartAt, endAt, null,
+                var roomConflict = await roomAvailability.CheckLeaseRoomAsync(lease.RoomId,
+                    lease.OccupancyStartAt, endAt,
                     enforceOperatingHours: lease.Mode == LeaseMode.Hourly, cancellationToken);
                 if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
                 lease.ScheduleEnd(endAt, now);

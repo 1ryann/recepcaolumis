@@ -64,6 +64,20 @@ public sealed class PostgreSqlRoomAvailabilityService(
         return occurrence ? RoomAvailabilityConflict.Lease : RoomAvailabilityConflict.None;
     }
 
+    public async Task<RoomAvailabilityConflict> CheckLeaseRoomAsync(Guid roomId,
+        DateTimeOffset startAt, DateTimeOffset? endAt, bool enforceOperatingHours,
+        CancellationToken cancellationToken)
+    {
+        var operational = await CheckScheduleAndBlocksAsync(roomId, startAt, endAt,
+            null, enforceOperatingHours, cancellationToken);
+        if (operational != RoomAvailabilityConflict.None) return operational;
+        var reservation = await db.Reservations.AsNoTracking().AnyAsync(value =>
+            value.RoomId == roomId && value.Status == ReservationStatus.Approved &&
+            value.Kind != ReservationKind.Cancellation && startAt < value.EndAt &&
+            (endAt == null || value.StartAt < endAt), cancellationToken);
+        return reservation ? RoomAvailabilityConflict.Reservation : RoomAvailabilityConflict.None;
+    }
+
     public async Task<bool> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
         DateTimeOffset now, CancellationToken cancellationToken)
     {

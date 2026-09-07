@@ -145,8 +145,8 @@ public static partial class LeaseEndpoints
         }
         if (overdue.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
-        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
-            contract!.OccupancyStartAt, contract.OccupancyEndAt, null,
+        var roomConflict = await roomAvailability.CheckLeaseRoomAsync(request.RoomId,
+            contract!.OccupancyStartAt, contract.OccupancyEndAt,
             enforceOperatingHours: contract.Mode == LeaseMode.Hourly, cancellationToken);
         if (roomConflict != RoomAvailabilityConflict.None)
             return AvailabilityConflict(roomConflict);
@@ -189,6 +189,9 @@ public static partial class LeaseEndpoints
             statusCode: StatusCodes.Status409Conflict),
         RoomAvailabilityConflict.RoomBlock => Results.Json(new ApiError(
             "ROOM_BLOCKED", "A sala está bloqueada no período informado."),
+            statusCode: StatusCodes.Status409Conflict),
+        RoomAvailabilityConflict.Reservation => Results.Json(new ApiError(
+            "LEASE_RESOURCE_CONFLICT", "A sala ou o profissional já possui ocupação conflitante."),
             statusCode: StatusCodes.Status409Conflict),
         _ => throw new InvalidOperationException("Conflito de disponibilidade inesperado.")
     };

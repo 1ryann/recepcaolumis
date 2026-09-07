@@ -258,6 +258,39 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Lease_cannot_overlap_an_existing_approved_reservation_for_the_room()
+    {
+        await factory.ResetAsync();
+        var reserved = await SeedResourcesAsync();
+        var leaseResources = await SeedResourcesAsync();
+        var reservation = Reservation.CreateApproved(reserved.Room.Id, reserved.Professional.Id,
+            MondayAtEight, MondayAtEight.AddHours(1), "seed", DateTimeOffset.UtcNow);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Reservations.Add(reservation);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(SystemRoles.Administrador);
+
+        var response = await factory.PostWithCsrfAsync("/api/admin/leases", new
+        {
+            tenantId = leaseResources.Tenant.Id,
+            professionalId = leaseResources.Professional.Id,
+            roomId = reserved.Room.Id,
+            mode = "HOURLY",
+            contractedRate = 100m,
+            billingStartAt = MondayAtEight.AddDays(-1),
+            billingDueDay = 10,
+            occupancyStartAt = MondayAtEight.AddMinutes(30),
+            occupancyEndAt = (DateTimeOffset?)MondayAtEight.AddHours(2)
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("LEASE_RESOURCE_CONFLICT", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
+    [Fact]
     public async Task Professional_cannot_access_configuration_and_mutations_require_antiforgery()
     {
         await factory.ResetAsync();
