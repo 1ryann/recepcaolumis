@@ -62,8 +62,16 @@ public static class CustomerEndpoints
             TargetEntityType = "CUSTOMER", TargetEntityId = customer.Id, IpAddress = context.Connection.RemoteIpAddress?.ToString(),
             OccurredAt = now, CorrelationId = context.TraceIdentifier
         });
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return InvalidRegistration();
+        }
         return Results.Created("/api/customer/me", new CustomerProfileResponse(customer.Id, customer.Name, customer.Phone, customer.IsActive, customer.CreatedAt, customer.UpdatedAt));
     }
 

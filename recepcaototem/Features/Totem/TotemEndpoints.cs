@@ -68,7 +68,13 @@ public static class TotemEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (customer is null)
         {
-            try { customer = Customer.Create(request.Name, phone, time.GetUtcNow()); db.Customers.Add(customer); await db.SaveChangesAsync(ct); }
+            try
+            {
+                customer = Customer.Create(request.Name, phone, time.GetUtcNow());
+                db.Customers.Add(customer);
+                db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CUSTOMER_CREATED", Result = "SUCCEEDED", TargetEntityType = "CUSTOMER", TargetEntityId = customer.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
+                await db.SaveChangesAsync(ct);
+            }
             catch (DbUpdateException) { await transaction.RollbackAsync(ct); return Results.Json(new ApiError("CUSTOMER_ALREADY_EXISTS", "Não foi possível concluir o agendamento."), statusCode: 409); }
         }
         if (!customer.IsActive) return Invalid();
@@ -79,7 +85,9 @@ public static class TotemEndpoints
             if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None) continue;
             if ((await conflicts.FindConflictAsync(roomId, request.ProfessionalId, request.StartAt, request.EndAt, null, ct)).Any) continue;
             var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt, "TOTEM", time.GetUtcNow(), customer.Id);
-            db.Reservations.Add(reservation); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+            db.Reservations.Add(reservation);
+            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
+            await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
             return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
         }
         await transaction.RollbackAsync(ct);
@@ -104,6 +112,7 @@ public static class TotemEndpoints
         var (token, reservation, customer, preview) = result.Value;
         var existing = await db.Visits.SingleOrDefaultAsync(x => x.ReservationId == reservation.Id && x.IsOpen, ct);
         if (existing is not null) return Results.Ok(new { visitId = existing.Id, status = existing.Status.ToString().ToUpperInvariant() });
+        if (token.UsedAt is not null) return InvalidCheckIn();
         var visit = Visit.Arrive(reservation.ProfessionalId, reservation.RoomId, reservation.Id, customer.Name, "TOTEM", time.GetUtcNow(), customer.Id);
         db.Visits.Add(visit); token.MarkUsed(time.GetUtcNow());
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
