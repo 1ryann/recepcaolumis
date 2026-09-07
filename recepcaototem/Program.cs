@@ -39,6 +39,7 @@ using recepcaototem.Features.Availability;
 using recepcaototem.Features.Finance;
 using recepcaototem.Features.Dashboard;
 using recepcaototem.Features.Customers;
+using recepcaototem.Features.Totem;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -167,6 +168,7 @@ app.MapFinanceEndpoints();
 app.MapDashboardEndpoints();
 app.MapCustomerEndpoints();
 app.MapCustomerSchedulingEndpoints();
+app.MapTotemEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

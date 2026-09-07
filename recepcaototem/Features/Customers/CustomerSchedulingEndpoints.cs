@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.WebUtilities;
 using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
@@ -31,6 +33,7 @@ public static class CustomerSchedulingEndpoints
         group.MapGet("/reservations/{id:guid}", ReservationDetail);
         group.MapPost("/reservations", CreateReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/cancel", CancelReservation).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/reservations/{id:guid}/check-in-token", IssueToken).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -133,7 +136,33 @@ public static class CustomerSchedulingEndpoints
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
         if (reservation is null) return Results.NotFound();
-        try { reservation.Cancel(customer.ApplicationUserId!, time.GetUtcNow()); await db.SaveChangesAsync(ct); return Results.NoContent(); }
+        try
+        {
+            var now = time.GetUtcNow();
+            reservation.Cancel(customer.ApplicationUserId!, now);
+            var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
+            token?.Revoke(now);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }
         catch (InvalidOperationException) { return Results.Json(new ApiError("INVALID_RESERVATION_STATE", "A reserva não pode ser cancelada."), statusCode: 409); }
+    }
+
+    private static async Task<IResult> IssueToken(Guid id, ClaimsPrincipal principal, HttpContext context,
+        ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
+        var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
+        if (reservation is null) return Results.NotFound();
+        if (reservation.Status != ReservationStatus.Approved || reservation.EndAt <= time.GetUtcNow())
+            return Results.BadRequest(new ApiError("CHECK_IN_NOT_ELIGIBLE", "O check-in não está disponível para esta reserva."));
+        var raw = RandomNumberGenerator.GetBytes(32);
+        var hash = SHA256.HashData(raw);
+        var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
+        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, time.GetUtcNow(), reservation.EndAt));
+        else token.Rotate(hash, time.GetUtcNow(), reservation.EndAt);
+        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });
     }
 }

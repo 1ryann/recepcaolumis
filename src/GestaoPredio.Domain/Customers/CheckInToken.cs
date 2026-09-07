@@ -29,4 +29,15 @@ public sealed class CheckInToken
 
     public void Revoke(DateTimeOffset at) => RevokedAt = TimestampNormalizer.ToUtcMicroseconds(at);
     public void MarkUsed(DateTimeOffset at) => UsedAt = TimestampNormalizer.ToUtcMicroseconds(at);
+
+    public void Rotate(byte[] tokenHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)
+    {
+        if (tokenHash is null || tokenHash.Length != 32) throw new ArgumentException("O hash deve ter 32 bytes.", nameof(tokenHash));
+        if (expiresAt <= issuedAt) throw new ArgumentException("A expiração deve ser posterior à emissão.", nameof(expiresAt));
+        TokenHash = tokenHash.ToArray();
+        IssuedAt = TimestampNormalizer.ToUtcMicroseconds(issuedAt);
+        ExpiresAt = TimestampNormalizer.ToUtcMicroseconds(expiresAt);
+        RevokedAt = null;
+        UsedAt = null;
+    }
 }
