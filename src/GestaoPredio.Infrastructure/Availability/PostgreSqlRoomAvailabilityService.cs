@@ -2,15 +2,70 @@ using GestaoPredio.Application.Availability;
 using GestaoPredio.Domain.Availability;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Reservations;
+using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using GestaoPredio.Application.Scheduling;
 
 namespace GestaoPredio.Infrastructure.Availability;
 
 public sealed class PostgreSqlRoomAvailabilityService(
     ApplicationDbContext db,
-    OperatingHoursEvaluator operatingHours) : IRoomAvailabilityService
+    OperatingHoursEvaluator operatingHours,
+    TimeZoneInfo operationalTimeZone) : IRoomAvailabilityService
 {
+    public async Task<IReadOnlyList<RoomOperationalStatus>> ReadRoomOperationalStatusAsync(
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var current = now.ToUniversalTime();
+        var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive)
+            .Select(x => new RoomOperationalStatusRow(x.Id, x.Name)).ToListAsync(cancellationToken);
+        if (rooms.Count == 0) return [];
+        var roomIds = rooms.Select(x => x.Id).ToArray();
+        var blocks = await db.RoomBlocks.AsNoTracking().Where(x => roomIds.Contains(x.RoomId) &&
+            x.Status == RoomBlockStatus.Active && x.StartAt <= current && x.EndAt > current)
+            .Select(x => x.RoomId).ToListAsync(cancellationToken);
+        var visits = await db.Visits.AsNoTracking().Where(x => x.RoomId != null && roomIds.Contains(x.RoomId.Value) &&
+            (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService))
+            .Select(x => x.RoomId!.Value).ToListAsync(cancellationToken);
+        var reservations = await db.Reservations.AsNoTracking().Where(x => roomIds.Contains(x.RoomId) &&
+            x.Status == ReservationStatus.Approved && x.Kind != ReservationKind.Cancellation && x.EndAt > current)
+            .Select(x => new { x.RoomId, x.StartAt }).ToListAsync(cancellationToken);
+        var leases = await db.Leases.AsNoTracking().Where(x => roomIds.Contains(x.RoomId) &&
+            (x.LifecycleState == LeaseLifecycleState.Open || x.LifecycleState == LeaseLifecycleState.EndingPending) &&
+            (x.OccupancyEndAt == null || x.OccupancyEndAt > current))
+            .Select(x => new { x.RoomId, x.OccupancyStartAt }).ToListAsync(cancellationToken);
+        var occurrences = await (from occurrence in db.LeaseOccurrences.AsNoTracking()
+                                 join lease in db.Leases.AsNoTracking() on occurrence.LeaseId equals lease.Id
+                                 where roomIds.Contains(lease.RoomId) && occurrence.State == LeaseOccurrenceState.Planned &&
+                                       occurrence.EndAt > current && lease.LifecycleState != LeaseLifecycleState.Cancelled &&
+                                       lease.LifecycleState != LeaseLifecycleState.Ended
+                                 select new { lease.RoomId, occurrence.StartAt }).ToListAsync(cancellationToken);
+        var local = TimeZoneInfo.ConvertTime(current, operationalTimeZone);
+        var closed = await IsClosedNowAsync(local, cancellationToken);
+        return rooms.Select(room =>
+        {
+            var occupied = visits.Contains(room.Id) || leases.Any(x => x.RoomId == room.Id && x.OccupancyStartAt <= current) ||
+                           reservations.Any(x => x.RoomId == room.Id && x.StartAt <= current) ||
+                           occurrences.Any(x => x.RoomId == room.Id && x.StartAt <= current);
+            var next = reservations.Where(x => x.RoomId == room.Id && x.StartAt > current).Select(x => x.StartAt)
+                .Concat(leases.Where(x => x.RoomId == room.Id && x.OccupancyStartAt > current).Select(x => x.OccupancyStartAt))
+                .Concat(occurrences.Where(x => x.RoomId == room.Id && x.StartAt > current).Select(x => x.StartAt))
+                .OrderBy(x => x).Cast<DateTimeOffset?>().FirstOrDefault();
+            var status = blocks.Contains(room.Id) ? "BLOCKED" : occupied ? "OCCUPIED" : next is not null ? "RESERVED" : closed ? "CLOSED" : "AVAILABLE";
+            return new RoomOperationalStatus(room.Id, room.Name, status, next);
+        }).OrderBy(x => x.RoomName).ThenBy(x => x.RoomId).ToArray();
+    }
+
+    private async Task<bool> IsClosedNowAsync(DateTimeOffset local, CancellationToken cancellationToken)
+    {
+        if (!await db.OperatingHoursSchedules.AsNoTracking().AnyAsync(cancellationToken)) return false;
+        var time = TimeOnly.FromDateTime(local.DateTime);
+        return !await db.OperatingHourIntervals.AsNoTracking().AnyAsync(x => x.DayOfWeek == local.DayOfWeek &&
+            x.OpensAt <= time && x.ClosesAt > time, cancellationToken);
+    }
+
+    private sealed record RoomOperationalStatusRow(Guid Id, string Name);
     public async Task<RoomAvailabilityConflict> CheckScheduleAndBlocksAsync(Guid roomId,
         DateTimeOffset startAt, DateTimeOffset? endAt, Guid? excludedRoomBlockId,
         bool enforceOperatingHours, CancellationToken cancellationToken)

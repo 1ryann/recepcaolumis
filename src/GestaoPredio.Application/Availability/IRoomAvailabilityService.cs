@@ -14,6 +14,8 @@ public enum RoomAvailabilityConflict
 
 public interface IRoomAvailabilityService
 {
+    Task<IReadOnlyList<RoomOperationalStatus>> ReadRoomOperationalStatusAsync(
+        DateTimeOffset now, CancellationToken cancellationToken);
     Task<RoomAvailabilityConflict> CheckScheduleAndBlocksAsync(Guid roomId,
         DateTimeOffset startAt, DateTimeOffset? endAt, Guid? excludedRoomBlockId,
         bool enforceOperatingHours, CancellationToken cancellationToken);
@@ -29,3 +31,6 @@ public interface IRoomAvailabilityService
     Task<bool> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
         DateTimeOffset now, CancellationToken cancellationToken);
 }
+
+public sealed record RoomOperationalStatus(Guid RoomId, string RoomName, string Status,
+    DateTimeOffset? NextCommitmentAt);

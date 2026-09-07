@@ -166,21 +166,14 @@ public static class FinanceEndpoints
         return Results.Ok(Map(charge, null, null, today));
     }
 
-    private static async Task<IResult> Summary(DateOnly? from, DateOnly? to, ApplicationDbContext db,
-        TimeProvider clock, TimeZoneInfo zone, CancellationToken ct)
+    private static async Task<IResult> Summary(DateOnly? from, DateOnly? to,
+        IFinancialSummaryReader summaryReader, TimeProvider clock, TimeZoneInfo zone, CancellationToken ct)
     {
         if (from > to) return Bad("INVALID_PERIOD", "O período informado é inválido.");
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), zone).DateTime);
-        var query = db.FinancialCharges.AsNoTracking();
-        if (from is not null) query = query.Where(x => x.DueDate >= from);
-        if (to is not null) query = query.Where(x => x.DueDate <= to);
-        var pending = query.Where(x => x.Status == FinancialChargeStatus.Pending && x.DueDate >= today);
-        var overdue = query.Where(x => x.Status == FinancialChargeStatus.Pending && x.DueDate < today);
-        var paid = query.Where(x => x.Status == FinancialChargeStatus.Paid);
-        return Results.Ok(new FinancialSummaryResponse(await pending.SumAsync(x => (decimal?)x.FinalAmount, ct) ?? 0m,
-            await overdue.SumAsync(x => (decimal?)x.FinalAmount, ct) ?? 0m,
-            await paid.SumAsync(x => (decimal?)x.FinalAmount, ct) ?? 0m,
-            await pending.CountAsync(ct), await overdue.CountAsync(ct), await paid.CountAsync(ct)));
+        var summary = await summaryReader.ReadAsync(from, to, today, ct);
+        return Results.Ok(new FinancialSummaryResponse(summary.PendingAmount, summary.OverdueAmount,
+            summary.PaidAmount, summary.PendingCount, summary.OverdueCount, summary.PaidCount));
     }
 
     private static FinancialChargeResponse Map(FinancialCharge charge, string? professionalName, string? tenantName, DateOnly today) =>
