@@ -10,6 +10,9 @@ import { Rooms } from './pages/admin/Rooms'
 import { Leases } from './pages/admin/Leases'
 import { Reservations } from './pages/admin/Reservations'
 import { Visits } from './pages/admin/Visits'
+import { CustomerComingSoon, CustomerHome, CustomerReservations, CustomerShell } from './pages/customer/CustomerHome'
+import { CustomerRegister } from './pages/customer/CustomerRegister'
+import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from './pages/professional/ProfessionalHome'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./dev/DevelopmentApp')) : null
 
@@ -17,9 +20,29 @@ function ProductionApp() {
   return (
     <Routes>
       <Route path="/recepcao" element={<ModuleUnavailable title="Recepção" />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/change-password" element={<ChangePassword />} />
-      <Route element={<ProtectedRoute />}>
+  <Route path="/login" element={<Login />} />
+  <Route path="/cliente/login" element={<Login audience="customer" />} />
+  <Route path="/cliente/cadastro" element={<CustomerRegister />} />
+  <Route path="/change-password" element={<ChangePassword />} />
+  <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
+   <Route path="/cliente" element={<CustomerShell />}>
+    <Route index element={<CustomerHome />} />
+    <Route path="agendamentos" element={<CustomerReservations />} />
+    <Route path="agendar" element={<CustomerComingSoon title="Agendar atendimento" />} />
+   </Route>
+  </Route>
+  <Route element={<ProtectedRoute allowedRoles={['PROFISSIONAL']} />}>
+   <Route path="/profissional" element={<ProfessionalShell />}>
+    <Route index element={<ProfessionalDashboard />} />
+    <Route path="agenda" element={<ProfessionalAgenda />} />
+    <Route path="reservas" element={<ProfessionalPlaceholder title="Reservas" />} />
+    <Route path="atendimentos" element={<ProfessionalPlaceholder title="Atendimentos" />} />
+    <Route path="locacoes" element={<ProfessionalPlaceholder title="Locações" />} />
+    <Route path="financeiro" element={<ProfessionalPlaceholder title="Financeiro" />} />
+    <Route path="perfil" element={<ProfessionalPlaceholder title="Meu perfil" />} />
+   </Route>
+  </Route>
+  <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<ModuleUnavailable title="Visão geral" />} />
           <Route path="salas" element={<Rooms />} />

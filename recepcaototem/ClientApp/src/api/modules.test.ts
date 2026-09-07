@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
-  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi } from './modules'
+  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi, customerApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -146,4 +146,20 @@ test('visit clients keep operations and owned professional contracts separate', 
   expect(apiClient.get).toHaveBeenCalledWith('/api/professional/visits', {
     query: { status: 'IN_SERVICE', page: 1, pageSize: 20 }, signal,
   })
+})
+
+test('customer registration and profile clients keep identity server-owned', async () => {
+  await customerApi.register({
+    name: 'Carlos Oliveira', phone: '(69) 99999-9999', email: 'carlos@example.com',
+    password: 'Senha123!', confirmation: 'Senha123!',
+  })
+  await customerApi.me()
+  await customerApi.professionals()
+  await customerApi.reservations({ page: 1, pageSize: 20 })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/customer/register', expect.not.objectContaining({
+    customerId: expect.anything(), role: expect.anything(), roomId: expect.anything(),
+  }))
+  expect(apiClient.get).toHaveBeenCalledWith('/api/customer/me', { signal: undefined })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/customer/professionals', { signal: undefined })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/customer/reservations', { query: { page: 1, pageSize: 20 }, signal: undefined })
 })

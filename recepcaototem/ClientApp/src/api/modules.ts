@@ -30,6 +30,30 @@ export interface ProfessionalDto {
   concurrencyToken: string
 }
 
+export interface CustomerProfileDto {
+  id: string
+  name: string
+  phone: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerProfessionalDto {
+  id: string
+  name: string
+  profession: string
+  description: string | null
+}
+
+export interface CustomerRegisterInput {
+  name: string
+  phone: string
+  email: string
+  password: string
+  confirmation: string
+}
+
 export interface ProfessionalInput {
   name: string
   profession: string
@@ -362,4 +386,19 @@ export const professionalVisitsApi = {
   start(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/start`, { concurrencyToken }) },
   end(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/end`, { concurrencyToken }) },
   cancel(id: string, concurrencyToken: string) { return apiClient.post<VisitDto>(`${professionalVisitPath(id)}/cancel`, { concurrencyToken }) },
+}
+
+export const customerApi = {
+  register(input: CustomerRegisterInput) {
+    return apiClient.post<CustomerProfileDto>('/api/customer/register', input)
+  },
+  me(signal?: AbortSignal) {
+    return apiClient.get<CustomerProfileDto>('/api/customer/me', { signal })
+  },
+  professionals(signal?: AbortSignal) {
+    return apiClient.get<CustomerProfessionalDto[]>('/api/customer/professionals', { signal })
+  },
+  reservations(query: { page: number, pageSize: number }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<ReservationDto>>('/api/customer/reservations', { query, signal })
+  },
 }
