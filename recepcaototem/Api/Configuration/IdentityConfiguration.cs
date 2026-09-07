@@ -12,6 +12,7 @@ public static class IdentityConfiguration
 {
     public const string ActiveUserPolicy = "ActiveUser";
     public const string PasswordChangedPolicy = "PasswordChanged";
+    public const string CustomerPolicy = "Customer";
     public const string ActiveClaim = "lumis:active";
     public const string MustChangePasswordClaim = "lumis:must_change_password";
 
@@ -55,6 +56,8 @@ public static class IdentityConfiguration
             options.AddPolicy("Operations", policy => policy.RequireRole(SystemRoles.Administrador, SystemRoles.Gerente)
                 .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
             options.AddPolicy("Professional", policy => policy.RequireRole(SystemRoles.Profissional)
+                .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
+            options.AddPolicy(CustomerPolicy, policy => policy.RequireRole(SystemRoles.Customer)
                 .RequireClaim(ActiveClaim, "true").RequireClaim(MustChangePasswordClaim, "false"));
         });
     }

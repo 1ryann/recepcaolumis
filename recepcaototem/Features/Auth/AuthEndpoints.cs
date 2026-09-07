@@ -59,7 +59,7 @@ public static class AuthEndpoints
             return InvalidCredentials();
         }
 
-        if (!user.IsActive || !(await users.GetRolesAsync(user)).Any(SystemRoles.All.Contains))
+        if (!user.IsActive || !(await users.GetRolesAsync(user)).Any(SystemRoles.AuthenticationRoles.Contains))
         {
             _ = new PasswordHasher<ApplicationUser>().VerifyHashedPassword(DummyUser, DummyHash, request.Password ?? "");
             await audit.WriteAsync("LOGIN_FAILED", "REJECTED", null, user.Id, context, cancellationToken);
