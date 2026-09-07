@@ -110,6 +110,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     {
         await using var scope = Services.CreateAsyncScope();
         await ResetDatabaseAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        await EnsureRolesAsync(scope.ServiceProvider);
         ClearStoredTestFiles();
         Client.Dispose();
         Client = CreateClient(new WebApplicationFactoryClientOptions
