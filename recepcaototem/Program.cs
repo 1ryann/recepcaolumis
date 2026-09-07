@@ -9,11 +9,13 @@ using GestaoPredio.Infrastructure.Leases;
 using GestaoPredio.Infrastructure.Reservations;
 using GestaoPredio.Infrastructure.OperationalAlerts;
 using GestaoPredio.Infrastructure.Availability;
+using GestaoPredio.Infrastructure.Finance;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.OperationalAlerts;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Application.Availability;
+using GestaoPredio.Application.Finance;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
@@ -32,6 +34,7 @@ using recepcaototem.Features.Reservations;
 using recepcaototem.Features.Visits;
 using recepcaototem.Features.OperationalAlerts;
 using recepcaototem.Features.Availability;
+using recepcaototem.Features.Finance;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -64,6 +67,8 @@ builder.Services.AddSingleton(new OperatingHoursEvaluator(operationalTimeZone));
 builder.Services.AddScoped<IRoomAvailabilityService, PostgreSqlRoomAvailabilityService>();
 builder.Services.AddSingleton<ILeaseOpenVisitProbe, NoOpenVisitProbe>();
 builder.Services.AddScoped<ILeaseLifecycleCoordinator, LeaseLifecycleCoordinator>();
+builder.Services.AddScoped<IFinancialChargeCalculator, FinancialChargeCalculator>();
+builder.Services.AddScoped<IFinancialChargeMaterializer, PostgreSqlFinancialChargeMaterializer>();
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -152,6 +157,7 @@ app.MapVisitEndpoints();
 app.MapOperationalAlertEndpoints();
 app.MapOperatingHoursEndpoints();
 app.MapRoomBlockEndpoints();
+app.MapFinanceEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

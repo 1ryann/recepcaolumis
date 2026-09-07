@@ -189,6 +189,30 @@ public sealed class MigrationSafetyTests
     }
 
     [Fact]
+    public void Financial_charges_migration_is_additive_and_non_destructive()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var assembly = db.GetService<IMigrationsAssembly>();
+        var metadata = Assert.Single(assembly.Migrations,
+            pair => pair.Key.EndsWith("_FinancialChargesFoundation", StringComparison.Ordinal));
+        var migration = assembly.CreateMigration(metadata.Value, "Npgsql.EntityFrameworkCore.PostgreSQL");
+        Assert.NotEmpty(migration.UpOperations);
+        Assert.All(migration.UpOperations, operation =>
+        {
+            Assert.Contains(operation.GetType(), new[] { typeof(CreateTableOperation), typeof(CreateIndexOperation) });
+            Assert.False(operation.IsDestructiveChange);
+        });
+        var table = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>());
+        Assert.Equal("FinancialCharges", table.Name);
+        Assert.All(table.ForeignKeys, foreignKey => Assert.Equal(ReferentialAction.NoAction, foreignKey.OnDelete));
+        var sql = db.GetService<IMigrator>().GenerateScript("OperatingHoursAndRoomBlocks", "FinancialChargesFoundation", MigrationsSqlGenerationOptions.Idempotent);
+        foreach (var forbidden in new[] { "DROP ", "TRUNCATE ", "DELETE FROM", "ALTER DATABASE", "ALTER TABLE", "sp_getapplock", "rowversion" })
+            Assert.DoesNotContain(forbidden, sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE \"FinancialCharges\"", sql);
+        Assert.Contains("UX_FinancialCharges_Lease_Period", sql);
+    }
+
+    [Fact]
     public void Operating_hours_and_room_blocks_migration_is_additive_and_preserves_room_history()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);

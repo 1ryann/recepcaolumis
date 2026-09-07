@@ -1,5 +1,6 @@
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Availability;
+using GestaoPredio.Domain.Finance;
 using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
@@ -185,6 +186,21 @@ public sealed class ModuleModelTests
         AssertColumn(entity, "State", "character varying(20)", 20);
         AssertIndex(entity, "UX_LeaseOccurrences_LeaseId_StartAt", true, null, "LeaseId", "StartAt");
         Assert.Equal(DeleteBehavior.NoAction, Assert.Single(entity.GetForeignKeys()).DeleteBehavior);
+        AssertPostgreSqlVersion(entity);
+    }
+
+    [Fact]
+    public void Financial_charge_model_freezes_amounts_and_uses_non_destructive_links()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var entity = Entity<FinancialCharge>(db);
+        Assert.Equal("FinancialCharges", entity.GetTableName());
+        Assert.Equal("numeric(18,2)", entity.FindProperty(nameof(FinancialCharge.CalculatedAmount))!.GetColumnType());
+        Assert.Equal("numeric(18,2)", entity.FindProperty(nameof(FinancialCharge.FinalAmount))!.GetColumnType());
+        Assert.Equal("date", entity.FindProperty(nameof(FinancialCharge.DueDate))!.GetColumnType());
+        Assert.Equal(4000, entity.FindProperty(nameof(FinancialCharge.CalculationDetails))!.GetMaxLength());
+        AssertIndex(entity, "UX_FinancialCharges_Lease_Period", true, null, "LeaseId", "ReferencePeriodStart", "ReferencePeriodEnd");
+        Assert.All(entity.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
         AssertPostgreSqlVersion(entity);
     }
 

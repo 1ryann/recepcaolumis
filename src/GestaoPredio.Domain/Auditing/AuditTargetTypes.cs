@@ -9,4 +9,5 @@ public static class AuditTargetTypes
     public const string Visit = "VISIT";
     public const string OperatingHours = "OPERATING_HOURS";
     public const string RoomBlock = "ROOM_BLOCK";
+    public const string FinancialCharge = "FINANCIAL_CHARGE";
 }

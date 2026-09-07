@@ -40,4 +40,8 @@ public static class AuditActions
     public const string RoomBlockCreated = "ROOM_BLOCK_CREATED";
     public const string RoomBlockUpdated = "ROOM_BLOCK_UPDATED";
     public const string RoomBlockCancelled = "ROOM_BLOCK_CANCELLED";
+    public const string FinancialChargeMaterialized = "FINANCIAL_CHARGE_MATERIALIZED";
+    public const string FinancialChargeAdjusted = "FINANCIAL_CHARGE_ADJUSTED";
+    public const string FinancialChargePaid = "FINANCIAL_CHARGE_PAID";
+    public const string FinancialChargeCancelled = "FINANCIAL_CHARGE_CANCELLED";
 }

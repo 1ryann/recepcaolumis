@@ -1,5 +1,6 @@
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Availability;
+using GestaoPredio.Domain.Finance;
 using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Domain.Professionals;
@@ -27,6 +28,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<OperatingHoursSchedule> OperatingHoursSchedules => Set<OperatingHoursSchedule>();
  public DbSet<OperatingHourInterval> OperatingHourIntervals => Set<OperatingHourInterval>();
  public DbSet<RoomBlock> RoomBlocks => Set<RoomBlock>();
+ public DbSet<FinancialCharge> FinancialCharges => Set<FinancialCharge>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -45,6 +47,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new OperatingHoursScheduleConfiguration());
   builder.ApplyConfiguration(new OperatingHourIntervalConfiguration());
   builder.ApplyConfiguration(new RoomBlockConfiguration());
+  builder.ApplyConfiguration(new FinancialChargeConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);
