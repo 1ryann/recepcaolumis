@@ -12,6 +12,7 @@ using GestaoPredio.Infrastructure.Availability;
 using GestaoPredio.Infrastructure.Finance;
 using GestaoPredio.Infrastructure.Dashboard;
 using GestaoPredio.Infrastructure.Notifications;
+using GestaoPredio.Infrastructure.AccessControl;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.OperationalAlerts;
@@ -42,6 +43,7 @@ using recepcaototem.Features.Dashboard;
 using recepcaototem.Features.Customers;
 using recepcaototem.Features.Totem;
 using recepcaototem.Features.Reception;
+using recepcaototem.Features.AccessControl;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -80,6 +82,7 @@ builder.Services.AddScoped<IFinancialChargeMaterializer, PostgreSqlFinancialChar
 builder.Services.AddScoped<IFinancialSummaryReader, PostgreSqlFinancialSummaryReader>();
 builder.Services.AddScoped<IDashboardReader, PostgreSqlDashboardReader>();
 builder.Services.AddLumisNotifications(builder.Configuration, builder.Environment);
+builder.Services.AddLumisAccessControl(builder.Configuration, builder.Environment);
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -174,6 +177,7 @@ app.MapCustomerEndpoints();
 app.MapCustomerSchedulingEndpoints();
 app.MapTotemEndpoints();
 app.MapReceptionEndpoints();
+app.MapAccessControlEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();
