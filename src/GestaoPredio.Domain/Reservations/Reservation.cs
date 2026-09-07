@@ -13,6 +13,7 @@ public sealed class Reservation
     public Guid Id { get; private set; }
     public Guid RoomId { get; private set; }
     public Guid ProfessionalId { get; private set; }
+    public Guid? CustomerId { get; private set; }
     public Guid? OriginalReservationId { get; private set; }
     public ReservationKind Kind { get; private set; }
     public ReservationStatus Status { get; private set; }
@@ -30,18 +31,18 @@ public sealed class Reservation
     public bool BlocksResources => Status == ReservationStatus.Approved && Kind != ReservationKind.Cancellation;
 
     public static Reservation RequestNew(Guid roomId, Guid professionalId, DateTimeOffset startAt,
-        DateTimeOffset endAt, string requestedByUserId, DateTimeOffset occurredAt)
+        DateTimeOffset endAt, string requestedByUserId, DateTimeOffset occurredAt, Guid? customerId = null)
     {
         EnsureMinimumNotice(startAt, occurredAt);
         return Create(roomId, professionalId, startAt, endAt, requestedByUserId, occurredAt,
-            ReservationKind.New, ReservationStatus.Pending, null);
+            ReservationKind.New, ReservationStatus.Pending, null, customerId);
     }
 
     public static Reservation CreateApproved(Guid roomId, Guid professionalId, DateTimeOffset startAt,
-        DateTimeOffset endAt, string actorUserId, DateTimeOffset occurredAt)
+        DateTimeOffset endAt, string actorUserId, DateTimeOffset occurredAt, Guid? customerId = null)
     {
         var reservation = Create(roomId, professionalId, startAt, endAt, actorUserId, occurredAt,
-            ReservationKind.New, ReservationStatus.Approved, null);
+            ReservationKind.New, ReservationStatus.Approved, null, customerId);
         reservation.DecidedByUserId = actorUserId;
         reservation.DecidedAt = reservation.CreatedAt;
         return reservation;
@@ -55,7 +56,7 @@ public sealed class Reservation
         EnsureMinimumNotice(original.StartAt, occurredAt);
         EnsureMinimumNotice(startAt, occurredAt);
         return Create(original.RoomId, original.ProfessionalId, startAt, endAt, requestedByUserId,
-            occurredAt, ReservationKind.Reschedule, ReservationStatus.Pending, original.Id);
+            occurredAt, ReservationKind.Reschedule, ReservationStatus.Pending, original.Id, original.CustomerId);
     }
 
     public static Reservation CreateApprovedReschedule(
@@ -68,7 +69,7 @@ public sealed class Reservation
         ArgumentNullException.ThrowIfNull(original);
         original.EnsureApprovedActualReservation();
         var replacement = Create(original.RoomId, original.ProfessionalId, startAt, endAt, actorUserId,
-            occurredAt, ReservationKind.Reschedule, ReservationStatus.Approved, original.Id);
+            occurredAt, ReservationKind.Reschedule, ReservationStatus.Approved, original.Id, original.CustomerId);
         replacement.DecidedByUserId = actorUserId;
         replacement.DecidedAt = replacement.CreatedAt;
         return replacement;
@@ -81,7 +82,7 @@ public sealed class Reservation
         original.EnsureApprovedActualReservation();
         EnsureMinimumNotice(original.StartAt, occurredAt);
         return Create(original.RoomId, original.ProfessionalId, original.StartAt, original.EndAt,
-            requestedByUserId, occurredAt, ReservationKind.Cancellation, ReservationStatus.Pending, original.Id);
+            requestedByUserId, occurredAt, ReservationKind.Cancellation, ReservationStatus.Pending, original.Id, original.CustomerId);
     }
 
     public void Approve(string actorUserId, DateTimeOffset occurredAt)
@@ -111,7 +112,7 @@ public sealed class Reservation
 
     private static Reservation Create(Guid roomId, Guid professionalId, DateTimeOffset startAt,
         DateTimeOffset endAt, string requestedByUserId, DateTimeOffset occurredAt, ReservationKind kind,
-        ReservationStatus status, Guid? originalReservationId)
+        ReservationStatus status, Guid? originalReservationId, Guid? customerId)
     {
         if (roomId == Guid.Empty) throw new ArgumentException("A sala deve ser informada.", nameof(roomId));
         if (professionalId == Guid.Empty)
@@ -125,7 +126,7 @@ public sealed class Reservation
         return new Reservation
         {
             Id = Guid.NewGuid(), RoomId = roomId, ProfessionalId = professionalId,
-            OriginalReservationId = originalReservationId, Kind = kind, Status = status,
+            OriginalReservationId = originalReservationId, CustomerId = customerId, Kind = kind, Status = status,
             StartAt = start, EndAt = end, RequestedByUserId = requestedByUserId,
             RequestedAt = timestamp, CreatedAt = timestamp, UpdatedAt = timestamp
         };

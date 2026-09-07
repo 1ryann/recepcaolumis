@@ -10,6 +10,7 @@ public sealed class Visit
     public Guid ProfessionalId { get; private set; }
     public Guid? RoomId { get; private set; }
     public Guid? ReservationId { get; private set; }
+    public Guid? CustomerId { get; private set; }
     public string VisitorName { get; private set; } = string.Empty;
     public VisitStatus Status { get; private set; }
     public DateTimeOffset ArrivedAt { get; private set; }
@@ -23,7 +24,7 @@ public sealed class Visit
     public bool IsOpen => Status is VisitStatus.Waiting or VisitStatus.InService;
 
     public static Visit Arrive(Guid professionalId, Guid? roomId, Guid? reservationId,
-        string visitorName, string actorUserId, DateTimeOffset occurredAt)
+        string visitorName, string actorUserId, DateTimeOffset occurredAt, Guid? customerId = null)
     {
         if (professionalId == Guid.Empty) throw new ArgumentException("O profissional deve ser informado.", nameof(professionalId));
         if (roomId == Guid.Empty) throw new ArgumentException("A sala deve possuir identidade válida.", nameof(roomId));
@@ -36,7 +37,7 @@ public sealed class Visit
         return new Visit
         {
             Id = Guid.NewGuid(), ProfessionalId = professionalId, RoomId = roomId,
-            ReservationId = reservationId, VisitorName = name, Status = VisitStatus.Waiting,
+            ReservationId = reservationId, CustomerId = customerId, VisitorName = name, Status = VisitStatus.Waiting,
             ArrivedAt = timestamp, CreatedAt = timestamp, UpdatedAt = timestamp
         };
     }

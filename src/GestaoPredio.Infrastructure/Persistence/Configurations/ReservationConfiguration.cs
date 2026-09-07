@@ -1,6 +1,7 @@
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
+using GestaoPredio.Domain.Customers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -40,6 +41,7 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
         entity.Property(x => x.UpdatedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.Version).IsRowVersion();
 
+        entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<Room>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<Professional>().WithMany().HasForeignKey(x => x.ProfessionalId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<Reservation>().WithMany().HasForeignKey(x => x.OriginalReservationId).OnDelete(DeleteBehavior.NoAction);
@@ -47,5 +49,6 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
         entity.HasIndex(x => new { x.RoomId, x.Status, x.StartAt }).HasDatabaseName("IX_Reservations_Room_Status_Start");
         entity.HasIndex(x => new { x.ProfessionalId, x.Status, x.StartAt }).HasDatabaseName("IX_Reservations_Professional_Status_Start");
         entity.HasIndex(x => x.OriginalReservationId).HasDatabaseName("IX_Reservations_OriginalReservationId");
+        entity.HasIndex(x => x.CustomerId).HasDatabaseName("IX_Reservations_CustomerId");
     }
 }

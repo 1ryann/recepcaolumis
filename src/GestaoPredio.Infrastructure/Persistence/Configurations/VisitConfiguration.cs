@@ -2,6 +2,7 @@ using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Visits;
+using GestaoPredio.Domain.Customers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -37,11 +38,13 @@ public sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
         entity.HasOne<Professional>().WithMany().HasForeignKey(x => x.ProfessionalId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<Room>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne<Reservation>().WithMany().HasForeignKey(x => x.ReservationId).OnDelete(DeleteBehavior.NoAction);
+        entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.NoAction);
         entity.HasIndex(x => new { x.Status, x.ArrivedAt }).HasDatabaseName("IX_Visits_Status_ArrivedAt");
         entity.HasIndex(x => new { x.ProfessionalId, x.Status, x.ArrivedAt })
             .HasDatabaseName("IX_Visits_Professional_Status_ArrivedAt");
         entity.HasIndex(x => new { x.RoomId, x.Status, x.ArrivedAt }).HasDatabaseName("IX_Visits_Room_Status_ArrivedAt");
         entity.HasIndex(x => x.ReservationId).HasDatabaseName("IX_Visits_ReservationId");
+        entity.HasIndex(x => x.CustomerId).HasDatabaseName("IX_Visits_CustomerId");
     }
 
     internal static ValueConverter<VisitStatus, string> StatusConverter() => new(
