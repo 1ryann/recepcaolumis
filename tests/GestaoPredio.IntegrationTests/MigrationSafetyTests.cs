@@ -245,4 +245,47 @@ public sealed class MigrationSafetyTests
         Assert.Contains("CREATE TABLE \"OperatingHourIntervals\"", sql);
         Assert.Contains("CREATE TABLE \"RoomBlocks\"", sql);
     }
+
+    [Fact]
+    public void Professional_availability_migration_is_additive_and_preserves_existing_professionals()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var assembly = db.GetService<IMigrationsAssembly>();
+        var metadata = Assert.Single(assembly.Migrations,
+            pair => pair.Key.EndsWith("_ProfessionalAvailability", StringComparison.Ordinal));
+        var migration = assembly.CreateMigration(metadata.Value, "Npgsql.EntityFrameworkCore.PostgreSQL");
+
+        Assert.NotEmpty(migration.UpOperations);
+        Assert.All(migration.UpOperations, operation =>
+        {
+            Assert.Contains(operation.GetType(), new[]
+            {
+                typeof(AddColumnOperation), typeof(AddCheckConstraintOperation),
+                typeof(CreateTableOperation), typeof(CreateIndexOperation)
+            });
+            Assert.False(operation.IsDestructiveChange);
+        });
+        var mode = Assert.Single(migration.UpOperations.OfType<AddColumnOperation>());
+        Assert.Equal("Professionals", mode.Table);
+        Assert.Equal("AvailabilityMode", mode.Name);
+        Assert.Equal((short)0, mode.DefaultValue);
+        var tables = migration.UpOperations.OfType<CreateTableOperation>().ToArray();
+        Assert.Equal(["ProfessionalAvailabilityExceptions", "ProfessionalAvailabilityIntervals"],
+            tables.Select(value => value.Name).Order(StringComparer.Ordinal));
+        Assert.All(tables.SelectMany(value => value.ForeignKeys), foreignKey =>
+            Assert.Equal(ReferentialAction.NoAction, foreignKey.OnDelete));
+
+        var sql = db.GetService<IMigrator>().GenerateScript(
+            "ProfessionalRegistrationRequests", "ProfessionalAvailability",
+            MigrationsSqlGenerationOptions.Idempotent);
+        foreach (var forbidden in new[]
+                 {
+                     "DROP ", "TRUNCATE ", "DELETE FROM", "ALTER COLUMN", "ALTER DATABASE",
+                     "sp_getapplock", "rowversion", "CREATE TABLE \"Slots\""
+                 })
+            Assert.DoesNotContain(forbidden, sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ADD \"AvailabilityMode\" smallint NOT NULL DEFAULT 0", sql);
+        Assert.Contains("CREATE TABLE \"ProfessionalAvailabilityIntervals\"", sql);
+        Assert.Contains("CREATE TABLE \"ProfessionalAvailabilityExceptions\"", sql);
+    }
 }
