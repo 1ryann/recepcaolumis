@@ -48,8 +48,8 @@ public sealed class DemoNotificationService(
         var result = forcedFailure
             ? NotificationResult.Failed(Name, "DEMO_PROVIDER_FAILURE")
             : NotificationResult.Succeeded(Name);
-        recorder.Record(new DemoNotificationAttempt(message.ProfessionalId, message.EventType,
-            Name, result.Success, result.FailureCode));
+        recorder.Record(new DemoNotificationAttempt(message.ProfessionalId ?? message.CustomerId ?? Guid.Empty,
+            message.EventType, Name, result.Success, result.FailureCode));
         return Task.FromResult(result);
     }
 }
@@ -121,11 +121,61 @@ public sealed class NotificationService(
         }
     }
 
+    public async Task<NotificationResult> NotifyCustomerAsync(
+        CustomerNotificationEvent notification,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var customer = await db.Customers.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == notification.CustomerId, cancellationToken);
+            if (customer is null || !customer.IsActive)
+            {
+                var failure = NotificationResult.Failed(provider.Name, "RECIPIENT_UNAVAILABLE");
+                LogCustomerFailure(notification, failure);
+                return failure;
+            }
+
+            if (!WhatsAppNormalizer.TryNormalize(customer.Phone, out var phone))
+            {
+                var failure = NotificationResult.Failed(provider.Name, "RECIPIENT_PHONE_INVALID");
+                LogCustomerFailure(notification, failure);
+                return failure;
+            }
+
+            var body = NotificationBodies.CustomerReschedule(
+                NotificationBodies.FirstName(notification.ProfessionalName), notification.RescheduleUrl);
+            var result = await provider.SendAsync(new NotificationMessage(
+                null, phone, notification.EventType, body) { CustomerId = notification.CustomerId }, cancellationToken);
+            LogCustomerFailure(notification, result);
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            var result = NotificationResult.Failed(provider.Name, "NOTIFICATION_CANCELLED");
+            LogCustomerFailure(notification, result);
+            return result;
+        }
+        catch
+        {
+            var result = NotificationResult.Failed(provider.Name, "PROVIDER_FAILURE");
+            LogCustomerFailure(notification, result);
+            return result;
+        }
+    }
+
     private void LogFailure(ProfessionalNotificationEvent notification, NotificationResult result)
     {
         if (!result.Success)
             logger.LogWarning("Notification failed. Provider: {Provider}; EventType: {EventType}; ProfessionalId: {ProfessionalId}; FailureCode: {FailureCode}",
                 result.Provider, notification.EventType, notification.ProfessionalId, result.FailureCode);
+    }
+
+    private void LogCustomerFailure(CustomerNotificationEvent notification, NotificationResult result)
+    {
+        if (!result.Success)
+            logger.LogWarning("Customer notification failed. Provider: {Provider}; EventType: {EventType}; CustomerId: {CustomerId}; ReservationId: {ReservationId}; FailureCode: {FailureCode}",
+                result.Provider, notification.EventType, notification.CustomerId, notification.ReservationId, result.FailureCode);
     }
 
     private static string FirstName(string value)

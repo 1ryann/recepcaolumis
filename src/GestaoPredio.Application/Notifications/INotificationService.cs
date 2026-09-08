@@ -3,6 +3,7 @@ namespace GestaoPredio.Application.Notifications;
 public static class NotificationEventTypes
 {
     public const string ProfessionalVisitWaiting = "PROFESSIONAL_VISIT_WAITING";
+    public const string CustomerReservationCancelledReschedule = "CUSTOMER_RESERVATION_CANCELLED_RESCHEDULE";
 }
 
 public sealed record ProfessionalNotificationEvent(
@@ -12,11 +13,22 @@ public sealed record ProfessionalNotificationEvent(
     DateTimeOffset ArrivedAt,
     Guid? ReservationId);
 
+public sealed record CustomerNotificationEvent(
+    Guid CustomerId,
+    string EventType,
+    Guid ReservationId,
+    string ProfessionalName,
+    DateTimeOffset OriginalStartAt,
+    string RescheduleUrl);
+
 public sealed record NotificationMessage(
-    Guid ProfessionalId,
+    Guid? ProfessionalId,
     string DestinationPhone,
     string EventType,
-    string Body);
+    string Body)
+{
+    public Guid? CustomerId { get; init; }
+}
 
 public sealed record NotificationResult(bool Success, string Provider, string? FailureCode)
 {
@@ -28,6 +40,10 @@ public interface INotificationService
 {
     Task<NotificationResult> NotifyProfessionalAsync(
         ProfessionalNotificationEvent notification,
+        CancellationToken cancellationToken);
+
+    Task<NotificationResult> NotifyCustomerAsync(
+        CustomerNotificationEvent notification,
         CancellationToken cancellationToken);
 }
 

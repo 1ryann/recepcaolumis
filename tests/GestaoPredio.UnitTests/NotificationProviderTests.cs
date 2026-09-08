@@ -44,6 +44,23 @@ public sealed class NotificationProviderTests
     }
 
     [Fact]
+    public async Task Demo_provider_records_a_customer_message_without_leaking_the_phone()
+    {
+        var recorder = new DemoNotificationRecorder();
+        var provider = new DemoNotificationService(recorder, new ConfigurationBuilder().Build());
+
+        var result = await provider.SendAsync(new NotificationMessage(
+            null, "+5569988887777", NotificationEventTypes.CustomerReservationCancelledReschedule,
+            "Seu atendimento precisou ser cancelado. https://x/reagendar/t") { CustomerId = Guid.NewGuid() },
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var attempt = Assert.Single(recorder.Attempts);
+        Assert.Equal(NotificationEventTypes.CustomerReservationCancelledReschedule, attempt.EventType);
+        Assert.DoesNotContain("5569988887777", string.Join('|', recorder.Attempts));
+    }
+
+    [Fact]
     public async Task Meta_adapter_is_fail_closed_without_external_call_when_unconfigured()
     {
         var provider = new MetaWhatsAppNotificationService(new ConfigurationBuilder().Build());
