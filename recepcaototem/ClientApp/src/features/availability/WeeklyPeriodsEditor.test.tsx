@@ -48,6 +48,16 @@ test('an inverted range shows an inline error', () => {
   expect(within(monday).getByText(/início deve ser anterior ao fim/i)).toBeInTheDocument()
 })
 
+test('the time grid opens beside the field and picks a value', () => {
+  render(<Harness gridRangeForDay={() => ({ min: '08:00', max: '12:00' })} />)
+  const monday = screen.getByTestId('wpe-day-MONDAY')
+  fireEvent.focus(within(monday).getAllByLabelText('Abertura')[0])
+  const grid = within(monday).getAllByRole('listbox')[0]
+  fireEvent.click(within(grid).getByRole('option', { name: '10:00' }))
+  expect(within(monday).getAllByLabelText('Abertura')[0]).toHaveValue('10:00')
+  expect(within(monday).queryAllByRole('listbox')).toHaveLength(0)
+})
+
 test('overlapping periods flag both rows', () => {
   render(<Harness />)
   const monday = screen.getByTestId('wpe-day-MONDAY')
