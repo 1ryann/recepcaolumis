@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import type { ProfessionalAvailabilityDto } from '../../api/modules'
 import { AvailabilityEditor, ExceptionsEditor } from './AvailabilityEditor'
 
@@ -27,16 +27,33 @@ test('inherit mode explains the source schedule and preserves stored custom inte
   expect(screen.getByRole('radio', { name: /horário personalizado/i })).toBeInTheDocument()
 })
 
-test('custom mode allows adding and removing intervals while rejecting an inverted range', () => {
+test('custom mode allows adding periods while rejecting an inverted range', () => {
   function Harness() {
     const [value, setValue] = useState<ProfessionalAvailabilityDto>({ ...base, mode: 'CUSTOM' })
     return <AvailabilityEditor value={value} onChange={(next) => setValue((current) => ({ ...current, ...next }))} onSave={vi.fn()} pending={false} />
   }
   render(<Harness />)
-  fireEvent.click(screen.getAllByRole('button', { name: /adicionar intervalo/i })[0])
+  fireEvent.click(screen.getAllByRole('button', { name: /adicionar período/i })[0])
   fireEvent.change(screen.getAllByLabelText('Início')[0], { target: { value: '13:00' } })
   fireEvent.change(screen.getAllByLabelText('Fim')[0], { target: { value: '12:00' } })
   expect(screen.getAllByText(/início deve ser anterior ao fim/i).length).toBeGreaterThan(0)
+})
+
+test('custom mode shows the establishment window on each day', () => {
+  render(<AvailabilityEditor value={{ ...base, mode: 'CUSTOM' }} onChange={vi.fn()} onSave={vi.fn()} pending={false} />)
+  expect(within(screen.getByTestId('wpe-day-MONDAY')).getByText('Estabelecimento: 08:00–18:00')).toBeInTheDocument()
+  expect(within(screen.getByTestId('wpe-day-TUESDAY')).getByText('Estabelecimento: sem atendimento')).toBeInTheDocument()
+})
+
+test('custom periods edited locally are not lost on a re-render with the same record', () => {
+  function Harness() {
+    const [value, setValue] = useState<ProfessionalAvailabilityDto>({ ...base, mode: 'CUSTOM' })
+    return <AvailabilityEditor value={value} draft={{ mode: 'CUSTOM', days: value.days }}
+      onChange={(next) => setValue((current) => ({ ...current, days: next.days }))} onSave={vi.fn()} pending={false} />
+  }
+  render(<Harness />)
+  fireEvent.change(screen.getAllByLabelText('Início')[0], { target: { value: '10:15' } })
+  expect(screen.getAllByLabelText('Início')[0]).toHaveValue('10:15')
 })
 
 test('exceptions editor supports all-day and partial entries and keeps row token on edit', () => {

@@ -1,7 +1,9 @@
-import { AlertTriangle, CalendarClock, Check, Clock3, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Check, Clock3, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AvailabilityDayDto, AvailabilityExceptionDto, ProfessionalAvailabilityDto } from '../../api/modules'
-import { findDayLabel, normalizeAvailabilityDays, timeToMinutes, toTimeInputValue } from './availabilityFormat'
+import { findDayLabel, normalizeAvailabilityDays, toTimeInputValue } from './availabilityFormat'
+import { periodsHaveErrors } from './timeRange'
+import { type DayDraft, newPeriod, WeeklyPeriodsEditor } from './WeeklyPeriodsEditor'
 
 export type AvailabilityDraft = {
   mode: 'INHERIT_GLOBAL' | 'CUSTOM'
@@ -21,61 +23,76 @@ function toDraft(value: ProfessionalAvailabilityDto): AvailabilityDraft {
   return { mode: value.mode, days: normalizeAvailabilityDays(value.days) }
 }
 
-function replaceInterval(draft: AvailabilityDraft, dayOfWeek: string, index: number, field: 'startTime' | 'endTime', fieldValue: string): AvailabilityDraft {
+function seedDayDrafts(draft: AvailabilityDraft): DayDraft[] {
+  return draft.days.map((day) => ({
+    dayOfWeek: day.dayOfWeek,
+    open: day.intervals.length > 0,
+    periods: day.intervals.map((interval) => newPeriod(toTimeInputValue(interval.startTime), toTimeInputValue(interval.endTime))),
+  }))
+}
+
+function daysToDraft(mode: AvailabilityDraft['mode'], days: DayDraft[]): AvailabilityDraft {
   return {
-    ...draft,
-    days: draft.days.map((day) => day.dayOfWeek !== dayOfWeek ? day : {
-      ...day,
-      intervals: day.intervals.map((interval, intervalIndex) => intervalIndex === index ? { ...interval, [field]: fieldValue } : interval),
-    }),
+    mode,
+    days: days.map((day) => ({
+      dayOfWeek: day.dayOfWeek,
+      intervals: day.open ? day.periods.map((period) => ({ startTime: period.start, endTime: period.end })) : [],
+    })),
   }
 }
 
-function intervalErrors(draft: AvailabilityDraft) {
-  const errors: string[] = []
-  for (const day of draft.days) {
-    const sorted = day.intervals.map((interval, index) => ({ ...interval, index, start: timeToMinutes(interval.startTime), end: timeToMinutes(interval.endTime) })).sort((a, b) => a.start - b.start)
-    sorted.forEach((interval) => {
-      if (!Number.isFinite(interval.start) || !Number.isFinite(interval.end) || interval.start >= interval.end) errors.push(`${day.dayOfWeek}-${interval.index}-range`)
-    })
-    sorted.forEach((interval, index) => {
-      const next = sorted[index + 1]
-      if (next && Number.isFinite(interval.end) && Number.isFinite(next.start) && interval.end > next.start) errors.push(`${day.dayOfWeek}-${next.index}-overlap`)
-    })
-  }
-  return errors
+// Remount (fresh local state) whenever the server record changes — a save or a
+// conflict reload — while keeping identity stable across a background revalidation.
+export function AvailabilityEditor(props: AvailabilityEditorProps) {
+  return <AvailabilityEditorInner key={props.value.concurrencyToken} {...props} />
 }
 
-export function AvailabilityEditor({ value, draft: draftValue, pending, readOnly = false, onChange, onSave }: AvailabilityEditorProps) {
-  const draft = draftValue ?? toDraft(value)
-  const errors = intervalErrors(draft)
-  const update = (next: AvailabilityDraft) => { if (!readOnly) onChange(next) }
-  const addInterval = (dayOfWeek: string) => {
-    const next = {
-      ...draft,
-      mode: 'CUSTOM' as const,
-      days: draft.days.map((day) => day.dayOfWeek === dayOfWeek ? { ...day, intervals: [...day.intervals, { startTime: '', endTime: '' }] } : day),
-    }
-    update(next)
+function AvailabilityEditorInner({ value, draft: draftValue, pending, readOnly = false, onChange, onSave }: AvailabilityEditorProps) {
+  const initial = draftValue ?? toDraft(value)
+  const [mode, setMode] = useState<AvailabilityDraft['mode']>(initial.mode)
+  const [days, setDays] = useState<DayDraft[]>(() => seedDayDrafts(initial))
+
+  const pushUp = (nextMode: AvailabilityDraft['mode'], nextDays: DayDraft[]) => {
+    if (!readOnly) onChange(daysToDraft(nextMode, nextDays))
   }
-  const removeInterval = (dayOfWeek: string, index: number) => update({ ...draft, days: draft.days.map((day) => day.dayOfWeek === dayOfWeek ? { ...day, intervals: day.intervals.filter((_, intervalIndex) => intervalIndex !== index) } : day) })
-  const setMode = (mode: AvailabilityDraft['mode']) => update({ ...draft, mode })
-  const modeDescription = draft.mode === 'INHERIT_GLOBAL'
+  const handleDays = (nextDays: DayDraft[]) => { setDays(nextDays); pushUp(mode, nextDays) }
+  const changeMode = (nextMode: AvailabilityDraft['mode']) => { setMode(nextMode); pushUp(nextMode, days) }
+
+  const hasErrors = days.some((day) => day.open && periodsHaveErrors(day.periods))
+  const modeDescription = mode === 'INHERIT_GLOBAL'
     ? 'Você está utilizando o horário de funcionamento do estabelecimento.'
     : 'Sua agenda personalizada será cruzada com o horário do estabelecimento.'
+
   const effectiveDays = normalizeAvailabilityDays(value.effectiveDays)
+  const hintForDay = (dayOfWeek: string) => {
+    const day = effectiveDays.find((candidate) => candidate.dayOfWeek === dayOfWeek)
+    if (!day || day.intervals.length === 0) return 'Estabelecimento: sem atendimento'
+    return `Estabelecimento: ${day.intervals.map((interval) => `${toTimeInputValue(interval.startTime)}–${toTimeInputValue(interval.endTime)}`).join(' · ')}`
+  }
 
   return <section className="availability-editor panel">
     <div className="availability-editor-heading"><div><span className="eyebrow">Agenda semanal</span><h2>Minha disponibilidade</h2><p>{modeDescription}</p></div><CalendarClock size={23} /></div>
     <fieldset className="availability-mode" disabled={readOnly || pending}>
       <legend>Modo de disponibilidade</legend>
-      <label><input type="radio" name="availability-mode" value="INHERIT_GLOBAL" checked={draft.mode === 'INHERIT_GLOBAL'} onChange={() => setMode('INHERIT_GLOBAL')} /> Usar horário do estabelecimento</label>
-      <label><input type="radio" name="availability-mode" value="CUSTOM" checked={draft.mode === 'CUSTOM'} onChange={() => setMode('CUSTOM')} /> Usar horário personalizado</label>
+      <label><input type="radio" name="availability-mode" value="INHERIT_GLOBAL" checked={mode === 'INHERIT_GLOBAL'} onChange={() => changeMode('INHERIT_GLOBAL')} /> Usar horário do estabelecimento</label>
+      <label><input type="radio" name="availability-mode" value="CUSTOM" checked={mode === 'CUSTOM'} onChange={() => changeMode('CUSTOM')} /> Usar horário personalizado</label>
     </fieldset>
-    {draft.mode === 'INHERIT_GLOBAL' && <div className="availability-effective"><div className="availability-subheading"><div><strong>Agenda efetiva</strong><span>O horário global vale enquanto este modo estiver ativo.</span></div><Clock3 size={18} /></div><div className="availability-day-list">{effectiveDays.map((day) => <div className="availability-day-row" key={`effective-${day.dayOfWeek}`}><strong>{findDayLabel(day.dayOfWeek)}</strong><span>{day.intervals.length ? day.intervals.map((interval) => `${toTimeInputValue(interval.startTime)} – ${toTimeInputValue(interval.endTime)}`).join(' · ') : 'Não atende'}</span></div>)}</div><p className="availability-preserved">Os horários personalizados continuam preservados e reaparecem quando você voltar ao modo personalizado.</p></div>}
-    <div className="availability-days"><div className="availability-subheading"><div><strong>{draft.mode === 'CUSTOM' ? 'Agenda personalizada' : 'Horários personalizados armazenados'}</strong><span>{draft.mode === 'CUSTOM' ? 'Defina quando você recebe novos atendimentos.' : 'Inativos neste modo, sem apagar sua configuração.'}</span></div></div>{draft.days.map((day) => <div className="availability-day-card" key={day.dayOfWeek}><div className="availability-day-title"><strong>{findDayLabel(day.dayOfWeek)}</strong>{day.intervals.length === 0 && <span>Não atende</span>}</div>{day.intervals.map((interval, index) => { const rangeError = errors.includes(`${day.dayOfWeek}-${index}-range`); const overlapError = errors.includes(`${day.dayOfWeek}-${index}-overlap`); return <div className="availability-interval-row" key={`${day.dayOfWeek}-${index}`}><label>Início<input aria-label="Início" type="time" value={interval.startTime} disabled={readOnly || pending || draft.mode !== 'CUSTOM'} onChange={(event) => update(replaceInterval(draft, day.dayOfWeek, index, 'startTime', event.target.value))} /></label><span className="availability-interval-dash">–</span><label>Fim<input aria-label="Fim" type="time" value={interval.endTime} disabled={readOnly || pending || draft.mode !== 'CUSTOM'} onChange={(event) => update(replaceInterval(draft, day.dayOfWeek, index, 'endTime', event.target.value))} /></label><button className="icon-button" type="button" aria-label={`Remover intervalo de ${findDayLabel(day.dayOfWeek)}`} disabled={readOnly || pending || draft.mode !== 'CUSTOM'} onClick={() => removeInterval(day.dayOfWeek, index)}><Trash2 size={16} /></button>{(rangeError || overlapError) && <small className="availability-field-error">{rangeError ? 'O início deve ser anterior ao fim.' : 'Os intervalos não podem se sobrepor.'}</small>}</div> })}<button className="availability-add-button" type="button" disabled={readOnly || pending} onClick={() => addInterval(day.dayOfWeek)}><Plus size={15} /> Adicionar intervalo</button></div>)}</div>
+    {mode === 'INHERIT_GLOBAL' && <div className="availability-effective"><div className="availability-subheading"><div><strong>Agenda efetiva</strong><span>O horário do estabelecimento vale enquanto este modo estiver ativo.</span></div><Clock3 size={18} /></div><div className="availability-day-list">{effectiveDays.map((day) => <div className="availability-day-row" key={`effective-${day.dayOfWeek}`}><strong>{findDayLabel(day.dayOfWeek)}</strong><span>{day.intervals.length ? day.intervals.map((interval) => `${toTimeInputValue(interval.startTime)} – ${toTimeInputValue(interval.endTime)}`).join(' · ') : 'Não atende'}</span></div>)}</div><p className="availability-preserved">Os horários personalizados continuam preservados e reaparecem quando você voltar ao modo personalizado.</p></div>}
+    <div className="availability-days"><div className="availability-subheading"><div><strong>{mode === 'CUSTOM' ? 'Agenda personalizada' : 'Horários personalizados armazenados'}</strong><span>{mode === 'CUSTOM' ? 'Defina quando você recebe novos atendimentos. A referência do estabelecimento aparece em cada dia.' : 'Inativos neste modo, sem apagar sua configuração.'}</span></div></div>
+      <WeeklyPeriodsEditor
+        days={days}
+        disabled={readOnly || pending || mode !== 'CUSTOM'}
+        startLabel="Início"
+        endLabel="Fim"
+        closedLabel="Não atende"
+        defaultPeriod={{ start: '09:00', end: '17:00' }}
+        dayLabel={findDayLabel}
+        hintForDay={mode === 'CUSTOM' ? hintForDay : undefined}
+        onChange={handleDays}
+      />
+    </div>
     {value.existingReservationsOutsideAvailabilityCount > 0 && <div className="availability-warning" role="status"><AlertTriangle size={17} /><span>Você possui {value.existingReservationsOutsideAvailabilityCount} agendamento(s) já existente(s) fora da nova disponibilidade. Esses agendamentos foram mantidos.</span></div>}
-    {!readOnly && <div className="availability-editor-actions"><span>{pending ? 'Salvando…' : errors.length ? 'Revise os intervalos antes de salvar.' : ''}</span><button className="primary-button" type="button" disabled={pending || errors.length > 0} onClick={() => void onSave(draft)}>{pending ? 'Salvando…' : 'Salvar disponibilidade'} <Check size={16} /></button></div>}
+    {!readOnly && <div className="availability-editor-actions"><span>{pending ? 'Salvando…' : hasErrors ? 'Revise os períodos antes de salvar.' : ''}</span><button className="primary-button" type="button" disabled={pending || hasErrors} onClick={() => void onSave(daysToDraft(mode, days))}>{pending ? 'Salvando…' : 'Salvar disponibilidade'} <Check size={16} /></button></div>}
   </section>
 }
 

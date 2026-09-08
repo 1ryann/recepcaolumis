@@ -27,11 +27,6 @@ export function normalizeAvailabilityDays(input: AvailabilityDayDto[] | undefine
   })
 }
 
-export function timeToMinutes(value: string) {
-  const [hours, minutes] = value.split(':').map(Number)
-  return Number.isFinite(hours) && Number.isFinite(minutes) ? (hours * 60) + minutes : NaN
-}
-
 export function findDayLabel(dayOfWeek: string) {
   return AVAILABILITY_DAYS.find((day) => day.value === dayOfWeek.toUpperCase())?.label ?? dayOfWeek
 }
