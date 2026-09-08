@@ -34,11 +34,11 @@ public static class ProfessionalRegistrationEndpoints
     }
 
     private static async Task<IResult> Register(ProfessionalRegistrationCreateRequest request, HttpContext context,
-        CustomerPublicRateLimiter limiter, UserManager<ApplicationUser> users, RoleManager<IdentityRole> roles,
+        ProfessionalRegistrationRateLimiter limiter, UserManager<ApplicationUser> users, RoleManager<IdentityRole> roles,
         ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            $"professional:{request.Email}", ct);
+            request.Email, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         var email = request.Email?.Trim() ?? "";
         if (request.Password != request.Confirmation || email.Length is < 3 or > 256 ||
