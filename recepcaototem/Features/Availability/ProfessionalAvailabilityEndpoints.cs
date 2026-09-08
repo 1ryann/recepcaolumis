@@ -92,7 +92,7 @@ public static class ProfessionalAvailabilityEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], [], [professionalId]), ct);
         var professional = await db.Professionals.SingleOrDefaultAsync(value => value.Id == professionalId, ct);
-        if (professional is null || !professional.IsActive) return Results.NotFound();
+        if (professional is null) return Results.NotFound();
         if (professional.Version != version) return Modified();
         db.Entry(professional).Property(value => value.Version).OriginalValue = version;
         var current = await db.ProfessionalAvailabilityIntervals
@@ -189,7 +189,7 @@ public static class ProfessionalAvailabilityEndpoints
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], [], [professionalId]), ct);
-        if (!await db.Professionals.AnyAsync(value => value.Id == professionalId && value.IsActive, ct))
+        if (!await db.Professionals.AnyAsync(value => value.Id == professionalId, ct))
             return Results.NotFound();
         if (await OverlapsAsync(db, professionalId, request.Date, request.AllDay, start, end, null, ct))
             return ExceptionOverlap();

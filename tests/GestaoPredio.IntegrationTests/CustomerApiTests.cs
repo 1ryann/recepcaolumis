@@ -188,6 +188,7 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
 
     private async Task<CustomerSeed> SeedCustomerReservationAsync(DateTimeOffset startAt)
     {
+        await factory.SeedDefaultOperatingHoursAsync();
         var password = "Valid-Password-123!";
         var user = await factory.CreateUserAsync($"customer-{Guid.NewGuid():N}@lumis.test", password,
             [GestaoPredio.Domain.Security.SystemRoles.Customer], displayName: "Carlos Oliveira");

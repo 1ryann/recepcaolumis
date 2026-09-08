@@ -194,6 +194,7 @@ public sealed class ReservationWorkflowTests(ModulesApiFactory factory)
 
     private async Task<Seed> SeedAsync(bool pending)
     {
+        await factory.SeedDefaultOperatingHoursAsync();
         var owner = await factory.CreateUserAsync($"owner-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Profissional]);
         var admin = await factory.CreateUserAsync($"admin-{Guid.NewGuid():N}@lumis.test", Password,

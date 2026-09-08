@@ -144,6 +144,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
 
     private async Task<Seed> SeedAsync(bool withVisit, bool withCustomer = false)
     {
+        await factory.SeedDefaultOperatingHoursAsync();
         var manager = await factory.CreateUserAsync($"reception-manager-{Guid.NewGuid():N}@lumis.test", Password, [SystemRoles.Gerente]);
         var now = DateTimeOffset.UtcNow;
         var room = Room.Create($"Sala Recepção {Guid.NewGuid():N}", null, 10, 50, now);

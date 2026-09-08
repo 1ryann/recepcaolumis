@@ -93,6 +93,7 @@ public sealed class ReservationAdministrationTests(ModulesApiFactory factory)
 
     private async Task<(Guid RoomId, Guid ProfessionalId)> SeedResourcesAsync()
     {
+        await factory.SeedDefaultOperatingHoursAsync();
         var now = DateTimeOffset.UtcNow;
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional Reserva", "Fisioterapia", "+5565999999999", now);

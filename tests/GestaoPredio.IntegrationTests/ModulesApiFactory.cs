@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
+using GestaoPredio.Domain.Availability;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -119,6 +120,19 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
             AllowAutoRedirect = false,
             HandleCookies = true
         });
+    }
+
+    public async Task SeedDefaultOperatingHoursAsync()
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        if (await db.OperatingHoursSchedules.AnyAsync()) return;
+        var schedule = OperatingHoursSchedule.Create(DateTimeOffset.UtcNow);
+        db.OperatingHoursSchedules.Add(schedule);
+        foreach (var day in Enum.GetValues<DayOfWeek>())
+            db.OperatingHourIntervals.AddRange(OperatingHourInterval.CreateDay(schedule.Id, day,
+                [new LocalTimeRange(TimeOnly.MinValue, new TimeOnly(23, 59, 59))]));
+        await db.SaveChangesAsync();
     }
 
     public async Task<ApplicationUser> CreateUserAsync(

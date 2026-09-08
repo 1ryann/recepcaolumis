@@ -75,6 +75,13 @@ public sealed class PostgreSqlAppointmentAvailabilityService(
         if (!context.ScheduleConfigured)
             return new(null, AppointmentAvailabilityFailure.OperatingHoursNotConfigured);
 
+        var globalRanges = context.OperatingHours
+            .Where(value => value.DayOfWeek == date.DayOfWeek)
+            .Select(value => new ProfessionalLocalTimeRange(value.OpensAt, value.ClosesAt)).ToArray();
+        if (!ProfessionalAvailabilityEvaluator.Contains(globalRanges,
+                TimeOnly.FromDateTime(localStart.DateTime), TimeOnly.FromDateTime(localEnd.DateTime)))
+            return new(null, AppointmentAvailabilityFailure.OutsideOperatingHours);
+
         var effective = ProfessionalAvailabilityEvaluator.GetEffectiveRanges(
             context.Mode, date, context.OperatingHours, context.CustomIntervals, context.Exceptions);
         if (!ProfessionalAvailabilityEvaluator.Contains(effective,

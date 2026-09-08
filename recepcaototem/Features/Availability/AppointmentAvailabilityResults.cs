@@ -13,6 +13,9 @@ internal static class AppointmentAvailabilityResults
         AppointmentAvailabilityFailure.ProfessionalUnavailable => Results.Json(new ApiError(
             "PROFESSIONAL_UNAVAILABLE", "O profissional não está disponível no período informado."),
             statusCode: StatusCodes.Status409Conflict),
+        AppointmentAvailabilityFailure.OutsideOperatingHours => Results.Json(new ApiError(
+            "ROOM_OUTSIDE_OPERATING_HOURS", "O período está fora do horário de funcionamento."),
+            statusCode: StatusCodes.Status409Conflict),
         AppointmentAvailabilityFailure.RoomBlocked => Results.Json(new ApiError(
             "ROOM_BLOCKED", "A sala está bloqueada no período informado."),
             statusCode: StatusCodes.Status409Conflict),

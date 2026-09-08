@@ -6,6 +6,7 @@ public enum AppointmentAvailabilityFailure
     OperatingHoursNotConfigured,
     ProfessionalNotFound,
     ProfessionalUnavailable,
+    OutsideOperatingHours,
     RoomNotFound,
     RoomBlocked,
     ResourceConflict

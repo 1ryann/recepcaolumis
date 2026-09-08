@@ -101,6 +101,7 @@ public static class ProfessionalReservationEndpoints
         var professionalId = await ResolveProfessionalId(db, context, cancellationToken);
         if (professionalId is null) return Results.NotFound();
         var now = timeProvider.GetUtcNow();
+        if (request.StartAt < now.Add(Reservation.ProfessionalMinimumNotice)) return Invalid();
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest(
@@ -220,6 +221,8 @@ public static class ProfessionalReservationEndpoints
             if (kind == ReservationKind.Reschedule)
             {
                 if (startAt is null || endAt is null || endAt <= startAt) return Invalid();
+                if (original.StartAt < now.Add(Reservation.ProfessionalMinimumNotice) ||
+                    startAt < now.Add(Reservation.ProfessionalMinimumNotice)) return Invalid();
                 var available = await availability.FindAvailableRoomAsync(original.ProfessionalId,
                     startAt.Value, endAt.Value, original.RoomId, original.Id, cancellationToken);
                 if (!available.IsAvailable)

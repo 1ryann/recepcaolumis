@@ -172,6 +172,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
 
     private async Task<SeededResources> SeedLinkedProfessionalsAsync()
     {
+        await factory.SeedDefaultOperatingHoursAsync();
         var owner = await factory.CreateUserAsync($"owner-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Profissional]);
         var other = await factory.CreateUserAsync($"other-{Guid.NewGuid():N}@lumis.test", Password,

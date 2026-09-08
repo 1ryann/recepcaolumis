@@ -40,12 +40,33 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
         Assert.Single(inherited.Days.Single(value => value.DayOfWeek == "MONDAY").Intervals);
         Assert.Equal("08:00", inherited.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
 
+        var global = await factory.Client.GetFromJsonAsync<OperatingHoursPayload>("/api/admin/operating-hours");
+        var reducedGlobalResponse = await factory.PutWithCsrfAsync("/api/admin/operating-hours",
+            new { days = OperatingDays(new(10, 0), new(11, 0)), concurrencyToken = global!.ConcurrencyToken });
+        reducedGlobalResponse.EnsureSuccessStatusCode();
+        var whileInherited = await GetAsync($"/api/admin/professionals/{professional.Id}/availability");
+        Assert.Equal("10:00", whileInherited.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
+        Assert.Equal("09:00", whileInherited.Days.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
+
         var restoredResponse = await factory.PutWithCsrfAsync(
             $"/api/admin/professionals/{professional.Id}/availability",
-            new { mode = "CUSTOM", concurrencyToken = inherited.ConcurrencyToken });
+            new { mode = "CUSTOM", concurrencyToken = whileInherited.ConcurrencyToken });
         restoredResponse.EnsureSuccessStatusCode();
         var restored = (await restoredResponse.Content.ReadFromJsonAsync<AvailabilityPayload>())!;
-        Assert.Equal("09:00", restored.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
+        Assert.Equal("10:00", restored.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
+
+        var reducedGlobal = (await reducedGlobalResponse.Content.ReadFromJsonAsync<OperatingHoursPayload>())!;
+        (await factory.PutWithCsrfAsync("/api/admin/operating-hours",
+            new { days = OperatingDays(new(8, 0), new(18, 0)), concurrencyToken = reducedGlobal.ConcurrencyToken }))
+            .EnsureSuccessStatusCode();
+        var expanded = await GetAsync($"/api/admin/professionals/{professional.Id}/availability");
+        Assert.Equal("09:00", expanded.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].StartTime);
+        Assert.Equal("12:00", expanded.EffectiveDays.Single(value => value.DayOfWeek == "MONDAY").Intervals[0].EndTime);
+
+        var replacedResponse = await factory.PutWithCsrfAsync(
+            $"/api/admin/professionals/{professional.Id}/availability",
+            new { mode = "CUSTOM", days = Days((DayOfWeek.Monday, "10:00", "11:00")), concurrencyToken = expanded.ConcurrencyToken });
+        replacedResponse.EnsureSuccessStatusCode();
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -134,8 +155,18 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
                 .Select(value => new { startTime = value.Start, endTime = value.End }).ToArray()
         }).Cast<object>().ToArray();
 
+    private static object[] OperatingDays(TimeOnly mondayStart, TimeOnly mondayEnd) =>
+        Enum.GetValues<DayOfWeek>().Select(day => new
+        {
+            dayOfWeek = day.ToString().ToUpperInvariant(),
+            intervals = day == DayOfWeek.Monday
+                ? new object[] { new { opensAt = mondayStart.ToString("HH:mm"), closesAt = mondayEnd.ToString("HH:mm") } }
+                : Array.Empty<object>()
+        }).Cast<object>().ToArray();
+
     private sealed record AvailabilityPayload(Guid ProfessionalId, string Mode, DayPayload[] Days,
         DayPayload[] EffectiveDays, string ConcurrencyToken, int ExistingReservationsOutsideAvailabilityCount);
     private sealed record DayPayload(string DayOfWeek, IntervalPayload[] Intervals);
     private sealed record IntervalPayload(string StartTime, string EndTime);
+    private sealed record OperatingHoursPayload(bool Configured, string ConcurrencyToken);
 }
