@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { operatingHoursApi, roomBlocksApi, roomsApi } from '../../api/modules'
 import { Settings } from './Settings'
@@ -14,12 +14,20 @@ beforeEach(() => {
   vi.mocked(roomBlocksApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 20, totalCount: 0 })
 })
 
-test('loads real operating hours and saves the seven-day schedule', async () => {
+test('loads real operating hours and saves the edited seven-day schedule', async () => {
   vi.mocked(operatingHoursApi.update).mockResolvedValue({ configured: true, days, concurrencyToken: 'oh-2' })
   render(<Settings />)
   expect(await screen.findByText('Horário do estabelecimento')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: /salvar horário/i }))
-  await waitFor(() => expect(operatingHoursApi.update).toHaveBeenCalledWith(expect.objectContaining({ concurrencyToken: 'oh-1', days: expect.any(Array) })))
+  const save = screen.getByRole('button', { name: /salvar horário/i })
+  expect(save).toBeDisabled()
+  const monday = screen.getByTestId('wpe-day-MONDAY')
+  fireEvent.change(within(monday).getAllByLabelText('Fechamento')[0], { target: { value: '19:00' } })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  await waitFor(() => expect(operatingHoursApi.update).toHaveBeenCalledWith(expect.objectContaining({
+    concurrencyToken: 'oh-1',
+    days: expect.arrayContaining([{ dayOfWeek: 'MONDAY', intervals: [{ opensAt: '08:00', closesAt: '19:00' }] }]),
+  })))
 })
 
 test('shows the explicit unconfigured state and can create a room block', async () => {
