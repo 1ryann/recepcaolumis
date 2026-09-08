@@ -71,7 +71,9 @@ Em `INHERIT_GLOBAL`, nenhum intervalo global é copiado. A disponibilidade seman
 
 Em `CUSTOM`, a disponibilidade semanal base vem dos intervalos próprios e continua limitada pelo expediente global.
 
-Ao trocar explicitamente de `CUSTOM` para `INHERIT_GLOBAL`, os intervalos customizados são removidos na mesma transação. Isso evita configuração oculta e obsoleta. Para voltar a `CUSTOM`, o Professional ou Operations envia novamente a semana desejada.
+Ao trocar explicitamente de `CUSTOM` para `INHERIT_GLOBAL`, somente o modo é alterado. Os intervalos customizados permanecem armazenados, mas ficam inativos e não participam do cálculo. Ao voltar para `CUSTOM` sem enviar uma nova coleção, os intervalos preservados voltam a ser a configuração base e são intersectados com o expediente global vigente.
+
+Um `PUT` de `CUSTOM` pode omitir `days` somente na transição de `INHERIT_GLOBAL` para `CUSTOM`, caso em que reativa a coleção armazenada. Se enviar `days`, o payload completo de sete dias substitui atomicamente a coleção anterior. Não existe histórico ou versionamento de coleções além do `xmin` agregado do Professional.
 
 ### 3.2 Intervalos semanais
 
@@ -240,9 +242,9 @@ Um `exceptionId` que não pertence ao `professionalId` da rota retorna `404`.
 }
 ```
 
-`days` representa a configuração própria armazenada; em `INHERIT_GLOBAL`, contém os sete dias com listas vazias. `effectiveDays` representa a agenda semanal após interseção com o expediente global, antes das exceções por data.
+`days` sempre representa a configuração customizada armazenada, inclusive enquanto o modo é `INHERIT_GLOBAL`. `effectiveDays` representa a agenda semanal ativa após aplicação do modo e interseção com o expediente global, antes das exceções por data. Assim, em `INHERIT_GLOBAL`, `days` pode conter intervalos preservados enquanto `effectiveDays` vem exclusivamente de OperatingHours.
 
-O `PUT` recebe `mode`, `days` e `concurrencyToken`. O payload contém exatamente os sete dias, uma única vez cada. Em `INHERIT_GLOBAL`, todos devem ter lista vazia. Em `CUSTOM`, listas vazias representam dias sem atendimento.
+O `PUT` recebe `mode`, `days` e `concurrencyToken`. Para `INHERIT_GLOBAL`, `days` deve ser omitido e a coleção armazenada não é modificada. Para `CUSTOM`, `days` pode ser omitido somente ao reativar uma coleção anteriormente armazenada; se não houver coleção preservada, responde `400 INVALID_PROFESSIONAL_AVAILABILITY`. Quando `days` é enviado, contém exatamente os sete dias, uma única vez cada, e substitui atomicamente a coleção anterior. Listas vazias representam dias sem atendimento.
 
 Horários aceitam somente `HH:mm` ou `HH:mm:ss` e respostas usam `HH:mm`, seguindo `OperatingHoursEndpoints`.
 
@@ -287,7 +289,7 @@ O `Professional.Version`/`xmin` é o token agregado da agenda semanal. `PUT avai
 3. carrega e bloqueia a linha do Professional por `ILeaseResourceLock`;
 4. revalida `xmin`;
 5. valida expediente e intervalos;
-6. substitui a coleção semanal e altera o modo/`UpdatedAt`;
+6. altera o modo/`UpdatedAt` e substitui a coleção semanal somente quando `days` foi enviado;
 7. calcula o aviso de Reservations futuras;
 8. grava auditoria;
 9. salva e faz commit.
@@ -399,34 +401,38 @@ Customer e Totem continuarão vendo somente slots finais. Eles não recebem modo
 12. intervalo CUSTOM fora do expediente vigente é rejeitado na gravação.
 13. redução válida de OperatingHours preserva CUSTOM armazenado e aplica interseção efetiva.
 14. expansão posterior do expediente volta a tornar efetiva a porção CUSTOM preservada.
-15. exceção AllDay remove todos os slots da data.
-16. exceção parcial remove apenas slots que a sobrepõem, usando `[start, end)`.
-17. Customer e Totem retornam exatamente os mesmos slots para a mesma entrada.
-18. Reception/Admin usam o mesmo resultado central.
-19. RoomBlock, Reservation, Lease e LeaseOccurrence continuam bloqueando conforme regras atuais.
-20. dois clientes concorrendo pelo mesmo slot continuam produzindo uma única Reservation aceita.
-21. consulta e confirmação têm a mesma semântica quando OperatingHours não está configurado.
-22. timezone `America/Porto_Velho` determina dia da semana e data da exceção nas bordas UTC.
+15. `CUSTOM → INHERIT_GLOBAL` preserva todos os intervalos no banco e passa a usar somente OperatingHours.
+16. `INHERIT_GLOBAL → CUSTOM` sem `days` reativa a coleção preservada e aplica a interseção vigente.
+17. redução do OperatingHours enquanto o modo é `INHERIT_GLOBAL` não modifica a coleção CUSTOM inativa.
+18. `PUT CUSTOM` com sete dias substitui a coleção preservada anterior.
+19. exceção AllDay remove todos os slots da data.
+20. exceção parcial remove apenas slots que a sobrepõem, usando `[start, end)`.
+21. Customer e Totem retornam exatamente os mesmos slots para a mesma entrada.
+22. Reception/Admin usam o mesmo resultado central.
+23. RoomBlock, Reservation, Lease e LeaseOccurrence continuam bloqueando conforme regras atuais.
+24. dois clientes concorrendo pelo mesmo slot continuam produzindo uma única Reservation aceita.
+25. consulta e confirmação têm a mesma semântica quando OperatingHours não está configurado.
+26. timezone `America/Porto_Velho` determina dia da semana e data da exceção nas bordas UTC.
 
 ### Reservations existentes
 
-23. redução de agenda e criação de exceção não alteram nem cancelam Reservation existente.
-24. novo agendamento fora da agenda deixa de aparecer e é rejeitado na gravação.
-25. alteração retorna a contagem correta de Reservations futuras aprovadas fora da agenda.
-26. aviso não expõe Customer nem conteúdo pessoal.
-27. redução de OperatingHours que conflita com Reservation/Lease mantém o `409 OPERATING_HOURS_CONFLICT` atual.
+27. redução de agenda e criação de exceção não alteram nem cancelam Reservation existente.
+28. novo agendamento fora da agenda deixa de aparecer e é rejeitado na gravação.
+29. alteração retorna a contagem correta de Reservations futuras aprovadas fora da agenda.
+30. aviso não expõe Customer nem conteúdo pessoal.
+31. redução de OperatingHours que conflita com Reservation/Lease mantém o `409 OPERATING_HOURS_CONFLICT` atual.
 
 ### API, autorização, concorrência e auditoria
 
-28. Professional consulta e altera apenas a própria agenda, resolvida por `ApplicationUserId`.
-29. GUID de exceção de outro Professional retorna `404`.
-30. GERENTE e ADMINISTRADOR alteram qualquer Professional pelas rotas Operations.
-31. CUSTOMER, PROFESSIONAL_APPLICANT e anônimo não escrevem agenda.
-32. mutações exigem antiforgery.
-33. token Base64 inválido retorna `400 INVALID_CONCURRENCY_TOKEN`.
-34. `xmin` stale retorna `409 RESOURCE_MODIFIED` sem lost update.
-35. auditoria registra criação, alteração e remoção com ator e alvo corretos, sem PII.
-36. GETs e consulta de slots não geram auditoria.
+32. Professional consulta e altera apenas a própria agenda, resolvida por `ApplicationUserId`.
+33. GUID de exceção de outro Professional retorna `404`.
+34. GERENTE e ADMINISTRADOR alteram qualquer Professional pelas rotas Operations.
+35. CUSTOMER, PROFESSIONAL_APPLICANT e anônimo não escrevem agenda.
+36. mutações exigem antiforgery.
+37. token Base64 inválido retorna `400 INVALID_CONCURRENCY_TOKEN`.
+38. `xmin` stale retorna `409 RESOURCE_MODIFIED` sem lost update.
+39. auditoria registra criação, alteração e remoção com ator e alvo corretos, sem PII.
+40. GETs e consulta de slots não geram auditoria.
 
 ## 16. Compatibilidade e limites
 
@@ -457,10 +463,11 @@ O lock em linha do Professional funciona entre múltiplas instâncias conectadas
 ## 18. Decisões finais
 
 1. `INHERIT_GLOBAL` é o padrão persistido para compatibilidade.
-2. `CUSTOM` é uma coleção semanal substituída atomicamente e protegida pelo `xmin` do Professional.
+2. `CUSTOM` é uma coleção semanal preservada ao alternar modos, substituída atomicamente somente por `PUT CUSTOM` com `days`, e protegida pelo `xmin` do Professional.
 3. intervalos enviados devem caber no expediente atual; reduções globais posteriores preservam a configuração e usam interseção em runtime.
 4. exceções apenas reduzem disponibilidade e têm `xmin` próprio.
 5. Reservations existentes nunca são alteradas; mutações retornam apenas a contagem de conflitos futuros.
 6. o bloqueio atual de redução global sobre Reservations/Leases válidas permanece.
 7. Customer, Totem, Reception e Admin usam um único serviço central de slots, que compõe os detectores existentes.
 8. não existe entidade Slot, agenda gerada ou job.
+9. `CUSTOM → INHERIT_GLOBAL` altera apenas o modo; `INHERIT_GLOBAL → CUSTOM` reutiliza os intervalos armazenados quando `days` é omitido.
