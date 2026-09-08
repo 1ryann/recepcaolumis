@@ -10,7 +10,8 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
 {
     public void Configure(EntityTypeBuilder<Professional> entity)
     {
-        entity.ToTable("Professionals");
+        entity.ToTable("Professionals", table =>
+            table.HasCheckConstraint("CK_Professionals_AvailabilityMode", "\"AvailabilityMode\" BETWEEN 0 AND 1"));
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
         entity.Property(x => x.NormalizedName).HasMaxLength(400).IsRequired();
@@ -19,6 +20,8 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
         entity.Property(x => x.Description).HasMaxLength(500);
         entity.Property(x => x.WhatsApp).HasMaxLength(16).IsUnicode(false).IsRequired();
         entity.Property(x => x.ApplicationUserId).HasMaxLength(450);
+        entity.Property(x => x.AvailabilityMode).HasColumnType("smallint").HasConversion<short>()
+            .HasDefaultValue(ProfessionalAvailabilityMode.InheritGlobal).IsRequired();
         entity.Property(x => x.Version).IsRowVersion();
         entity.HasIndex(x => x.ApplicationUserId).IsUnique()
             .HasDatabaseName("UX_Professionals_ApplicationUserId");

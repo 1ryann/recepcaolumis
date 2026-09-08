@@ -34,6 +34,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<Customer> Customers => Set<Customer>();
  public DbSet<CheckInToken> CheckInTokens => Set<CheckInToken>();
  public DbSet<ProfessionalRegistrationRequest> ProfessionalRegistrationRequests => Set<ProfessionalRegistrationRequest>();
+ public DbSet<ProfessionalAvailabilityInterval> ProfessionalAvailabilityIntervals => Set<ProfessionalAvailabilityInterval>();
+ public DbSet<ProfessionalAvailabilityException> ProfessionalAvailabilityExceptions => Set<ProfessionalAvailabilityException>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -56,6 +58,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new CustomerConfiguration());
   builder.ApplyConfiguration(new CheckInTokenConfiguration());
   builder.ApplyConfiguration(new ProfessionalRegistrationRequestConfiguration());
+  builder.ApplyConfiguration(new ProfessionalAvailabilityIntervalConfiguration());
+  builder.ApplyConfiguration(new ProfessionalAvailabilityExceptionConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);

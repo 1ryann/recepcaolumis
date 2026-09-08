@@ -55,6 +55,41 @@ public sealed class ModuleModelTests
     }
 
     [Fact]
+    public void Professional_availability_model_uses_civil_types_non_destructive_links_and_xmin()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var professional = Entity<Professional>(db);
+        Assert.Equal("smallint", professional.FindProperty("AvailabilityMode")!.GetColumnType());
+        Assert.Contains(professional.GetCheckConstraints(), check => check.Name == "CK_Professionals_AvailabilityMode");
+
+        var interval = Entity<ProfessionalAvailabilityInterval>(db);
+        Assert.Equal("ProfessionalAvailabilityIntervals", interval.GetTableName());
+        Assert.Equal("smallint", interval.FindProperty("DayOfWeek")!.GetColumnType());
+        Assert.Equal("time without time zone", interval.FindProperty("StartTime")!.GetColumnType());
+        Assert.Equal("time without time zone", interval.FindProperty("EndTime")!.GetColumnType());
+        Assert.Contains(interval.GetCheckConstraints(), check => check.Name == "CK_ProfessionalAvailabilityIntervals_Period");
+        Assert.Equal(DeleteBehavior.NoAction, Assert.Single(interval.GetForeignKeys()).DeleteBehavior);
+        AssertIndex(interval, "UX_ProfessionalAvailabilityIntervals_Professional_Day_Start", true, null,
+            "ProfessionalId", "DayOfWeek", "StartTime");
+
+        var exception = Entity<ProfessionalAvailabilityException>(db);
+        Assert.Equal("ProfessionalAvailabilityExceptions", exception.GetTableName());
+        Assert.Equal("date", exception.FindProperty("Date")!.GetColumnType());
+        Assert.Equal("time without time zone", exception.FindProperty("StartTime")!.GetColumnType());
+        Assert.Equal("time without time zone", exception.FindProperty("EndTime")!.GetColumnType());
+        Assert.Equal("character varying(300)", exception.FindProperty("Reason")!.GetColumnType());
+        Assert.Contains(exception.GetCheckConstraints(), check => check.Name == "CK_ProfessionalAvailabilityExceptions_Shape");
+        Assert.Equal(DeleteBehavior.NoAction, Assert.Single(exception.GetForeignKeys()).DeleteBehavior);
+        AssertIndex(exception, "IX_ProfessionalAvailabilityExceptions_Professional_Date_Start", false, null,
+            "ProfessionalId", "Date", "AllDay", "StartTime");
+        AssertIndex(exception, "UX_ProfessionalAvailabilityExceptions_Professional_Date_AllDay", true,
+            "\"AllDay\" = TRUE", "ProfessionalId", "Date");
+        AssertIndex(exception, "UX_ProfessionalAvailabilityExceptions_Professional_Date_Start", true,
+            "\"AllDay\" = FALSE", "ProfessionalId", "Date", "StartTime");
+        AssertPostgreSqlVersion(exception);
+    }
+
+    [Fact]
     public void Room_columns_and_checks_preserve_rates_and_permanent_name_uniqueness()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);

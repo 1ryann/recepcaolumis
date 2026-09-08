@@ -17,6 +17,7 @@ public sealed class Professional
     public string WhatsApp { get; private set; } = "";
     public Guid? PhotoFileId { get; private set; }
     public string? ApplicationUserId { get; private set; }
+    public ProfessionalAvailabilityMode AvailabilityMode { get; private set; } = ProfessionalAvailabilityMode.InheritGlobal;
     public bool IsActive { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -106,6 +107,13 @@ public sealed class Professional
         NormalizedProfession = TextNormalizer.Normalize(profession);
         Description = NormalizeDescription(description);
         WhatsApp = canonicalWhatsApp;
+    }
+
+    public void SetAvailabilityMode(ProfessionalAvailabilityMode mode, DateTimeOffset occurredAt)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        AvailabilityMode = mode;
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
     private static string? NormalizeDescription(string? description)
