@@ -99,4 +99,55 @@ public sealed class ReservationTests
         Assert.Equal(original.ProfessionalId, replacement.ProfessionalId);
         Assert.Equal(ReservationStatus.Approved, original.Status);
     }
+
+    private static readonly Guid CustomerId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly Guid ReplacementRoomId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
+    private static Reservation ApprovedCustomerReservation() =>
+        Reservation.CreateApproved(RoomId, ProfessionalId, Now.AddHours(3), Now.AddHours(4), ManagerUserId, Now, CustomerId);
+
+    [Fact]
+    public void Cancel_defaults_to_no_recorded_reason()
+    {
+        var reservation = ApprovedCustomerReservation();
+        reservation.Cancel(ManagerUserId, Now.AddMinutes(1));
+        Assert.Equal(ReservationCancellationReason.None, reservation.CancellationReason);
+        Assert.Equal(ReservationStatus.Cancelled, reservation.Status);
+    }
+
+    [Fact]
+    public void Cancel_records_the_professional_unavailable_reason()
+    {
+        var reservation = ApprovedCustomerReservation();
+        reservation.Cancel("PROFESSIONAL_INCIDENT", Now.AddMinutes(1), ReservationCancellationReason.ProfessionalUnavailable);
+        Assert.Equal(ReservationCancellationReason.ProfessionalUnavailable, reservation.CancellationReason);
+    }
+
+    [Fact]
+    public void Incident_replacement_requires_a_cancelled_unavailable_original()
+    {
+        var approved = ApprovedCustomerReservation();
+        Assert.Throws<InvalidOperationException>(() => Reservation.CreateApprovedReplacementForIncident(
+            approved, ReplacementRoomId, Now.AddDays(1), Now.AddDays(1).AddHours(1), "RESCHEDULE_LINK", Now));
+
+        approved.Cancel("PROFESSIONAL_INCIDENT", Now, ReservationCancellationReason.ProfessionalUnavailable);
+        var replacement = Reservation.CreateApprovedReplacementForIncident(
+            approved, ReplacementRoomId, Now.AddDays(1), Now.AddDays(1).AddHours(1), "RESCHEDULE_LINK", Now);
+
+        Assert.Equal(ReservationKind.Reschedule, replacement.Kind);
+        Assert.Equal(ReservationStatus.Approved, replacement.Status);
+        Assert.Equal(ReplacementRoomId, replacement.RoomId);
+        Assert.Equal(approved.Id, replacement.OriginalReservationId);
+        Assert.Equal(CustomerId, replacement.CustomerId);
+        Assert.Equal(ProfessionalId, replacement.ProfessionalId);
+    }
+
+    [Fact]
+    public void Incident_replacement_rejects_a_normally_cancelled_original()
+    {
+        var reservation = ApprovedCustomerReservation();
+        reservation.Cancel(ManagerUserId, Now);
+        Assert.Throws<InvalidOperationException>(() => Reservation.CreateApprovedReplacementForIncident(
+            reservation, ReplacementRoomId, Now.AddDays(1), Now.AddDays(1).AddHours(1), "RESCHEDULE_LINK", Now));
+    }
 }

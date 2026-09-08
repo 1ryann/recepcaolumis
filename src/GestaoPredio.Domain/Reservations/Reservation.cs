@@ -24,6 +24,7 @@ public sealed class Reservation
     public string? DecidedByUserId { get; private set; }
     public DateTimeOffset? DecidedAt { get; private set; }
     public string? RejectionReason { get; private set; }
+    public ReservationCancellationReason CancellationReason { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
@@ -103,11 +104,32 @@ public sealed class Reservation
         SetDecision(actorUserId, occurredAt);
     }
 
-    public void Cancel(string actorUserId, DateTimeOffset occurredAt)
+    public void Cancel(string actorUserId, DateTimeOffset occurredAt,
+        ReservationCancellationReason reason = ReservationCancellationReason.None)
     {
         EnsureApprovedActualReservation();
         Status = ReservationStatus.Cancelled;
+        CancellationReason = reason;
         SetDecision(actorUserId, occurredAt);
+    }
+
+    public static Reservation CreateApprovedReplacementForIncident(
+        Reservation original,
+        Guid roomId,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        string actorUserId,
+        DateTimeOffset occurredAt)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        if (original.Status != ReservationStatus.Cancelled ||
+            original.CancellationReason != ReservationCancellationReason.ProfessionalUnavailable)
+            throw new InvalidOperationException("A reserva original não foi cancelada por indisponibilidade do profissional.");
+        var replacement = Create(roomId, original.ProfessionalId, startAt, endAt, actorUserId, occurredAt,
+            ReservationKind.Reschedule, ReservationStatus.Approved, original.Id, original.CustomerId);
+        replacement.DecidedByUserId = actorUserId;
+        replacement.DecidedAt = replacement.CreatedAt;
+        return replacement;
     }
 
     private static Reservation Create(Guid roomId, Guid professionalId, DateTimeOffset startAt,
