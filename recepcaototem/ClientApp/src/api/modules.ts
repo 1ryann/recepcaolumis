@@ -80,6 +80,81 @@ export interface AvailabilitySlotDto {
   endAt: string
 }
 
+export type ProfessionalAvailabilityMode = 'INHERIT_GLOBAL' | 'CUSTOM'
+export interface AvailabilityIntervalDto { startTime: string, endTime: string }
+export interface AvailabilityDayDto {
+  dayOfWeek: string
+  intervals: AvailabilityIntervalDto[]
+  effectiveIntervals: AvailabilityIntervalDto[]
+}
+export interface ProfessionalAvailabilityDto {
+  mode: ProfessionalAvailabilityMode
+  days: AvailabilityDayDto[]
+  effectiveDays: AvailabilityDayDto[]
+  concurrencyToken: string
+  existingReservationsOutsideAvailabilityCount: number
+}
+export interface ProfessionalAvailabilityUpdateInput {
+  mode: ProfessionalAvailabilityMode
+  days?: Array<{ dayOfWeek: string, intervals: AvailabilityIntervalDto[] }>
+  concurrencyToken?: string | null
+}
+export interface AvailabilityExceptionDto {
+  id: string
+  date: string
+  allDay: boolean
+  startTime: string | null
+  endTime: string | null
+  reason: string | null
+  createdAt: string
+  updatedAt: string
+  concurrencyToken: string
+  existingReservationsOutsideAvailabilityCount?: number
+}
+export interface AvailabilityExceptionInput {
+  date: string
+  allDay: boolean
+  startTime: string | null
+  endTime: string | null
+  reason: string | null
+  concurrencyToken?: string | null
+}
+export interface OperatingHoursDayDto {
+  dayOfWeek: string
+  intervals: Array<{ opensAt: string, closesAt: string }>
+}
+export interface OperatingHoursDto {
+  configured: boolean
+  days: OperatingHoursDayDto[]
+  concurrencyToken: string | null
+}
+export interface OperatingHoursUpdateInput {
+  days: OperatingHoursDayDto[]
+  concurrencyToken?: string | null
+}
+export type RoomBlockStatus = 'ACTIVE' | 'CANCELLED'
+export interface RoomBlockDto {
+  id: string
+  roomId: string
+  roomName: string
+  startAt: string
+  endAt: string
+  reason: string
+  status: RoomBlockStatus
+  createdAt: string
+  concurrencyToken: string
+}
+export interface RoomBlockQuery {
+  page: number
+  pageSize: number
+  status?: RoomBlockStatus | 'all'
+  roomId?: string
+  from?: string
+  to?: string
+}
+export interface RoomBlockCreateInput { roomId: string, startAt: string, endAt: string, reason: string }
+export interface RoomBlockUpdateInput { startAt: string, endAt: string, reason: string, concurrencyToken: string }
+
 export interface CheckInPreviewDto {
   professional: string
   room: string
@@ -483,6 +558,81 @@ export const customerApi = {
   },
   issueCheckInToken(id: string) {
     return apiClient.post<{ token: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
+  },
+}
+
+const adminProfessionalAvailabilityPath = (professionalId: string) =>
+  `/api/admin/professionals/${encodeURIComponent(professionalId)}/availability`
+const professionalAvailabilityExceptionsPath = '/api/professional/availability/exceptions'
+const adminProfessionalAvailabilityExceptionsPath = (professionalId: string) =>
+  `${adminProfessionalAvailabilityPath(professionalId)}/exceptions`
+
+export const professionalAvailabilityApi = {
+  get(signal?: AbortSignal) {
+    return apiClient.get<ProfessionalAvailabilityDto>('/api/professional/availability', { signal })
+  },
+  update(input: ProfessionalAvailabilityUpdateInput) {
+    return apiClient.put<ProfessionalAvailabilityDto>('/api/professional/availability', input)
+  },
+  listExceptions(signal?: AbortSignal) {
+    return apiClient.get<AvailabilityExceptionDto[]>(professionalAvailabilityExceptionsPath, { signal })
+  },
+  createException(input: AvailabilityExceptionInput) {
+    return apiClient.post<AvailabilityExceptionDto>(professionalAvailabilityExceptionsPath, input)
+  },
+  updateException(id: string, input: AvailabilityExceptionInput & { concurrencyToken: string }) {
+    return apiClient.put<AvailabilityExceptionDto>(`${professionalAvailabilityExceptionsPath}/${encodeURIComponent(id)}`, input)
+  },
+  deleteException(id: string, concurrencyToken: string) {
+    return apiClient.delete<AvailabilityExceptionDto>(`${professionalAvailabilityExceptionsPath}/${encodeURIComponent(id)}`, { concurrencyToken })
+  },
+}
+
+export const adminProfessionalAvailabilityApi = {
+  get(professionalId: string, signal?: AbortSignal) {
+    return apiClient.get<ProfessionalAvailabilityDto>(adminProfessionalAvailabilityPath(professionalId), { signal })
+  },
+  update(professionalId: string, input: ProfessionalAvailabilityUpdateInput) {
+    return apiClient.put<ProfessionalAvailabilityDto>(adminProfessionalAvailabilityPath(professionalId), input)
+  },
+  listExceptions(professionalId: string, signal?: AbortSignal) {
+    return apiClient.get<AvailabilityExceptionDto[]>(adminProfessionalAvailabilityExceptionsPath(professionalId), { signal })
+  },
+  createException(professionalId: string, input: AvailabilityExceptionInput) {
+    return apiClient.post<AvailabilityExceptionDto>(adminProfessionalAvailabilityExceptionsPath(professionalId), input)
+  },
+  updateException(professionalId: string, id: string, input: AvailabilityExceptionInput & { concurrencyToken: string }) {
+    return apiClient.put<AvailabilityExceptionDto>(`${adminProfessionalAvailabilityExceptionsPath(professionalId)}/${encodeURIComponent(id)}`, input)
+  },
+  deleteException(professionalId: string, id: string, concurrencyToken: string) {
+    return apiClient.delete<AvailabilityExceptionDto>(`${adminProfessionalAvailabilityExceptionsPath(professionalId)}/${encodeURIComponent(id)}`, { concurrencyToken })
+  },
+}
+
+export const operatingHoursApi = {
+  get(signal?: AbortSignal) {
+    return apiClient.get<OperatingHoursDto>('/api/admin/operating-hours', { signal })
+  },
+  update(input: OperatingHoursUpdateInput) {
+    return apiClient.put<OperatingHoursDto>('/api/admin/operating-hours', input)
+  },
+}
+
+export const roomBlocksApi = {
+  list(query: RoomBlockQuery, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<RoomBlockDto>>('/api/admin/room-blocks', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<RoomBlockDto>(`/api/admin/room-blocks/${encodeURIComponent(id)}`, { signal })
+  },
+  create(input: RoomBlockCreateInput) {
+    return apiClient.post<RoomBlockDto>('/api/admin/room-blocks', input)
+  },
+  update(id: string, input: RoomBlockUpdateInput) {
+    return apiClient.put<RoomBlockDto>(`/api/admin/room-blocks/${encodeURIComponent(id)}`, input)
+  },
+  cancel(id: string, concurrencyToken: string) {
+    return apiClient.post<RoomBlockDto>(`/api/admin/room-blocks/${encodeURIComponent(id)}/cancel`, { concurrencyToken })
   },
 }
 

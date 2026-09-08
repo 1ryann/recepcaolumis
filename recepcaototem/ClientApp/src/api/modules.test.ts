@@ -1,7 +1,8 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
-  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi, customerApi } from './modules'
+  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi, customerApi,
+  professionalAvailabilityApi, adminProfessionalAvailabilityApi, operatingHoursApi, roomBlocksApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -146,6 +147,49 @@ test('visit clients keep operations and owned professional contracts separate', 
   expect(apiClient.get).toHaveBeenCalledWith('/api/professional/visits', {
     query: { status: 'IN_SERVICE', page: 1, pageSize: 20 }, signal,
   })
+})
+
+test('availability clients use the professional and operations contracts', async () => {
+  const weekly = { mode: 'CUSTOM' as const, days: [], concurrencyToken: 'pv1' }
+  const exception = { date: '2026-09-15', allDay: true, startTime: null, endTime: null, reason: 'Folga' }
+  await professionalAvailabilityApi.get()
+  await professionalAvailabilityApi.update(weekly)
+  await professionalAvailabilityApi.listExceptions()
+  await professionalAvailabilityApi.createException(exception)
+  await professionalAvailabilityApi.updateException('ex-1', { ...exception, concurrencyToken: 'exv1' })
+  await professionalAvailabilityApi.deleteException('ex-1', 'exv2')
+  await adminProfessionalAvailabilityApi.get('p-1')
+  await adminProfessionalAvailabilityApi.update('p-1', weekly)
+  await adminProfessionalAvailabilityApi.listExceptions('p-1')
+  await adminProfessionalAvailabilityApi.createException('p-1', exception)
+  await adminProfessionalAvailabilityApi.updateException('p-1', 'ex-1', { ...exception, concurrencyToken: 'exv3' })
+  await adminProfessionalAvailabilityApi.deleteException('p-1', 'ex-1', 'exv4')
+  expect(apiClient.get).toHaveBeenCalledWith('/api/professional/availability', { signal: undefined })
+  expect(apiClient.put).toHaveBeenCalledWith('/api/professional/availability', weekly)
+  expect(apiClient.post).toHaveBeenCalledWith('/api/professional/availability/exceptions', exception)
+  expect(apiClient.delete).toHaveBeenCalledWith('/api/professional/availability/exceptions/ex-1', { concurrencyToken: 'exv2' })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability', { signal: undefined })
+  expect(apiClient.put).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability', weekly)
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability/exceptions', exception)
+  expect(apiClient.delete).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability/exceptions/ex-1', { concurrencyToken: 'exv4' })
+})
+
+test('operating hours and room block clients preserve admin routes and concurrency', async () => {
+  const days = [{ dayOfWeek: 'MONDAY', intervals: [{ opensAt: '08:00', closesAt: '18:00' }] }]
+  await operatingHoursApi.get()
+  await operatingHoursApi.update({ days, concurrencyToken: 'oh1' })
+  await roomBlocksApi.list({ status: 'ACTIVE', roomId: 'r-1', page: 1, pageSize: 20 })
+  await roomBlocksApi.detail('b-1')
+  await roomBlocksApi.create({ roomId: 'r-1', startAt: '2026-09-15T10:00:00Z', endAt: '2026-09-15T11:00:00Z', reason: 'Manutenção' })
+  await roomBlocksApi.update('b-1', { startAt: '2026-09-15T10:00:00Z', endAt: '2026-09-15T11:00:00Z', reason: 'Limpeza', concurrencyToken: 'b1' })
+  await roomBlocksApi.cancel('b-1', 'b2')
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/operating-hours', { signal: undefined })
+  expect(apiClient.put).toHaveBeenCalledWith('/api/admin/operating-hours', { days, concurrencyToken: 'oh1' })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/room-blocks', { query: { status: 'ACTIVE', roomId: 'r-1', page: 1, pageSize: 20 }, signal: undefined })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/room-blocks/b-1', { signal: undefined })
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/room-blocks', expect.any(Object))
+  expect(apiClient.put).toHaveBeenCalledWith('/api/admin/room-blocks/b-1', expect.objectContaining({ concurrencyToken: 'b1' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/room-blocks/b-1/cancel', { concurrencyToken: 'b2' })
 })
 
 test('customer registration and profile clients keep identity server-owned', async () => {
