@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Professionals } from './Professionals'
 import { professionalsApi } from '../../api/modules'
+import { adminProfessionalAvailabilityApi } from '../../api/modules'
 
 vi.mock('../../api/modules', () => ({
   professionalsApi: {
@@ -9,6 +10,7 @@ vi.mock('../../api/modules', () => ({
     putPhoto: vi.fn(), removePhoto: vi.fn(), eligibleUsers: vi.fn(), userLink: vi.fn(),
     putUserLink: vi.fn(), removeUserLink: vi.fn(),
   },
+  adminProfessionalAvailabilityApi: { get: vi.fn(), update: vi.fn(), listExceptions: vi.fn(), createException: vi.fn(), updateException: vi.fn(), deleteException: vi.fn() },
 }))
 vi.mock('../../auth/SessionProvider', () => ({
   useSession: vi.fn(() => ({ user: { roles: ['ADMINISTRADOR'] } })),
@@ -85,4 +87,14 @@ test('shows a conflict message and reloads after RESOURCE_MODIFIED', async () =>
   fireEvent.click(screen.getByRole('button', { name: /Desativar Ana Souza/i }))
   expect(await screen.findByText(/alterado por outra operação/i)).toBeInTheDocument()
   expect(professionalsApi.list).toHaveBeenCalledTimes(2)
+})
+
+test('opens the shared availability editor for the selected professional', async () => {
+  vi.mocked(adminProfessionalAvailabilityApi.get).mockResolvedValue({ mode: 'INHERIT_GLOBAL', days: [], effectiveDays: [], concurrencyToken: 'v1', existingReservationsOutsideAvailabilityCount: 0 })
+  vi.mocked(adminProfessionalAvailabilityApi.listExceptions).mockResolvedValue([])
+  render(<Professionals />)
+  await screen.findByText('Ana Souza')
+  fireEvent.click(screen.getByRole('button', { name: 'Disponibilidade de Ana Souza' }))
+  expect(await screen.findByText('Disponibilidade de Ana Souza')).toBeInTheDocument()
+  expect(adminProfessionalAvailabilityApi.get).toHaveBeenCalledWith('professional-1')
 })

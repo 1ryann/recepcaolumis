@@ -85,7 +85,7 @@ export interface AvailabilityIntervalDto { startTime: string, endTime: string }
 export interface AvailabilityDayDto {
   dayOfWeek: string
   intervals: AvailabilityIntervalDto[]
-  effectiveIntervals: AvailabilityIntervalDto[]
+  effectiveIntervals?: AvailabilityIntervalDto[]
 }
 export interface ProfessionalAvailabilityDto {
   mode: ProfessionalAvailabilityMode

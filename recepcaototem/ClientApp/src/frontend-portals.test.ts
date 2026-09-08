@@ -10,6 +10,7 @@ import customerDetailSource from './pages/customer/CustomerReservationDetail.tsx
 import totemCheckInSource from './pages/TotemCheckIn.tsx?raw'
 import modulesSource from './api/modules.ts?raw'
 import receptionMonitorSource from './pages/admin/ReceptionMonitor.tsx?raw'
+import availabilitySource from './features/availability/AvailabilityEditor.tsx?raw'
 
 test('profile routes are protected in both development and production route trees', () => {
   for (const source of [appSource, developmentSource]) {
@@ -61,4 +62,15 @@ test('reception monitor reads the real queue and transitions visits through the 
   expect(receptionMonitorSource).toContain('receptionApi.startVisit')
   expect(receptionMonitorSource).toContain('receptionApi.endVisit')
   expect(receptionMonitorSource).not.toContain('useAppStore')
+})
+
+test('availability management is exposed to both Professional and Operations routes', () => {
+  for (const source of [appSource, developmentSource]) {
+    expect(source).toContain('path="disponibilidade"')
+    expect(source).toContain('path="/recepcao/configuracoes"')
+    expect(source).toContain('path="/recepcao/profissionais"')
+    expect(source).toContain("allowedRoles={['ADMINISTRADOR', 'GERENTE']}")
+  }
+  expect(availabilitySource).toContain('Os horários personalizados continuam preservados')
+  expect(availabilitySource).toContain('existingReservationsOutsideAvailabilityCount')
 })

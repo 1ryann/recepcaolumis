@@ -1,12 +1,14 @@
 import { Activity, ArrowRight, Clock3, RefreshCw, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { receptionApi, type ReceptionOverviewDto, type ReceptionVisitDto } from '../../api/modules'
 
 function timeLabel(value: string) { return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }
 
 export function ReceptionMonitor() {
+  const location = useLocation()
+  const operationsPrefix = location.pathname.startsWith('/admin') ? '/admin' : '/recepcao'
   const [overview, setOverview] = useState<ReceptionOverviewDto | null>(null)
   const [visits, setVisits] = useState<ReceptionVisitDto[]>([])
   const [error, setError] = useState('')
@@ -33,7 +35,7 @@ export function ReceptionMonitor() {
   }
   const activeVisits = visits.filter((visit) => visit.status === 'WAITING' || visit.status === 'IN_SERVICE')
   return <section className="admin-page reception-monitor-page">
-    <div className="page-header"><div><span className="page-eyebrow">Operação ao vivo</span><h1>Recepção</h1><p>Veja quem chegou e acompanhe os atendimentos em andamento.</p></div><div className="page-header-actions"><Link className="secondary-button" to="/recepcao/solicitacoes-profissionais">Solicitações de profissionais</Link><button className="secondary-button" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin-icon' : ''} /> Atualizar</button></div></div>
+    <div className="page-header"><div><span className="page-eyebrow">Operação ao vivo</span><h1>Recepção</h1><p>Veja quem chegou e acompanhe os atendimentos em andamento.</p></div><div className="page-header-actions"><Link className="secondary-button" to={`${operationsPrefix}/profissionais`}>Profissionais</Link><Link className="secondary-button" to={`${operationsPrefix}/configuracoes`}>Horários e salas</Link><Link className="secondary-button" to={`${operationsPrefix}/solicitacoes-profissionais`}>Solicitações de profissionais</Link><button className="secondary-button" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin-icon' : ''} /> Atualizar</button></div></div>
     {error && <div className="form-error" role="alert">{error}</div>}
     <div className="reception-monitor-metrics">{[['Aguardando', overview?.visitorsWaiting ?? '—'], ['Em atendimento', overview?.visitsInService ?? '—'], ['Reservas hoje', overview?.reservationsToday ?? '—']].map(([label, value]) => <div className="metric-card" key={label}><span className="metric-icon tone-green"><Activity size={18} /></span><div><small>{label}</small><strong>{value}</strong></div></div>)}</div>
     <div className="reception-monitor-grid"><section className="panel reception-live-panel"><div className="panel-header"><div><h2>Fila de atendimento</h2><p>Atualiza automaticamente a cada 10 segundos.</p></div><span className="reception-live-dot"><i /> ao vivo</span></div>

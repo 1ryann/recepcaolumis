@@ -1,5 +1,5 @@
 import { apiClient, ApiError } from '../../api/client'
-import { Activity, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, UserRound, UsersRound } from 'lucide-react'
+import { Activity, CalendarClock, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, UserRound, UsersRound } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
@@ -12,6 +12,7 @@ const nav = [
   { to: '/profissional/reservas', label: 'Reservas', icon: CalendarDays },
   { to: '/profissional/atendimentos', label: 'Atendimentos', icon: UsersRound },
   { to: '/profissional/locacoes', label: 'Locações', icon: DoorOpen },
+  { to: '/profissional/disponibilidade', label: 'Disponibilidade', icon: CalendarClock },
   { to: '/profissional/financeiro', label: 'Financeiro', icon: Activity },
   { to: '/profissional/perfil', label: 'Meu perfil', icon: UserRound },
 ]

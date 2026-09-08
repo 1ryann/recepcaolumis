@@ -20,6 +20,7 @@ import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from '../pages/professional/ProfessionalHome'
 import { ProfessionalRegistration } from '../pages/professional/ProfessionalRegistration'
 import { ProfessionalApplicationStatus } from '../pages/professional/ProfessionalApplicationStatus'
+import { ProfessionalAvailability } from '../pages/professional/ProfessionalAvailability'
 import { ProfessionalApplications } from '../pages/admin/ProfessionalApplications'
 import { DevelopmentAppStore } from './DevelopmentAppStore'
 
@@ -48,6 +49,7 @@ export default function DevelopmentApp() {
             <Route path="agenda" element={<ProfessionalAgenda />} />
             <Route path="reservas" element={<ProfessionalPlaceholder title="Reservas" />} />
             <Route path="atendimentos" element={<ProfessionalPlaceholder title="Atendimentos" />} />
+            <Route path="disponibilidade" element={<ProfessionalAvailability />} />
             <Route path="locacoes" element={<ProfessionalPlaceholder title="Locações" />} />
             <Route path="financeiro" element={<ProfessionalPlaceholder title="Financeiro" />} />
             <Route path="perfil" element={<ProfessionalPlaceholder title="Meu perfil" />} />
@@ -56,6 +58,8 @@ export default function DevelopmentApp() {
         <Route element={<ProtectedRoute allowedRoles={['PROFESSIONAL_APPLICANT']} />}><Route path="/profissional/aguardando" element={<ProfessionalApplicationStatus />} /></Route>
         <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao" element={<ReceptionMonitor />} /></Route>
         <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} /></Route>
+        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/profissionais" element={<Professionals />} /></Route>
+        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/configuracoes" element={<Settings />} /></Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
