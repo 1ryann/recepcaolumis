@@ -2,6 +2,21 @@ namespace GestaoPredio.Domain.Auditing;
 
 public static class AuditActions
 {
+    public const string ProfessionalAvailabilityUpdated = "PROFESSIONAL_AVAILABILITY_UPDATED";
+    public const string ProfessionalAvailabilityUpdatedByOperations = "PROFESSIONAL_AVAILABILITY_UPDATED_BY_OPERATIONS";
+    public const string ProfessionalAvailabilityExceptionCreated = "PROFESSIONAL_AVAILABILITY_EXCEPTION_CREATED";
+    public const string ProfessionalAvailabilityExceptionCreatedByOperations = "PROFESSIONAL_AVAILABILITY_EXCEPTION_CREATED_BY_OPERATIONS";
+    public const string ProfessionalAvailabilityExceptionUpdated = "PROFESSIONAL_AVAILABILITY_EXCEPTION_UPDATED";
+    public const string ProfessionalAvailabilityExceptionUpdatedByOperations = "PROFESSIONAL_AVAILABILITY_EXCEPTION_UPDATED_BY_OPERATIONS";
+    public const string ProfessionalAvailabilityExceptionRemoved = "PROFESSIONAL_AVAILABILITY_EXCEPTION_REMOVED";
+    public const string ProfessionalAvailabilityExceptionRemovedByOperations = "PROFESSIONAL_AVAILABILITY_EXCEPTION_REMOVED_BY_OPERATIONS";
+    public static readonly string[] ProfessionalAvailabilityActions =
+    [
+        ProfessionalAvailabilityUpdated, ProfessionalAvailabilityUpdatedByOperations,
+        ProfessionalAvailabilityExceptionCreated, ProfessionalAvailabilityExceptionCreatedByOperations,
+        ProfessionalAvailabilityExceptionUpdated, ProfessionalAvailabilityExceptionUpdatedByOperations,
+        ProfessionalAvailabilityExceptionRemoved, ProfessionalAvailabilityExceptionRemovedByOperations
+    ];
     public const string ProfessionalCreated = "PROFESSIONAL_CREATED";
     public const string ProfessionalUpdated = "PROFESSIONAL_UPDATED";
     public const string ProfessionalActivated = "PROFESSIONAL_ACTIVATED";

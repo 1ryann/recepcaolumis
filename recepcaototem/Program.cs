@@ -176,6 +176,7 @@ app.MapVisitEndpoints();
 app.MapOperationalAlertEndpoints();
 app.MapOperatingHoursEndpoints();
 app.MapRoomBlockEndpoints();
+app.MapProfessionalAvailabilityEndpoints();
 app.MapFinanceEndpoints();
 app.MapDashboardEndpoints();
 app.MapCustomerEndpoints();
