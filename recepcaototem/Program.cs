@@ -77,6 +77,7 @@ builder.Services.AddScoped<IReservationConflictDetector, PostgreSqlReservationCo
 builder.Services.AddScoped<IOperationalAlertReader, PostgreSqlOperationalAlertReader>();
 builder.Services.AddSingleton(new OperatingHoursEvaluator(operationalTimeZone));
 builder.Services.AddScoped<IRoomAvailabilityService, PostgreSqlRoomAvailabilityService>();
+builder.Services.AddScoped<IAppointmentAvailabilityService, PostgreSqlAppointmentAvailabilityService>();
 builder.Services.AddSingleton<ILeaseOpenVisitProbe, NoOpenVisitProbe>();
 builder.Services.AddScoped<ILeaseLifecycleCoordinator, LeaseLifecycleCoordinator>();
 builder.Services.AddScoped<IFinancialChargeCalculator, FinancialChargeCalculator>();

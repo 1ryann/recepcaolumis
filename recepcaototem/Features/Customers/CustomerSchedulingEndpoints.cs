@@ -45,38 +45,16 @@ public static class CustomerSchedulingEndpoints
             .OrderBy(x => x.NormalizedName).ThenBy(x => x.Id)
             .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
 
-    internal static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request, ApplicationDbContext db,
-        IRoomAvailabilityService availability, IReservationConflictDetector conflicts, TimeZoneInfo timeZone,
-        CancellationToken ct)
+    internal static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request,
+        ApplicationDbContext db, IAppointmentAvailabilityService availability, CancellationToken ct)
     {
         if (request.ProfessionalId == Guid.Empty || request.DurationMinutes is < 15 or > 480 || request.DurationMinutes % 15 != 0)
             return Results.BadRequest(new ApiError("INVALID_AVAILABILITY", "Os dados de disponibilidade são inválidos."));
         if (!await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct)) return Results.NotFound();
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var intervals = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
-        var slots = new List<AvailabilitySlotResponse>();
-        var localStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
-        for (var minute = 0; minute < 24 * 60; minute += 15)
-        {
-            var startLocal = localStart.AddMinutes(minute);
-            var endLocal = startLocal.AddMinutes(request.DurationMinutes);
-            if (endLocal.Date != request.Date.ToDateTime(TimeOnly.MinValue).Date) continue;
-            var start = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(startLocal, timeZone));
-            var end = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(endLocal, timeZone));
-            if (!intervals.Any() || !new OperatingHoursEvaluator(timeZone).Contains(intervals, start, end)) continue;
-            var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive).Select(x => x.Id).ToListAsync(ct);
-            foreach (var roomId in rooms)
-            {
-                var roomConflict = await availability.CheckScheduleAndBlocksAsync(roomId, start, end, null, true, ct);
-                var resourceConflict = await conflicts.FindConflictAsync(roomId, request.ProfessionalId, start, end, null, ct);
-                if (roomConflict == RoomAvailabilityConflict.None && !resourceConflict.Any)
-                {
-                    slots.Add(new AvailabilitySlotResponse(start, end));
-                    break;
-                }
-            }
-        }
-        return Results.Ok(slots.ToArray());
+        var slots = await availability.FindSlotsAsync(
+            request.ProfessionalId, request.Date, request.DurationMinutes, ct);
+        return Results.Ok(slots.Select(slot =>
+            new AvailabilitySlotResponse(slot.StartAt, slot.EndAt)).ToArray());
     }
 
     private static async Task<Customer?> GetCustomer(ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken ct)

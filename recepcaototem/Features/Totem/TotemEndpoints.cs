@@ -40,11 +40,10 @@ public static class TotemEndpoints
             .Select(x => new TotemProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
 
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,
-        ApplicationDbContext db, IRoomAvailabilityService availability, IReservationConflictDetector conflicts,
-        TimeZoneInfo timeZone, CancellationToken ct)
+        ApplicationDbContext db, IAppointmentAvailabilityService availability, CancellationToken ct)
     {
         var request = new CustomerAvailabilityRequest(professionalId, date, durationMinutes);
-        return await CustomerSchedulingEndpoints.Availability(request, db, availability, conflicts, timeZone, ct);
+        return await CustomerSchedulingEndpoints.Availability(request, db, availability, ct);
     }
 
     private static async Task<IResult> ResolveCustomer(TotemCustomerResolveRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, CancellationToken ct)
