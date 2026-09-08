@@ -6,7 +6,9 @@ public enum OperationalAlertType
     ReservationEndedVisitInService,
     NextReservationSoon,
     NextReservationConflict,
-    LeaseEndingWithActiveVisit
+    LeaseEndingWithActiveVisit,
+    CustomerWaitingProfessionalAbsent,
+    OpenVisitAffectedByIncident
 }
 
 public enum OperationalAlertSeverity

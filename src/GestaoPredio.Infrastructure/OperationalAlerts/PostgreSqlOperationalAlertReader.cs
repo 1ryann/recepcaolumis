@@ -1,5 +1,7 @@
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.OperationalAlerts;
 using GestaoPredio.Domain.Leases;
+using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
@@ -7,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GestaoPredio.Infrastructure.OperationalAlerts;
 
-public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db) : IOperationalAlertReader
+public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db, TimeZoneInfo timeZone)
+    : IOperationalAlertReader
 {
     private static readonly TimeSpan SoonWindow = TimeSpan.FromHours(1);
 
@@ -47,6 +50,12 @@ public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db) : 
 
         if (filter.Type is null or OperationalAlertType.LeaseEndingWithActiveVisit)
             alerts.AddRange(await ReadEndingLeasesAsync(filter, current, cancellationToken));
+
+        if (Includes(filter, OperationalAlertType.CustomerWaitingProfessionalAbsent, OperationalAlertSeverity.Critical))
+            alerts.AddRange(await ReadWaitingVisitAbsentProfessionalAsync(filter, current, cancellationToken));
+
+        if (Includes(filter, OperationalAlertType.OpenVisitAffectedByIncident, OperationalAlertSeverity.Critical))
+            alerts.AddRange(await ReadOpenVisitAffectedByIncidentAsync(filter, current, cancellationToken));
 
         return alerts
             .OrderByDescending(alert => alert.Severity)
@@ -197,6 +206,103 @@ public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db) : 
         return rows.Select(row => Create(type, severity, row)).ToArray();
     }
 
+    private async Task<IReadOnlyList<OperationalAlert>> ReadWaitingVisitAbsentProfessionalAsync(
+        OperationalAlertFilter filter,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var visits = db.Visits.AsNoTracking().Where(visit => visit.Status == VisitStatus.Waiting);
+        if (filter.ProfessionalId is { } professionalFilter)
+            visits = visits.Where(visit => visit.ProfessionalId == professionalFilter);
+        if (filter.RoomId is { } roomFilter)
+            visits = visits.Where(visit => visit.RoomId == roomFilter);
+
+        var candidates = await (
+            from visit in visits
+            join professional in db.Professionals.AsNoTracking() on visit.ProfessionalId equals professional.Id
+            join room in db.Rooms.AsNoTracking() on visit.RoomId equals room.Id into roomJoin
+            from room in roomJoin.DefaultIfEmpty()
+            select new AlertRow((Guid?)room.Id, room.Name, professional.Id, professional.Name,
+                visit.ReservationId, visit.Id, null, visit.ArrivedAt)).ToListAsync(cancellationToken);
+        if (candidates.Count == 0) return [];
+
+        var professionalIds = candidates.Select(row => row.ProfessionalId).Distinct().ToArray();
+        var openPresences = await db.ProfessionalPresences.AsNoTracking()
+            .Where(presence => professionalIds.Contains(presence.ProfessionalId) && presence.EndedAt == null)
+            .ToListAsync(cancellationToken);
+        var presenceByProfessional = openPresences
+            .GroupBy(presence => presence.ProfessionalId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.StartedAt).First());
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(cancellationToken);
+
+        var alerts = new List<OperationalAlert>();
+        foreach (var row in candidates)
+        {
+            presenceByProfessional.TryGetValue(row.ProfessionalId, out var presence);
+            if (PresenceEvaluator.IsEffective(presence, operatingHours, now, timeZone)) continue;
+            alerts.Add(Create(OperationalAlertType.CustomerWaitingProfessionalAbsent,
+                OperationalAlertSeverity.Critical, row));
+        }
+        return alerts;
+    }
+
+    private async Task<IReadOnlyList<OperationalAlert>> ReadOpenVisitAffectedByIncidentAsync(
+        OperationalAlertFilter filter,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var localNow = TimeZoneInfo.ConvertTime(now, timeZone).DateTime;
+        var localDate = DateOnly.FromDateTime(localNow);
+        var localTime = TimeOnly.FromDateTime(localNow);
+
+        var visits = db.Visits.AsNoTracking().Where(visit =>
+            visit.Status == VisitStatus.Waiting || visit.Status == VisitStatus.InService);
+        if (filter.ProfessionalId is { } professionalFilter)
+            visits = visits.Where(visit => visit.ProfessionalId == professionalFilter);
+        if (filter.RoomId is { } roomFilter)
+            visits = visits.Where(visit => visit.RoomId == roomFilter);
+
+        var candidates = await (
+            from visit in visits
+            join professional in db.Professionals.AsNoTracking() on visit.ProfessionalId equals professional.Id
+            join room in db.Rooms.AsNoTracking() on visit.RoomId equals room.Id into roomJoin
+            from room in roomJoin.DefaultIfEmpty()
+            select new AlertRow((Guid?)room.Id, room.Name, professional.Id, professional.Name,
+                visit.ReservationId, visit.Id, null, visit.ArrivedAt)).ToListAsync(cancellationToken);
+        if (candidates.Count == 0) return [];
+
+        var professionalIds = candidates.Select(row => row.ProfessionalId).Distinct().ToArray();
+        var incidentProfessionalIds = (await db.ProfessionalAvailabilityExceptions.AsNoTracking()
+            .Where(exception => professionalIds.Contains(exception.ProfessionalId) &&
+                exception.Origin == ProfessionalAvailabilityExceptionOrigin.Incident &&
+                !exception.AllDay && exception.Date == localDate &&
+                exception.StartTime <= localTime && exception.EndTime > localTime)
+            .Select(exception => exception.ProfessionalId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        var reservationIds = candidates
+            .Where(row => row.ReservationId is not null)
+            .Select(row => row.ReservationId!.Value)
+            .Distinct()
+            .ToArray();
+        var affectedReservationIds = reservationIds.Length == 0
+            ? new HashSet<Guid>()
+            : (await db.Reservations.AsNoTracking()
+                .Where(reservation => reservationIds.Contains(reservation.Id) &&
+                    reservation.Status == ReservationStatus.Cancelled &&
+                    reservation.CancellationReason == ReservationCancellationReason.ProfessionalUnavailable)
+                .Select(reservation => reservation.Id)
+                .ToListAsync(cancellationToken)).ToHashSet();
+
+        return candidates
+            .Where(row => incidentProfessionalIds.Contains(row.ProfessionalId) ||
+                (row.ReservationId is { } reservationId && affectedReservationIds.Contains(reservationId)))
+            .Select(row => Create(OperationalAlertType.OpenVisitAffectedByIncident,
+                OperationalAlertSeverity.Critical, row))
+            .ToArray();
+    }
+
     private static bool Includes(
         OperationalAlertFilter filter,
         OperationalAlertType type,
@@ -221,6 +327,10 @@ public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db) : 
                 ("Próxima reserva em conflito", "A próxima reserva já começou e a sala ainda possui atendimento anterior ativo."),
             OperationalAlertType.LeaseEndingWithActiveVisit =>
                 ("Locação encerrando com visita aberta", "A locação está encerrando ou encerrou e ainda existe uma visita aberta."),
+            OperationalAlertType.CustomerWaitingProfessionalAbsent =>
+                ("Cliente aguardando com profissional ausente", "Há uma visita aguardando atendimento e o profissional não está presente no momento."),
+            OperationalAlertType.OpenVisitAffectedByIncident =>
+                ("Visita aberta afetada por imprevisto", "Um imprevisto do profissional afeta uma visita que ainda está aberta."),
             _ => throw new ArgumentOutOfRangeException(nameof(type))
         };
         var id = string.Join(':', Contract(type), row.VisitId, row.ReservationId, row.LeaseId);
@@ -236,12 +346,14 @@ public sealed class PostgreSqlOperationalAlertReader(ApplicationDbContext db) : 
         OperationalAlertType.NextReservationSoon => "NEXT_RESERVATION_SOON",
         OperationalAlertType.NextReservationConflict => "NEXT_RESERVATION_CONFLICT",
         OperationalAlertType.LeaseEndingWithActiveVisit => "LEASE_ENDING_WITH_ACTIVE_VISIT",
+        OperationalAlertType.CustomerWaitingProfessionalAbsent => "CUSTOMER_WAITING_PROFESSIONAL_ABSENT",
+        OperationalAlertType.OpenVisitAffectedByIncident => "OPEN_VISIT_AFFECTED_BY_INCIDENT",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
 
     private sealed record AlertRow(
-        Guid RoomId,
-        string RoomName,
+        Guid? RoomId,
+        string? RoomName,
         Guid ProfessionalId,
         string ProfessionalName,
         Guid? ReservationId,

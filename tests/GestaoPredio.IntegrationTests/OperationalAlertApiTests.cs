@@ -163,6 +163,119 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Waiting_visit_with_an_absent_professional_produces_a_critical_alert()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync();
+        var now = DateTimeOffset.UtcNow;
+        var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
+            seed.Manager.Id, now.AddMinutes(-10));
+        await AddAsync(visit);
+        await LoginAsync(seed.Manager);
+
+        var page = await factory.Client.GetFromJsonAsync<AlertPage>(
+            "/api/admin/operational-alerts?type=CUSTOMER_WAITING_PROFESSIONAL_ABSENT");
+
+        var alert = Assert.Single(page!.Items);
+        Assert.Equal("CUSTOMER_WAITING_PROFESSIONAL_ABSENT", alert.Type);
+        Assert.Equal("CRITICAL", alert.Severity);
+        Assert.Equal(visit.Id, alert.VisitId);
+        Assert.Equal(seed.Professional.Id, alert.ProfessionalId);
+    }
+
+    [Fact]
+    public async Task Waiting_visit_drops_the_absent_alert_once_the_professional_is_present()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync();
+        var now = DateTimeOffset.UtcNow;
+        var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
+            seed.Manager.Id, now.AddMinutes(-10));
+        await AddAsync(visit, ProfessionalPresence.StartByQr(seed.Professional.Id, now.AddMinutes(-15)));
+        await LoginAsync(seed.Manager);
+
+        var page = await factory.Client.GetFromJsonAsync<AlertPage>(
+            "/api/admin/operational-alerts?type=CUSTOMER_WAITING_PROFESSIONAL_ABSENT");
+
+        Assert.Empty(page!.Items);
+    }
+
+    [Fact]
+    public async Task Open_visit_under_an_active_incident_exception_produces_a_critical_alert()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync();
+        var now = DateTimeOffset.UtcNow;
+        var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")).DateTime);
+        var incident = ProfessionalAvailabilityException.Create(seed.Professional.Id, localDate, false,
+            new TimeOnly(0, 0), new TimeOnly(23, 59, 59), "motivo interno do profissional", now,
+            ProfessionalAvailabilityExceptionOrigin.Incident);
+        var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente afetado",
+            seed.Manager.Id, now.AddMinutes(-10));
+        visit.StartService(seed.Manager.Id, now.AddMinutes(-5));
+        await AddAsync(incident, visit);
+        await LoginAsync(seed.Manager);
+
+        var page = await factory.Client.GetFromJsonAsync<AlertPage>(
+            "/api/admin/operational-alerts?type=OPEN_VISIT_AFFECTED_BY_INCIDENT");
+
+        var alert = Assert.Single(page!.Items);
+        Assert.Equal("OPEN_VISIT_AFFECTED_BY_INCIDENT", alert.Type);
+        Assert.Equal("CRITICAL", alert.Severity);
+        Assert.Equal(visit.Id, alert.VisitId);
+    }
+
+    [Fact]
+    public async Task Open_visit_on_a_reservation_cancelled_for_unavailability_produces_the_incident_alert()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync();
+        var now = DateTimeOffset.UtcNow;
+        var reservation = Reservation.CreateApproved(seed.Room.Id, seed.Professional.Id,
+            now.AddMinutes(-30), now.AddMinutes(30), seed.Manager.Id, now.AddHours(-1));
+        reservation.Cancel("PROFESSIONAL_INCIDENT", now, ReservationCancellationReason.ProfessionalUnavailable);
+        var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, reservation.Id, "Cliente afetado",
+            seed.Manager.Id, now.AddMinutes(-20));
+        await AddAsync(reservation, visit);
+        await LoginAsync(seed.Manager);
+
+        var page = await factory.Client.GetFromJsonAsync<AlertPage>(
+            "/api/admin/operational-alerts?type=OPEN_VISIT_AFFECTED_BY_INCIDENT");
+
+        var alert = Assert.Single(page!.Items);
+        Assert.Equal(visit.Id, alert.VisitId);
+        Assert.Equal(reservation.Id, alert.ReservationId);
+    }
+
+    [Fact]
+    public async Task Present_professional_without_an_incident_yields_neither_new_alert()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync();
+        var now = DateTimeOffset.UtcNow;
+        var waiting = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
+            seed.Manager.Id, now.AddMinutes(-10));
+        var inService = Visit.Arrive(seed.OtherProfessional.Id, seed.Room.Id, null, "Cliente em atendimento",
+            seed.Manager.Id, now.AddMinutes(-12));
+        inService.StartService(seed.Manager.Id, now.AddMinutes(-6));
+        await AddAsync(waiting, inService,
+            ProfessionalPresence.StartByQr(seed.Professional.Id, now.AddMinutes(-15)),
+            ProfessionalPresence.StartByQr(seed.OtherProfessional.Id, now.AddMinutes(-15)));
+        await LoginAsync(seed.Manager);
+
+        var page = await factory.Client.GetFromJsonAsync<AlertPage>("/api/admin/operational-alerts");
+
+        Assert.DoesNotContain(page!.Items, item => item.Type == "CUSTOMER_WAITING_PROFESSIONAL_ABSENT");
+        Assert.DoesNotContain(page.Items, item => item.Type == "OPEN_VISIT_AFFECTED_BY_INCIDENT");
+    }
+
+    [Fact]
     public async Task Global_operational_alerts_require_operations_policy()
     {
         await factory.ResetAsync();

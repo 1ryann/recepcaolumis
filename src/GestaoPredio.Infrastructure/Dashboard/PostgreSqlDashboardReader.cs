@@ -104,6 +104,8 @@ public sealed class PostgreSqlDashboardReader(
         OperationalAlertType.NextReservationSoon => "NEXT_RESERVATION_SOON",
         OperationalAlertType.NextReservationConflict => "NEXT_RESERVATION_CONFLICT",
         OperationalAlertType.LeaseEndingWithActiveVisit => "LEASE_ENDING_WITH_ACTIVE_VISIT",
+        OperationalAlertType.CustomerWaitingProfessionalAbsent => "CUSTOMER_WAITING_PROFESSIONAL_ABSENT",
+        OperationalAlertType.OpenVisitAffectedByIncident => "OPEN_VISIT_AFFECTED_BY_INCIDENT",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
 }
