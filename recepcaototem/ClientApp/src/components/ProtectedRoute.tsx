@@ -11,7 +11,9 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   const { status, user, refresh } = useSession()
   const [validatedLocation, setValidatedLocation] = useState<string | null>(null)
   useEffect(() => { let active = true; void refresh().then(() => { if (active) setValidatedLocation(location.key) }); return () => { active = false } }, [location.key, refresh])
-  if (validatedLocation !== location.key || status === 'loading') return <div className="route-loading" role="status">Carregando…</div>
+  // Only block on the first validation of this location. Later background revalidations
+  // must not unmount the routed subtree (which would drop the user's unsaved work).
+  if (validatedLocation !== location.key) return <div className="route-loading" role="status">Carregando…</div>
   if (status === 'error') return <div role="alert">Não foi possível confirmar a sessão. <button onClick={() => void refresh()}>Tentar novamente</button></div>
   if (status === 'anonymous') return <Navigate to={location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'} state={{ from: location.pathname }} replace />
   if (status === 'mustChangePassword') return <Navigate to="/change-password" replace />

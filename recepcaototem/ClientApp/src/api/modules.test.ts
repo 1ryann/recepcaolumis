@@ -174,6 +174,24 @@ test('availability clients use the professional and operations contracts', async
   expect(apiClient.delete).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability/exceptions/ex-1', { concurrencyToken: 'exv4' })
 })
 
+test('exception listing always sends the mandatory from/to range the API requires', async () => {
+  const signal = new AbortController().signal
+  await professionalAvailabilityApi.listExceptions(signal)
+  await adminProfessionalAvailabilityApi.listExceptions('p-1', signal)
+  const isoDate = expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)
+  expect(apiClient.get).toHaveBeenCalledWith('/api/professional/availability/exceptions', {
+    query: expect.objectContaining({ from: isoDate, to: isoDate }), signal,
+  })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/professionals/p-1/availability/exceptions', {
+    query: expect.objectContaining({ from: isoDate, to: isoDate }), signal,
+  })
+  const range = vi.mocked(apiClient.get).mock.calls
+    .find(([path]) => path === '/api/professional/availability/exceptions')![1] as { query: { from: string, to: string } }
+  const spanDays = (Date.parse(range.query.to) - Date.parse(range.query.from)) / 86_400_000
+  expect(spanDays).toBeGreaterThan(0)
+  expect(spanDays).toBeLessThanOrEqual(365)
+})
+
 test('operating hours and room block clients preserve admin routes and concurrency', async () => {
   const days = [{ dayOfWeek: 'MONDAY', intervals: [{ opensAt: '08:00', closesAt: '18:00' }] }]
   await operatingHoursApi.get()

@@ -567,6 +567,20 @@ const professionalAvailabilityExceptionsPath = '/api/professional/availability/e
 const adminProfessionalAvailabilityExceptionsPath = (professionalId: string) =>
   `${adminProfessionalAvailabilityPath(professionalId)}/exceptions`
 
+export interface AvailabilityExceptionRange { from: string, to: string }
+
+// The exceptions endpoint rejects any request without an explicit from/to window of
+// at most 365 days (INVALID_DATE_RANGE). Default to "today through the next year" so
+// the editor always loads its upcoming entries instead of failing on open.
+function defaultExceptionRange(): AvailabilityExceptionRange {
+  const iso = (value: Date) =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+  const from = new Date()
+  const to = new Date(from)
+  to.setDate(to.getDate() + 365)
+  return { from: iso(from), to: iso(to) }
+}
+
 export const professionalAvailabilityApi = {
   get(signal?: AbortSignal) {
     return apiClient.get<ProfessionalAvailabilityDto>('/api/professional/availability', { signal })
@@ -574,8 +588,8 @@ export const professionalAvailabilityApi = {
   update(input: ProfessionalAvailabilityUpdateInput) {
     return apiClient.put<ProfessionalAvailabilityDto>('/api/professional/availability', input)
   },
-  listExceptions(signal?: AbortSignal) {
-    return apiClient.get<AvailabilityExceptionDto[]>(professionalAvailabilityExceptionsPath, { signal })
+  listExceptions(signal?: AbortSignal, range: AvailabilityExceptionRange = defaultExceptionRange()) {
+    return apiClient.get<AvailabilityExceptionDto[]>(professionalAvailabilityExceptionsPath, { query: { ...range }, signal })
   },
   createException(input: AvailabilityExceptionInput) {
     return apiClient.post<AvailabilityExceptionDto>(professionalAvailabilityExceptionsPath, input)
@@ -595,8 +609,8 @@ export const adminProfessionalAvailabilityApi = {
   update(professionalId: string, input: ProfessionalAvailabilityUpdateInput) {
     return apiClient.put<ProfessionalAvailabilityDto>(adminProfessionalAvailabilityPath(professionalId), input)
   },
-  listExceptions(professionalId: string, signal?: AbortSignal) {
-    return apiClient.get<AvailabilityExceptionDto[]>(adminProfessionalAvailabilityExceptionsPath(professionalId), { signal })
+  listExceptions(professionalId: string, signal?: AbortSignal, range: AvailabilityExceptionRange = defaultExceptionRange()) {
+    return apiClient.get<AvailabilityExceptionDto[]>(adminProfessionalAvailabilityExceptionsPath(professionalId), { query: { ...range }, signal })
   },
   createException(professionalId: string, input: AvailabilityExceptionInput) {
     return apiClient.post<AvailabilityExceptionDto>(adminProfessionalAvailabilityExceptionsPath(professionalId), input)

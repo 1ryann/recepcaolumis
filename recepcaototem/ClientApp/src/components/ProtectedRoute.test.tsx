@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect, useState } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 import { SessionProvider, useSession } from '../auth/SessionProvider'
@@ -45,6 +46,29 @@ test('restored browser page revalidates the current cookie and discards old iden
  fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }))
  await waitFor(() => expect(screen.getByText('authenticated:CUSTOMER')).toBeInTheDocument())
  expect(screen.queryByText('authenticated:ADMINISTRADOR')).not.toBeInTheDocument()
+})
+
+test('a background session revalidation keeps the protected subtree mounted and its edits', async () => {
+ vi.mocked(apiClient.get).mockResolvedValue(identity('ADMINISTRADOR'))
+ let mounts = 0
+ function Child() {
+  useEffect(() => { mounts += 1 }, [])
+  const [text, setText] = useState('')
+  return <input aria-label="draft" value={text} onChange={(event) => setText(event.target.value)} />
+ }
+ render(<MemoryRouter initialEntries={['/admin']}><SessionProvider><Routes>
+  <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
+   <Route path="/admin" element={<Child />} />
+  </Route>
+ </Routes></SessionProvider></MemoryRouter>)
+ const input = await screen.findByLabelText<HTMLInputElement>('draft')
+ fireEvent.change(input, { target: { value: 'unsaved work' } })
+ expect(mounts).toBe(1)
+ const before = vi.mocked(apiClient.get).mock.calls.length
+ fireEvent(window, new Event('focus'))
+ await waitFor(() => expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThan(before))
+ await waitFor(() => expect(screen.getByLabelText('draft')).toHaveValue('unsaved work'))
+ expect(mounts).toBe(1)
 })
 
 test('one precedence is used for legacy multi-role homes', () => {

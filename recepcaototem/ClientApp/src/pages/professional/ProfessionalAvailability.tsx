@@ -8,6 +8,8 @@ const errorMessage = (error: unknown) => {
   if (error instanceof ApiError) {
     if (error.code === 'RESOURCE_MODIFIED') return 'Esta disponibilidade foi alterada em outra sessão. Atualizamos os dados para você.'
     if (error.code === 'OPERATING_HOURS_NOT_CONFIGURED') return 'O horário de funcionamento ainda não foi configurado pela gestão.'
+    if (error.code === 'INVALID_PROFESSIONAL_AVAILABILITY') return 'Os intervalos precisam caber dentro do horário de funcionamento do estabelecimento. Confirme com a gestão se esse horário já foi configurado.'
+    if (error.code === 'INVALID_DATE_RANGE') return 'Não foi possível carregar as indisponibilidades agora. Tente novamente em instantes.'
     if (error.code === 'PROFESSIONAL_UNAVAILABLE') return 'A agenda informada não pode ser utilizada neste momento.'
     return error.message
   }

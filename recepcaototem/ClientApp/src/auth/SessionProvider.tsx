@@ -3,10 +3,11 @@ import { apiClient, ApiError, resetCsrfToken } from '../api/client'
 
 export type SessionUser = { userId: string; displayName: string; email: string; roles: string[]; mustChangePassword: boolean }
 type SessionStatus = 'error' | 'loading' | 'anonymous' | 'mustChangePassword' | 'authenticated'
+type RefreshOptions = { background?: boolean }
 type SessionContextValue = {
   status: SessionStatus
   user: SessionUser | null
-  refresh(): Promise<SessionUser | null>
+  refresh(options?: RefreshOptions): Promise<SessionUser | null>
   login(email: string, password: string): Promise<SessionUser>
   logout(): Promise<void>
   changePassword(currentPassword: string, newPassword: string, confirmation: string): Promise<SessionUser | null>
@@ -19,9 +20,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const changingAccount = useRef(false)
   const channel = useRef<BroadcastChannel | null>(null)
   const invalidate = useCallback(() => { generation.current++; setUser(null); setStatus('loading') }, [])
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: RefreshOptions) => {
     const version = ++generation.current
-    setStatus('loading')
+    // A background revalidation (window focus, bfcache restore, other tab) must not tear
+    // the app down to a loading state: keep the current identity on screen until the new
+    // response arrives, otherwise every focus event remounts the route and drops unsaved work.
+    if (!options?.background) setStatus('loading')
     try {
       const current = await apiClient.get<SessionUser>('/api/auth/session')
       if (version !== generation.current) return null
@@ -73,10 +77,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
   useEffect(() => {
     void refresh()
-    const revalidate = () => { if (!changingAccount.current) { invalidate(); void refresh() } }
+    // Revalidate silently: re-check the cookie without dropping the rendered identity.
+    const revalidate = () => { if (!changingAccount.current) void refresh({ background: true }) }
     const restored = (event: PageTransitionEvent) => { if (event.persisted) revalidate() }
     window.addEventListener('pageshow', restored)
-    window.addEventListener('pagehide', invalidate)
     window.addEventListener('focus', revalidate)
     if (typeof BroadcastChannel !== 'undefined') {
       channel.current = new BroadcastChannel('lumis-session')
@@ -85,11 +89,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       generation.current++
       window.removeEventListener('pageshow', restored)
-      window.removeEventListener('pagehide', invalidate)
       window.removeEventListener('focus', revalidate)
       channel.current?.close(); channel.current = null
     }
-  }, [refresh, invalidate])
+  }, [refresh])
   return <SessionContext.Provider value={{ status, user, refresh, login, logout, changePassword }}>{children}</SessionContext.Provider>
 }
 export function useSession() {

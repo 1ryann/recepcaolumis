@@ -5,9 +5,15 @@ import { AvailabilityEditor, ExceptionsEditor, type AvailabilityDraft } from './
 
 type Props = { professionalId: string, professionalName: string }
 
-const messageFor = (reason: unknown) => reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED'
-  ? 'Esta disponibilidade foi alterada em outra sessão. Atualizamos os dados para você.'
-  : reason instanceof Error ? reason.message : 'Não foi possível carregar a disponibilidade.'
+const messageFor = (reason: unknown) => {
+  if (reason instanceof ApiError) {
+    if (reason.code === 'RESOURCE_MODIFIED') return 'Esta disponibilidade foi alterada em outra sessão. Atualizamos os dados para você.'
+    if (reason.code === 'INVALID_PROFESSIONAL_AVAILABILITY') return 'Os intervalos precisam caber dentro do horário de funcionamento do estabelecimento. Verifique se o horário global já foi configurado.'
+    if (reason.code === 'INVALID_DATE_RANGE') return 'Não foi possível carregar as indisponibilidades agora. Tente novamente em instantes.'
+    return reason.message
+  }
+  return reason instanceof Error ? reason.message : 'Não foi possível carregar a disponibilidade.'
+}
 
 export function AdminProfessionalAvailability({ professionalId, professionalName }: Props) {
   const [availability, setAvailability] = useState<ProfessionalAvailabilityDto | null>(null)
