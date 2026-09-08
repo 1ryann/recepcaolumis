@@ -70,7 +70,7 @@ function ProductionApp() {
           <Route path="visitas" element={<Visits />} />
           <Route path="recepcao" element={<ReceptionMonitor />} />
           <Route path="solicitacoes-profissionais" element={<ProfessionalApplications />} />
-          <Route path="configuracoes" element={<ModuleUnavailable title="Configurações" />} />
+          <Route path="configuracoes" element={<Settings />} />
         </Route>
       </Route>
       <Route path="/acesso-negado" element={<p>Acesso indisponível para esta conta.</p>} />
