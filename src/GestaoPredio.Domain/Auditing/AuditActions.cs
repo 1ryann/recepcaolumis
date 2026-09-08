@@ -27,6 +27,16 @@ public static class AuditActions
     public const string ProfessionalUserLinked = "PROFESSIONAL_USER_LINKED";
     public const string ProfessionalUserUnlinked = "PROFESSIONAL_USER_UNLINKED";
     public const string ProfessionalUserReplaced = "PROFESSIONAL_USER_REPLACED";
+    public const string ProfessionalPresenceQrIssued = "PROFESSIONAL_PRESENCE_QR_ISSUED";
+    public const string ProfessionalPresenceStarted = "PROFESSIONAL_PRESENCE_STARTED";
+    public const string ProfessionalPresenceStartedByOperations = "PROFESSIONAL_PRESENCE_STARTED_BY_OPERATIONS";
+    public const string ProfessionalPresenceEndedByOperations = "PROFESSIONAL_PRESENCE_ENDED_BY_OPERATIONS";
+    public const string ProfessionalIncidentReportedNextAppointment = "PROFESSIONAL_INCIDENT_REPORTED_NEXT_APPOINTMENT";
+    public const string ProfessionalIncidentReportedUntilTime = "PROFESSIONAL_INCIDENT_REPORTED_UNTIL_TIME";
+    public const string ProfessionalIncidentReportedRestOfDay = "PROFESSIONAL_INCIDENT_REPORTED_REST_OF_DAY";
+    public const string ReservationCancelledProfessionalUnavailable = "RESERVATION_CANCELLED_PROFESSIONAL_UNAVAILABLE";
+    public const string RescheduleLinkIssued = "RESCHEDULE_LINK_ISSUED";
+    public const string RescheduleLinkConsumed = "RESCHEDULE_LINK_CONSUMED";
     public const string RoomCreated = "ROOM_CREATED";
     public const string RoomUpdated = "ROOM_UPDATED";
     public const string RoomActivated = "ROOM_ACTIVATED";
