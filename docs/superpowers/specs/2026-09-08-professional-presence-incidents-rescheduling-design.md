@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Branch / base: `codex/reception-backend`
-Status: spec for review. **No code, no migration, no DB change, no deploy, no Supabase, no Meta, no Intelbras in this document.**
+Status: **approved** — decisions A–G final (2026-09-08), ready for the implementation plan. **No code, no migration, no DB change, no deploy, no Supabase, no Meta, no Intelbras in this document.**
 Operational timezone: `America/Porto_Velho` (resolved through `OperationalTimeZone.Resolve` / the `TimeZoneInfo` singleton, UTC‑4, no DST).
 
 ---
@@ -142,7 +142,7 @@ Mirrors `CheckInToken`, keyed on the cancelled reservation.
 - **"Active incidents" for Reception** → derived: an exception with `Origin = Incident`, `Date = today`, `StartTime <= now_local < EndTime`.
 - **Notification** → per affected reservation, after commit.
 
-A dedicated table would be state we can derive — explicitly disallowed by §26. **Decision point A:** if the product later wants an incident to survive as a first‑class object (e.g. "the professional cancelled 4 appointments at 14:05" as one audit line with a count), the minimal addition is a `ProfessionalIncident` row (`Id`, `ProfessionalId`, `ReportedAt`, `Type`, `ScopeEndsAt?`, `Version`) referenced by the exception and by each cancelled reservation. Not built now (YAGNI).
+A dedicated table would be state we can derive — explicitly disallowed by §26. **Decision A (final): no `ProfessionalIncident` entity is created.** If the product later wants an incident as a first‑class object (e.g. "the professional cancelled 4 appointments at 14:05" as one line with a count), a `ProfessionalIncident` row is the minimal future addition — out of scope for this version.
 
 ---
 
@@ -170,7 +170,9 @@ static bool IsEffective(
 1. `openPresence is not null && openPresence.EndedAt is null`;
 2. `operatingHoursForCivilDay` is non‑empty (establishment open today) — **fail‑closed when OperatingHours is not configured or the day is closed (§31)**;
 3. the local civil day of `now` equals the local civil day of `openPresence.StartedAt` (a presence never carries past midnight — a professional who does not scan out is `ABSENT` the next day until they scan again);
-4. `TimeOnly.FromDateTime(local(now)) <= max(interval.ClosesAt for operatingHoursForCivilDay)` — presence stays effective through gaps (lunch) up to the **last close of the day** (§5). It is *not* gated on the day's opening time; a professional who scans in early is present from the scan.
+4. `TimeOnly.FromDateTime(local(now)) <= max(interval.ClosesAt for operatingHoursForCivilDay)` — presence stays effective through gaps (lunch) up to the **last close of the day** (§5). It is *not* gated on the day's opening time; a professional who scans in **before the establishment opens is recorded `PRESENT` immediately** (decision E).
+
+Presence being effective early does **not** make the professional bookable before OperatingHours: appointments are still gated by `IAppointmentAvailabilityService` (personal availability ∩ OperatingHours). Physical presence and availability stay separate concepts (§2, §4.1).
 
 `ABSENT` = the negation: no open presence, or ended, or now past the day's last close, or a new civil day, or the establishment is not open today.
 
@@ -188,7 +190,7 @@ static bool IsEffective(
    - Reject (single generic error `INVALID_PRESENCE`) if: not found, `RevokedAt is not null`, `ExpiresAt <= now`, `UsedAt is not null`.
    - Transaction + `ILeaseResourceLock.AcquireAsync(new LeaseResourceLockRequest([], [], [professionalId]))` (existing professional‑scoped lock).
    - Close any **stale** open presence for this professional (`EndedAt IS NULL` but `!PresenceEvaluator.IsEffective(...)`) via `MaterialiseOperatingHoursEnd(dayClose)` — this frees the partial unique index (see §6).
-   - If an **effective** open presence already exists → idempotent success: consume the token (`MarkUsed`), do **not** insert a second presence, return `{ status: "PRESENT" }`.
+   - If an **effective** open presence already exists → **idempotent success (decision D)**: consume the token (`MarkUsed`), do **not** insert a second presence, return `{ status: "PRESENT" }`.
    - Otherwise insert `ProfessionalPresence.StartByQr(professionalId, now)`; `token.MarkUsed(now)`; audit `PROFESSIONAL_PRESENCE_STARTED`.
    - Commit. If the partial unique index still rejects the insert (a concurrent scan won the race) → catch `DbUpdateException`, treat as idempotent success.
    - Response: `{ status: "PRESENT" }`. **The QR never creates a Totem login/session — it only records presence (§4).**
@@ -298,7 +300,8 @@ public interface INotificationService
 - New event type constant `NotificationEventTypes.CustomerReservationCancelledReschedule = "CUSTOMER_RESERVATION_CANCELLED_RESCHEDULE"`.
 - **Demo provider** (`DemoNotificationService`) already records every attempt via `DemoNotificationRecorder`; a customer message flows through the same path and is fully testable. `ForceFailure` still exercises the failure branch.
 - **Meta** stays fail‑closed (`MetaWhatsAppNotificationService` unchanged) until a future production task adds the HTTP call.
-- The main operation does **not** await the notification result for its success. On failure: reservation stays `Cancelled`, the exception stays, presence stays correct, no rollback (§18). The failure is sanitised (`LogFailure` logs provider + event type + code + ids, never the body, never the phone) and surfaced operationally (see §12 — a derived `NotificationDeliveryFailed` alert when a `DemoNotificationAttempt`/failure record is available; **Decision point B:** there is currently no persisted notification‑attempt table, so this alert can only be derived if we add a small `NotificationAttempt` row — otherwise the failure is log‑only. Recommended minimal addition: a `NotificationAttempt { Id, CustomerId?, ProfessionalId?, EventType, Provider, Success, FailureCode, OccurredAt }` append‑only row written by `NotificationService`, no PII, no body).
+- The main operation does **not** await the notification result for its success. On failure: reservation stays `Cancelled`, the exception stays, presence stays correct, no rollback (§18).
+- **Decision B (final): no `NotificationAttempt` table in this version.** A customer‑notification failure is written to a **sanitised log line only** (`LogFailure` — provider, event type, failure code, `CustomerId`, `ReservationId`; never the body, never the phone). Persisting attempts (to power a Reception "delivery failed" alert) is deferred to the future task that integrates real Meta WhatsApp. Consequently there is **no** `NotificationDeliveryFailed` operational alert in this version.
 
 ---
 
@@ -370,7 +373,7 @@ Ordered, in **one transaction** with `ILeaseResourceLock.AcquireAsync([], active
 2. `ExpiresAt > now`, `RevokedAt is null`, `UsedAt is null` — else generic error.
 3. Load original reservation; must be `Cancelled` + `ProfessionalUnavailable`; load `customer` via `original.CustomerId`; `customer.IsActive`.
 4. Validate `endAt > startAt`, same local civil day, `durationMinutes` matches the original within tolerance.
-5. `available = IAppointmentAvailabilityService.FindAvailableRoomAsync(original.ProfessionalId, startAt, endAt, requiredRoomId: original.RoomId, excludedReservationId: null)`; if not available, retry once with `requiredRoomId: null`. `!IsAvailable` → `AppointmentAvailabilityResults.Conflict(...)` (the existing 409 shape). **Decision point C:** keep the original room when free, else any active room — proposed here; the alternative (always any room) is simpler but can move the customer between rooms silently.
+5. `available = IAppointmentAvailabilityService.FindAvailableRoomAsync(original.ProfessionalId, startAt, endAt, requiredRoomId: original.RoomId, excludedReservationId: null)`; **if the original room is not available, retry once with `requiredRoomId: null`** and let the central service pick any valid available room (decision C). `!IsAvailable` on both attempts → `AppointmentAvailabilityResults.Conflict(...)` (the existing 409 shape), token **not** consumed.
 6. `replacement = Reservation.CreateApprovedReplacementForIncident(original, startAt, endAt, actorUserId: "RESCHEDULE_LINK", now)` with `RoomId = available.RoomId`.
 7. `token.MarkUsed(now)`.
 8. `db.Reservations.Add(replacement)`; audit `RESERVATION_RESCHEDULED` (target `RESERVATION`, id = replacement id) and `RESCHEDULE_LINK_CONSUMED` (target `RESCHEDULE_TOKEN`).
@@ -420,9 +423,8 @@ Body built by `NotificationService.NotifyCustomerAsync`, conceptually:
 |---|---|---|
 | `CustomerWaitingProfessionalAbsent` | `Critical` | an open `Visit` (`Waiting`) whose `ProfessionalId` is currently `ABSENT` by `PresenceEvaluator` |
 | `OpenVisitAffectedByIncident` | `Critical` | an open `Visit` (`Waiting` or `InService`) whose professional has an `Origin = Incident` exception for today covering `now`, **or** whose reservation was `Cancelled` with `ProfessionalUnavailable` |
-| `NotificationDeliveryFailed` | `Warning` | only if the `NotificationAttempt` row from Decision point B exists: a failed customer notification in the recent window |
 
-`PostgreSqlOperationalAlertReader` gains three `ReadXxxAsync` helpers following the existing structure; the endpoint filter and ordering are unchanged.
+`PostgreSqlOperationalAlertReader` gains two `ReadXxxAsync` helpers following the existing structure; the endpoint filter and ordering are unchanged. There is **no** notification‑failure alert in this version (decision B) — a failed customer notification is a sanitised log line only.
 
 ### Check‑in is never blocked (§8)
 
@@ -541,11 +543,10 @@ One PostgreSQL migration (name e.g. `ProfessionalPresenceAndRescheduling`), all 
 3. **`RescheduleTokens`** table — mirrors `CheckInTokens`: `Id`, `ReservationId uuid` FK → `Reservations(Id)` `NoAction` (unique `UX_RescheduleTokens_ReservationId`), `TokenHash bytea` (unique `UX_RescheduleTokens_TokenHash`), `IssuedAt`, `ExpiresAt`, `UsedAt null`, `RevokedAt null`, `xmin`.
 4. **`Reservations.CancellationReason`** — `smallint NOT NULL DEFAULT 0`.
 5. **`ProfessionalAvailabilityExceptions.Origin`** — `smallint NOT NULL DEFAULT 0`.
-6. *(only if Decision point B is accepted)* **`NotificationAttempts`** table — append‑only: `Id`, `CustomerId uuid null`, `ProfessionalId uuid null`, `EventType varchar`, `Provider varchar`, `Success bool`, `FailureCode varchar null`, `OccurredAt timestamptz`. No PII, no body.
 
-No table is created "just for a screen". No slots table. No jobs table.
+No `NotificationAttempts` table (decision B). No table is created "just for a screen". No slots table. No jobs table.
 
-DbContext gains `DbSet<ProfessionalPresence>`, `DbSet<ProfessionalPresenceToken>`, `DbSet<RescheduleToken>` (and `DbSet<NotificationAttempt>` if B). New `IEntityTypeConfiguration<>` classes follow `CheckInTokenConfiguration`.
+DbContext gains `DbSet<ProfessionalPresence>`, `DbSet<ProfessionalPresenceToken>`, `DbSet<RescheduleToken>`. New `IEntityTypeConfiguration<>` classes follow `CheckInTokenConfiguration`.
 
 ---
 
@@ -661,24 +662,24 @@ Frontend implementation; a working camera; real Meta WhatsApp; Intelbras; Google
 
 ---
 
-## 22. Decision points needing a call before implementation
+## 22. Resolved decisions (final — approved 2026-09-08)
 
-| # | Decision | Recommendation |
+| # | Decision | Resolution |
 |---|---|---|
-| **A** | Separate `ProfessionalIncident` entity? | **No** — derive everything (see §3.5). Add later only if incidents must be first‑class objects with a count. |
-| **B** | Persist notification attempts (to power a `NotificationDeliveryFailed` alert and "falha de notificação visível operacionalmente" per §18/§26)? | **Yes, minimal** — an append‑only `NotificationAttempt` row with no PII/body. Without it, notification failure is log‑only and Reception cannot see it. |
-| **C** | On reschedule, keep the original room or pick any available? | Try the original room first, fall back to any active room. |
-| **D** | `confirm` on the same QR while already effectively present | Idempotent success + consume the token (proposed). Alternative: reject with a specific "already present". |
-| **E** | Presence effective before the establishment's opening time (professional scans early) | Effective from the scan (proposed — they are physically there). Alternative: clamp start to `OpensAt`. |
-| **F** | `PROFESSIONAL_INCIDENT_*` audit through the restrictive `ProfessionalAvailabilityAudit.CreateSucceeded` helper or inline like `TotemEndpoints` | Inline (consistent with the newer token flows). |
-| **G** | `Presence:QrTokenTtlSeconds` default | 120s (§4 "aproximadamente 2 minutos"). |
+| **A** | Separate `ProfessionalIncident` entity? | **No.** Reuse `ProfessionalAvailabilityException` with `Origin = Incident`. A first‑class incident object is a possible future evolution, out of scope now. |
+| **B** | Persist notification attempts? | **No** in this version. A failed customer notification is a **sanitised log line only**; no `NotificationAttempt` table, no `NotificationDeliveryFailed` alert. Persisting attempts is deferred to the future real‑Meta integration. |
+| **C** | Reschedule room | Try `requiredRoomId = original.RoomId` first; if unavailable, retry once with `requiredRoomId = null` and let the central service pick any valid available room. |
+| **D** | `confirm` QR while already effectively `PRESENT` | Idempotent success + consume the token. No second `ProfessionalPresence` row. |
+| **E** | Scan before OperatingHours opens | Record `PRESENT` immediately. It does **not** unlock appointments before OperatingHours — presence and availability stay separate. |
+| **F** | Audit style for the new flows | Inline in the endpoint transaction, following the existing `TotemEndpoints` / `ReceptionEndpoints` pattern (not the restrictive `ProfessionalAvailabilityAudit` helper). |
+| **G** | `Presence:QrTokenTtlSeconds` | **120 seconds.** |
 
 ---
 
 ## 23. Self‑review (§40)
 
-- **TODO/TBD scan:** none in the design. Open items are enumerated as explicit Decision points A–G, not left implicit.
-- **Contradictions:** none found. Presence vs availability kept orthogonal throughout; the only cross‑reference is the immediate‑service gate (§9) and the Reception projection (§12).
+- **TODO/TBD scan:** none. All seven decisions A–G are resolved in §22 and folded into the body (§3.5 A, §8 B, §10.4 C, §4.3 D, §4.2 E, §16 F, §3.2 G).
+- **Contradictions:** none found. Presence vs availability kept orthogonal throughout; the only cross‑references are the immediate‑service gate (§9) and the Reception projection (§12). Decision B removed the only conditional ("if B") passages — §12, §17 and §19 now describe a single path (log‑only notification failure).
 - **Visit never altered automatically:** confirmed in §12 and §7 step‑by‑step — the incident transaction reads/writes only `ProfessionalAvailabilityException`, `Reservation`, `ProfessionalPresence`, `RescheduleToken`, `AuditEntry`. No `Visit` DbSet is touched. Test coverage in §19 (Visit block).
 - **Incident cancels the affected future reservation(s):** §7 step 4–5, §9. Past / non‑Approved / out‑of‑window reservations excluded.
 - **Three options present and distinct:** §7 table — `NEXT_APPOINTMENT`, `UNTIL_TIME`, `REST_OF_DAY`; window and reservation‑selection rules differ per row.
