@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using GestaoPredio.Domain.Availability;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Security;
+using GestaoPredio.Domain.Rooms;
+using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -113,6 +115,39 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
             (await factory.Client.GetAsync("/api/professional/availability")).StatusCode);
     }
 
+    [Fact]
+    public async Task Weekly_change_warns_about_existing_reservation_without_modifying_it()
+    {
+        await factory.ResetAsync();
+        var professional = await SeedProfessionalAsync();
+        await SeedOperatingHoursAsync(new(8, 0), new(18, 0));
+        var room = Room.Create("Sala preservada", null, 4, 90m, DateTimeOffset.UtcNow);
+        var startAt = Utc(new DateOnly(2027, 1, 4), new TimeOnly(15, 0));
+        var reservation = Reservation.CreateApproved(room.Id, professional.Id, startAt,
+            startAt.AddHours(1), "seed", DateTimeOffset.UtcNow);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AddRange(room, reservation);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(SystemRoles.Gerente);
+        var initial = await GetAsync($"/api/admin/professionals/{professional.Id}/availability");
+
+        var response = await factory.PutWithCsrfAsync(
+            $"/api/admin/professionals/{professional.Id}/availability",
+            new { mode = "CUSTOM", days = Days((DayOfWeek.Monday, "09:00", "12:00")), concurrencyToken = initial.ConcurrencyToken });
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(1, (await response.Content.ReadFromJsonAsync<AvailabilityPayload>())!
+            .ExistingReservationsOutsideAvailabilityCount);
+
+        await using var verifyScope = factory.Services.CreateAsyncScope();
+        var unchanged = await verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .Reservations.AsNoTracking().SingleAsync(value => value.Id == reservation.Id);
+        Assert.Equal(ReservationStatus.Approved, unchanged.Status);
+        Assert.Equal(startAt, unchanged.StartAt);
+    }
+
     private async Task<Professional> SeedProfessionalAsync(string? userId = null)
     {
         var professional = Professional.Create("Agenda API", "Psicologia",
@@ -146,6 +181,13 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
 
     private async Task<AvailabilityPayload> GetAsync(string path) =>
         (await (await factory.Client.GetAsync(path)).Content.ReadFromJsonAsync<AvailabilityPayload>())!;
+
+    private static DateTimeOffset Utc(DateOnly date, TimeOnly time)
+    {
+        var local = date.ToDateTime(time, DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")));
+    }
 
     private static object[] Days(params (DayOfWeek Day, string Start, string End)[] configured) =>
         Enum.GetValues<DayOfWeek>().Select(day => new
