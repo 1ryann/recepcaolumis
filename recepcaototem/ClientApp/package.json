@@ -15,6 +15,7 @@
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
+    "qr-scanner": "^1.4.2",
     "qrcode": "^1.5.4",
     "react": "latest",
     "react-dom": "latest",
