@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react'
+import { TimeField } from './TimeField'
 import { overlappingIndexes, rangeError } from './timeRange'
 
 export type PeriodDraft = { id: string, start: string, end: string }
@@ -22,12 +23,13 @@ type WeeklyPeriodsEditorProps = {
   defaultPeriod: { start: string, end: string }
   dayLabel: (dayOfWeek: string) => string
   hintForDay?: (dayOfWeek: string) => string | null
+  gridRangeForDay?: (dayOfWeek: string) => { min: string, max: string } | null
   onChange: (days: DayDraft[]) => void
 }
 
 export function WeeklyPeriodsEditor({
   days, disabled = false, startLabel, endLabel, closedLabel,
-  addPeriodLabel = 'Adicionar período', defaultPeriod, dayLabel, hintForDay, onChange,
+  addPeriodLabel = 'Adicionar período', defaultPeriod, dayLabel, hintForDay, gridRangeForDay, onChange,
 }: WeeklyPeriodsEditorProps) {
   const patchDay = (dayOfWeek: string, patch: (day: DayDraft) => DayDraft) =>
     onChange(days.map((day) => (day.dayOfWeek === dayOfWeek ? patch(day) : day)))
@@ -53,6 +55,7 @@ export function WeeklyPeriodsEditor({
   return <div className="wpe-days">
     {days.map((day) => {
       const hint = hintForDay?.(day.dayOfWeek) ?? null
+      const gridRange = gridRangeForDay?.(day.dayOfWeek) ?? null
       const overlaps = overlappingIndexes(day.periods)
       return <div className="wpe-day" data-testid={`wpe-day-${day.dayOfWeek}`} key={day.dayOfWeek}>
         <div className="wpe-day-head">
@@ -77,16 +80,16 @@ export function WeeklyPeriodsEditor({
             const invalid = rangeError(period)
             const overlapping = overlaps.has(index)
             return <div className="wpe-period-row" key={period.id}>
-              <label>{startLabel}<input
-                className="time-input" type="time" step={60} aria-label={startLabel}
-                value={period.start} disabled={disabled}
-                onChange={(event) => setField(day.dayOfWeek, period.id, 'start', event.target.value)}
+              <label>{startLabel}<TimeField
+                label={startLabel} value={period.start} disabled={disabled}
+                min={gridRange?.min} max={gridRange?.max}
+                onChange={(next) => setField(day.dayOfWeek, period.id, 'start', next)}
               /></label>
               <span className="wpe-dash">–</span>
-              <label>{endLabel}<input
-                className="time-input" type="time" step={60} aria-label={endLabel}
-                value={period.end} disabled={disabled}
-                onChange={(event) => setField(day.dayOfWeek, period.id, 'end', event.target.value)}
+              <label>{endLabel}<TimeField
+                label={endLabel} value={period.end} disabled={disabled}
+                min={gridRange?.min} max={gridRange?.max}
+                onChange={(next) => setField(day.dayOfWeek, period.id, 'end', next)}
               /></label>
               <button
                 type="button" className="icon-button"

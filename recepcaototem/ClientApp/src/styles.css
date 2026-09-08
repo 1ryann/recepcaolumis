@@ -961,6 +961,19 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .time-input { width: 100%; min-width: 8.5rem; max-width: 11rem; min-height: 38px; padding: 0 10px; color: var(--text); border: 1px solid #d7e3e1; border-radius: 9px; background: #fff; font: inherit; }
 .time-input:focus { outline: 0; border-color: #4c9b85; box-shadow: 0 0 0 3px rgba(76,155,133,.12); }
 .time-input:disabled { color: #8da0a0; background: #f4f7f6; }
+.timefield { position: relative; display: inline-flex; align-items: stretch; gap: 5px; }
+.timefield-input { min-width: 6.5rem; max-width: 8rem; }
+.timefield-open { display: grid; place-items: center; width: 36px; min-height: 38px; flex: 0 0 auto; color: var(--muted); border: 1px solid #d7e3e1; border-radius: 9px; background: #fff; cursor: pointer; transition: .15s ease; }
+.timefield-open:hover:not(:disabled) { color: var(--brand); border-color: #a9c6c0; }
+.timefield-open:disabled { opacity: .45; cursor: not-allowed; }
+.timefield-pop { position: absolute; z-index: 60; width: min(264px, 78vw); padding: 10px; border: 1px solid #d7e3e1; border-radius: 13px; background: #fff; box-shadow: 0 18px 42px rgba(18,50,45,.2); }
+.timefield-pop.is-right { top: 0; left: calc(100% + 8px); }
+.timefield-pop.is-left { top: 0; right: calc(100% + 8px); }
+.timefield-pop.is-below { top: calc(100% + 6px); left: 0; }
+.timefield-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.timefield-opt { min-height: 34px; padding: 0 3px; color: var(--text); border: 1px solid #e0e9e8; border-radius: 8px; background: #fbfdfd; font-size: 11px; font-weight: 650; cursor: pointer; transition: .13s ease; }
+.timefield-opt:hover { border-color: #61ac98; background: #edf7f3; }
+.timefield-opt.is-selected { color: #fff; border-color: #3f8f78; background: #3f8f78; }
 .wpe-days { display: grid; gap: 10px; }
 .wpe-day { padding: 14px 15px; border: 1px solid #e1eaea; border-radius: 14px; background: rgba(255,255,255,.85); }
 .wpe-day-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }

@@ -64,10 +64,18 @@ function AvailabilityEditorInner({ value, draft: draftValue, pending, readOnly =
     : 'Sua agenda personalizada será cruzada com o horário do estabelecimento.'
 
   const effectiveDays = normalizeAvailabilityDays(value.effectiveDays)
+  const dayWindow = (dayOfWeek: string) => effectiveDays.find((candidate) => candidate.dayOfWeek === dayOfWeek)
   const hintForDay = (dayOfWeek: string) => {
-    const day = effectiveDays.find((candidate) => candidate.dayOfWeek === dayOfWeek)
+    const day = dayWindow(dayOfWeek)
     if (!day || day.intervals.length === 0) return 'Estabelecimento: sem atendimento'
     return `Estabelecimento: ${day.intervals.map((interval) => `${toTimeInputValue(interval.startTime)}–${toTimeInputValue(interval.endTime)}`).join(' · ')}`
+  }
+  const gridRangeForDay = (dayOfWeek: string) => {
+    const day = dayWindow(dayOfWeek)
+    if (!day || day.intervals.length === 0) return null
+    const starts = day.intervals.map((interval) => toTimeInputValue(interval.startTime)).sort()
+    const ends = day.intervals.map((interval) => toTimeInputValue(interval.endTime)).sort()
+    return { min: starts[0], max: ends[ends.length - 1] }
   }
 
   return <section className="availability-editor panel">
@@ -88,6 +96,7 @@ function AvailabilityEditorInner({ value, draft: draftValue, pending, readOnly =
         defaultPeriod={{ start: '09:00', end: '17:00' }}
         dayLabel={findDayLabel}
         hintForDay={mode === 'CUSTOM' ? hintForDay : undefined}
+        gridRangeForDay={mode === 'CUSTOM' ? gridRangeForDay : undefined}
         onChange={handleDays}
       />
     </div>
