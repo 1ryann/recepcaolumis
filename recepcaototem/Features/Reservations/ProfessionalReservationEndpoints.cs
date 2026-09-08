@@ -93,8 +93,7 @@ public static class ProfessionalReservationEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
-        IReservationConflictDetector conflictDetector,
-        IRoomAvailabilityService roomAvailability,
+        IAppointmentAvailabilityService availability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -113,12 +112,10 @@ public static class ProfessionalReservationEndpoints
                 room => room.Id == request.RoomId && room.IsActive, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
-        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
-            request.StartAt, request.EndAt, null, enforceOperatingHours: true, cancellationToken);
-        if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
-        var conflict = await conflictDetector.FindConflictAsync(
-            request.RoomId, professionalId.Value, request.StartAt, request.EndAt, null, cancellationToken);
-        if (conflict.Any) return Conflict();
+        var available = await availability.FindAvailableRoomAsync(professionalId.Value,
+            request.StartAt, request.EndAt, request.RoomId, null, cancellationToken);
+        if (!available.IsAvailable)
+            return recepcaototem.Features.Availability.AppointmentAvailabilityResults.Conflict(available.Failure);
 
         Reservation reservation;
         try
@@ -161,12 +158,11 @@ public static class ProfessionalReservationEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
-        IReservationConflictDetector conflictDetector,
-        IRoomAvailabilityService roomAvailability,
+        IAppointmentAvailabilityService availability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken) =>
         await RequestChange(id, request.ConcurrencyToken, request.StartAt, request.EndAt,
-            ReservationKind.Reschedule, context, db, resourceLock, conflictDetector, roomAvailability,
+            ReservationKind.Reschedule, context, db, resourceLock, availability,
             timeProvider, cancellationToken);
 
     private static async Task<IResult> RequestCancellation(
@@ -175,12 +171,11 @@ public static class ProfessionalReservationEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
-        IReservationConflictDetector conflictDetector,
-        IRoomAvailabilityService roomAvailability,
+        IAppointmentAvailabilityService availability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken) =>
         await RequestChange(id, request.ConcurrencyToken, null, null,
-            ReservationKind.Cancellation, context, db, resourceLock, conflictDetector, roomAvailability,
+            ReservationKind.Cancellation, context, db, resourceLock, availability,
             timeProvider, cancellationToken);
 
     private static async Task<IResult> RequestChange(
@@ -192,8 +187,7 @@ public static class ProfessionalReservationEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
-        IReservationConflictDetector conflictDetector,
-        IRoomAvailabilityService roomAvailability,
+        IAppointmentAvailabilityService availability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -226,13 +220,10 @@ public static class ProfessionalReservationEndpoints
             if (kind == ReservationKind.Reschedule)
             {
                 if (startAt is null || endAt is null || endAt <= startAt) return Invalid();
-                var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(original.RoomId,
-                    startAt.Value, endAt.Value, null, enforceOperatingHours: true, cancellationToken);
-                if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
-                var conflict = await conflictDetector.FindConflictAsync(
-                    original.RoomId, original.ProfessionalId, startAt.Value, endAt.Value,
-                    original.Id, cancellationToken);
-                if (conflict.Any) return Conflict();
+                var available = await availability.FindAvailableRoomAsync(original.ProfessionalId,
+                    startAt.Value, endAt.Value, original.RoomId, original.Id, cancellationToken);
+                if (!available.IsAvailable)
+                    return recepcaototem.Features.Availability.AppointmentAvailabilityResults.Conflict(available.Failure);
                 change = Reservation.RequestReschedule(
                     original, startAt.Value, endAt.Value, Actor(context)!, now);
             }

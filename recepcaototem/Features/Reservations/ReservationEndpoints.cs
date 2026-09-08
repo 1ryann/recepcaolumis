@@ -98,8 +98,7 @@ public static partial class ReservationEndpoints
         HttpContext context,
         ApplicationDbContext db,
         ILeaseResourceLock resourceLock,
-        IReservationConflictDetector conflictDetector,
-        IRoomAvailabilityService roomAvailability,
+        IAppointmentAvailabilityService availability,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -111,13 +110,10 @@ public static partial class ReservationEndpoints
         if (!await ResourcesAreActive(db, request.RoomId, request.ProfessionalId, cancellationToken))
             return Results.BadRequest(new ApiError(
                 "INVALID_RESERVATION_RESOURCE", "A sala ou o profissional informado é inválido."));
-        var roomConflict = await roomAvailability.CheckScheduleAndBlocksAsync(request.RoomId,
-            request.StartAt, request.EndAt, null, enforceOperatingHours: true, cancellationToken);
-        if (roomConflict == RoomAvailabilityConflict.OutsideOperatingHours) return OutsideOperatingHours();
-        if (roomConflict == RoomAvailabilityConflict.RoomBlock) return RoomBlocked();
-        var conflict = await conflictDetector.FindConflictAsync(
-            request.RoomId, request.ProfessionalId, request.StartAt, request.EndAt, null, cancellationToken);
-        if (conflict.Any) return Conflict();
+        var available = await availability.FindAvailableRoomAsync(request.ProfessionalId,
+            request.StartAt, request.EndAt, request.RoomId, null, cancellationToken);
+        if (!available.IsAvailable)
+            return Features.Availability.AppointmentAvailabilityResults.Conflict(available.Failure);
 
         Reservation reservation;
         try

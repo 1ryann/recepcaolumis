@@ -13,6 +13,7 @@ using recepcaototem.Api.Configuration;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Reservations;
+using recepcaototem.Features.Availability;
 
 namespace recepcaototem.Features.Customers;
 
@@ -89,8 +90,8 @@ public static class CustomerSchedulingEndpoints
     }
 
     private static async Task<IResult> CreateReservation(CustomerReservationRequest request, ClaimsPrincipal principal,
-        HttpContext context, ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
-        IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct)
+        HttpContext context, ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         if (request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
@@ -99,18 +100,16 @@ public static class CustomerSchedulingEndpoints
         var roomIds = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, [request.ProfessionalId]), ct);
-        foreach (var roomId in roomIds)
-        {
-            if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None) continue;
-            if ((await conflicts.FindConflictAsync(roomId, request.ProfessionalId, request.StartAt, request.EndAt, null, ct)).Any) continue;
-            var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt, principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? customer.ApplicationUserId!, time.GetUtcNow(), customer.Id);
-            db.Reservations.Add(reservation);
-            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
-            await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
-            return Results.Created($"/api/customer/reservations/{reservation.Id}", reservation.ToResponse((await db.Rooms.FindAsync([roomId], ct))!.Name, professional.Name));
-        }
-        await transaction.RollbackAsync(ct);
-        return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
+        var available = await availability.FindAvailableRoomAsync(
+            request.ProfessionalId, request.StartAt, request.EndAt, null, null, ct);
+        if (!available.IsAvailable) return AppointmentAvailabilityResults.Conflict(available.Failure);
+        var roomId = available.RoomId!.Value;
+        var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? customer.ApplicationUserId!, time.GetUtcNow(), customer.Id);
+        db.Reservations.Add(reservation);
+        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
+        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        return Results.Created($"/api/customer/reservations/{reservation.Id}", reservation.ToResponse((await db.Rooms.FindAsync([roomId], ct))!.Name, professional.Name));
     }
 
     private static async Task<IResult> CancelReservation(Guid id, CustomerReservationConcurrencyRequest request, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
@@ -155,8 +154,8 @@ public static class CustomerSchedulingEndpoints
     }
 
     private static async Task<IResult> RescheduleReservation(Guid id, CustomerReservationRescheduleRequest request, ClaimsPrincipal principal,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
-        IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct)
+        ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var original = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
@@ -169,9 +168,9 @@ public static class CustomerSchedulingEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, [original.ProfessionalId]), ct);
         var roomId = original.RoomId;
-        if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None ||
-            (await conflicts.FindConflictAsync(roomId, original.ProfessionalId, request.StartAt, request.EndAt, id, ct)).Any)
-            return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
+        var available = await availability.FindAvailableRoomAsync(
+            original.ProfessionalId, request.StartAt, request.EndAt, roomId, id, ct);
+        if (!available.IsAvailable) return AppointmentAvailabilityResults.Conflict(available.Failure);
         try
         {
             db.Entry(original).Property(x => x.Version).OriginalValue = version;

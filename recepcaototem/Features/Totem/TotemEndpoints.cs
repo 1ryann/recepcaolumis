@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Customers;
+using recepcaototem.Features.Availability;
 
 namespace recepcaototem.Features.Totem;
 
@@ -57,22 +58,22 @@ public static class TotemEndpoints
     }
 
     private static async Task<IResult> CreateReservation(TotemReservationRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db,
-        ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts, IRoomAvailabilityService availability,
+        ILeaseResourceLock resourceLock, IAppointmentAvailabilityService availability,
         TimeProvider time, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Phone ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
-        return await CreateReservationCore(request, context, db, resourceLock, conflicts, availability, time, ct, "TOTEM");
+        return await CreateReservationCore(request, context, db, resourceLock, availability, time, ct, "TOTEM");
     }
 
     internal static Task<IResult> CreateAssistedReservation(TotemReservationRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
-        IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
-        CreateReservationCore(request, context, db, resourceLock, conflicts, availability, time, ct,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
+        CreateReservationCore(request, context, db, resourceLock, availability, time, ct,
             context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "RECEPTION");
 
     private static async Task<IResult> CreateReservationCore(TotemReservationRequest request, HttpContext context, ApplicationDbContext db,
-        ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts, IRoomAvailabilityService availability,
+        ILeaseResourceLock resourceLock, IAppointmentAvailabilityService availability,
         TimeProvider time, CancellationToken ct, string actor)
     {
         if (!WhatsApp(request.Phone ?? string.Empty, out var phone) || request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Invalid();
@@ -94,18 +95,15 @@ public static class TotemEndpoints
         if (!customer.IsActive) return Invalid();
         var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], rooms, [request.ProfessionalId]), ct);
-        foreach (var roomId in rooms)
-        {
-            if (await availability.CheckScheduleAndBlocksAsync(roomId, request.StartAt, request.EndAt, null, true, ct) != RoomAvailabilityConflict.None) continue;
-            if ((await conflicts.FindConflictAsync(roomId, request.ProfessionalId, request.StartAt, request.EndAt, null, ct)).Any) continue;
-            var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt, actor, time.GetUtcNow(), customer.Id);
-            db.Reservations.Add(reservation);
-            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
-            await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
-            return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
-        }
-        await transaction.RollbackAsync(ct);
-        return Results.Json(new ApiError("RESERVATION_RESOURCE_CONFLICT", "O horário não está disponível."), statusCode: 409);
+        var available = await availability.FindAvailableRoomAsync(
+            request.ProfessionalId, request.StartAt, request.EndAt, null, null, ct);
+        if (!available.IsAvailable) return AppointmentAvailabilityResults.Conflict(available.Failure);
+        var reservation = Reservation.CreateApproved(available.RoomId!.Value, request.ProfessionalId,
+            request.StartAt, request.EndAt, actor, time.GetUtcNow(), customer.Id);
+        db.Reservations.Add(reservation);
+        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
+        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
     }
 
     private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)

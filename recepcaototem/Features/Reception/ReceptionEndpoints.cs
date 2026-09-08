@@ -4,6 +4,7 @@ using GestaoPredio.Application.OperationalAlerts;
 using GestaoPredio.Application.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
+using GestaoPredio.Application.Availability;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Common;
 using GestaoPredio.Domain.Customers;
@@ -150,9 +151,9 @@ public static class ReceptionEndpoints
     }
 
     private static Task<IResult> AssistedReservation(TotemReservationRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, IReservationConflictDetector conflicts,
-        GestaoPredio.Application.Availability.IRoomAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
-        TotemEndpoints.CreateAssistedReservation(request, context, db, resourceLock, conflicts, availability, time, ct);
+        ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
+        TotemEndpoints.CreateAssistedReservation(request, context, db, resourceLock, availability, time, ct);
 
     private static async Task<IResult> ManualCheckIn(Guid id, ReceptionCheckInRequest request, HttpContext context,
         ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider time, INotificationService notifications, CancellationToken ct)
