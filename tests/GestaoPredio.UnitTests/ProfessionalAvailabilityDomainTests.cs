@@ -74,4 +74,21 @@ public sealed class ProfessionalAvailabilityDomainTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ProfessionalAvailabilityException.Create(professionalId,
             new DateOnly(2026, 9, 17), true, null, null, new string('x', 301), Now));
     }
+
+    [Fact]
+    public void Exception_origin_defaults_to_planned_and_can_be_created_as_incident()
+    {
+        var professionalId = Guid.NewGuid();
+        var planned = ProfessionalAvailabilityException.Create(professionalId, new DateOnly(2026, 9, 15), true,
+            null, null, null, Now);
+        Assert.Equal(ProfessionalAvailabilityExceptionOrigin.Planned, planned.Origin);
+
+        var incident = ProfessionalAvailabilityException.Create(professionalId, new DateOnly(2026, 9, 15), false,
+            new TimeOnly(14, 0), new TimeOnly(16, 0), "carro quebrou", Now,
+            ProfessionalAvailabilityExceptionOrigin.Incident);
+        Assert.Equal(ProfessionalAvailabilityExceptionOrigin.Incident, incident.Origin);
+
+        incident.Update(new DateOnly(2026, 9, 15), false, new TimeOnly(15, 0), new TimeOnly(17, 0), null, Now);
+        Assert.Equal(ProfessionalAvailabilityExceptionOrigin.Incident, incident.Origin);
+    }
 }

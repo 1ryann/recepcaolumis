@@ -15,12 +15,14 @@ public sealed class ProfessionalAvailabilityException
     public TimeOnly? StartTime { get; private set; }
     public TimeOnly? EndTime { get; private set; }
     public string? Reason { get; private set; }
+    public ProfessionalAvailabilityExceptionOrigin Origin { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
 
     public static ProfessionalAvailabilityException Create(Guid professionalId, DateOnly date,
-        bool allDay, TimeOnly? startTime, TimeOnly? endTime, string? reason, DateTimeOffset occurredAt)
+        bool allDay, TimeOnly? startTime, TimeOnly? endTime, string? reason, DateTimeOffset occurredAt,
+        ProfessionalAvailabilityExceptionOrigin origin = ProfessionalAvailabilityExceptionOrigin.Planned)
     {
         if (professionalId == Guid.Empty) throw new ArgumentException("O profissional deve ser informado.", nameof(professionalId));
         var timestamp = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
@@ -28,6 +30,7 @@ public sealed class ProfessionalAvailabilityException
         {
             Id = Guid.NewGuid(),
             ProfessionalId = professionalId,
+            Origin = origin,
             CreatedAt = timestamp,
             UpdatedAt = timestamp
         };
