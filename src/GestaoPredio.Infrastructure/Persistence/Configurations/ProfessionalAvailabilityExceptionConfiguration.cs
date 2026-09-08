@@ -18,6 +18,8 @@ public sealed class ProfessionalAvailabilityExceptionConfiguration
         entity.Property(x => x.StartTime).HasColumnType("time without time zone");
         entity.Property(x => x.EndTime).HasColumnType("time without time zone");
         entity.Property(x => x.Reason).HasMaxLength(ProfessionalAvailabilityException.MaximumReasonLength);
+        entity.Property(x => x.Origin).HasColumnType("smallint")
+            .HasDefaultValue(ProfessionalAvailabilityExceptionOrigin.Planned);
         entity.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.UpdatedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.Version).IsRowVersion();

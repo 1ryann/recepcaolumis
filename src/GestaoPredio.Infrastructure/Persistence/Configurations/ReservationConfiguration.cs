@@ -37,6 +37,8 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
         entity.Property(x => x.DecidedByUserId).HasMaxLength(450);
         entity.Property(x => x.DecidedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.Property(x => x.CancellationReason).HasColumnType("smallint")
+            .HasDefaultValue(ReservationCancellationReason.None);
         entity.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.UpdatedAt).HasColumnType("timestamp with time zone");
         entity.Property(x => x.Version).IsRowVersion();

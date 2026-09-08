@@ -36,6 +36,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<ProfessionalRegistrationRequest> ProfessionalRegistrationRequests => Set<ProfessionalRegistrationRequest>();
  public DbSet<ProfessionalAvailabilityInterval> ProfessionalAvailabilityIntervals => Set<ProfessionalAvailabilityInterval>();
  public DbSet<ProfessionalAvailabilityException> ProfessionalAvailabilityExceptions => Set<ProfessionalAvailabilityException>();
+ public DbSet<ProfessionalPresence> ProfessionalPresences => Set<ProfessionalPresence>();
+ public DbSet<ProfessionalPresenceToken> ProfessionalPresenceTokens => Set<ProfessionalPresenceToken>();
+ public DbSet<RescheduleToken> RescheduleTokens => Set<RescheduleToken>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -60,6 +63,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new ProfessionalRegistrationRequestConfiguration());
   builder.ApplyConfiguration(new ProfessionalAvailabilityIntervalConfiguration());
   builder.ApplyConfiguration(new ProfessionalAvailabilityExceptionConfiguration());
+  builder.ApplyConfiguration(new ProfessionalPresenceConfiguration());
+  builder.ApplyConfiguration(new ProfessionalPresenceTokenConfiguration());
+  builder.ApplyConfiguration(new RescheduleTokenConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);
