@@ -8,7 +8,9 @@ import { ProfessionalAvailability } from './ProfessionalAvailability'
 vi.mock('../../api/modules', async (original) => ({ ...await original<typeof import('../../api/modules')>(), professionalAvailabilityApi: { get: vi.fn(), update: vi.fn(), listExceptions: vi.fn(), createException: vi.fn(), updateException: vi.fn(), deleteException: vi.fn() } }))
 
 const day = (dayOfWeek: string, intervals: { startTime: string, endTime: string }[] = []) => ({ dayOfWeek, intervals })
-const availability = { mode: 'CUSTOM' as const, days: [day('MONDAY', [{ startTime: '09:00', endTime: '12:00' }]), day('TUESDAY'), day('WEDNESDAY'), day('THURSDAY'), day('FRIDAY'), day('SATURDAY'), day('SUNDAY')], effectiveDays: [day('MONDAY', [{ startTime: '09:00', endTime: '12:00' }])], concurrencyToken: 'v1', existingReservationsOutsideAvailabilityCount: 0 }
+const buildingDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+  .map((d) => day(d, [{ startTime: '08:00', endTime: '18:00' }]))
+const availability = { mode: 'CUSTOM' as const, days: [day('MONDAY', [{ startTime: '09:00', endTime: '12:00' }]), day('TUESDAY'), day('WEDNESDAY'), day('THURSDAY'), day('FRIDAY'), day('SATURDAY'), day('SUNDAY')], effectiveDays: [day('MONDAY', [{ startTime: '09:00', endTime: '12:00' }])], globalDays: buildingDays, concurrencyToken: 'v1', existingReservationsOutsideAvailabilityCount: 0 }
 
 beforeEach(() => {
   vi.clearAllMocks()

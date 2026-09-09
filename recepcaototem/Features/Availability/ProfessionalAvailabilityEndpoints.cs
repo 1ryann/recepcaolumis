@@ -410,7 +410,13 @@ public static class ProfessionalAvailabilityEndpoints
             return Day(day, ProfessionalAvailabilityEvaluator.GetEffectiveRanges(
                 professional.AvailabilityMode, date, global, stored, []));
         }).ToArray();
-        return new(professional.Id, Mode(professional.AvailabilityMode), days, effective,
+        // The raw establishment operating hours per weekday — shown as a fixed reference in
+        // the availability editor. Never mode-dependent, never intersected with the
+        // professional's custom schedule (that is what Days / EffectiveDays are for).
+        var globalDays = Enum.GetValues<DayOfWeek>().Select(day => Day(day,
+            global.Where(value => value.DayOfWeek == day)
+                .Select(value => new ProfessionalLocalTimeRange(value.OpensAt, value.ClosesAt)))).ToArray();
+        return new(professional.Id, Mode(professional.AvailabilityMode), days, effective, globalDays,
             ConcurrencyToken.Encode(professional.Version), warning);
     }
 

@@ -13,6 +13,7 @@ public sealed record ProfessionalAvailabilityDayResponse(string DayOfWeek,
     ProfessionalAvailabilityIntervalResponse[] Intervals);
 public sealed record ProfessionalAvailabilityResponse(Guid ProfessionalId, string Mode,
     ProfessionalAvailabilityDayResponse[] Days, ProfessionalAvailabilityDayResponse[] EffectiveDays,
+    ProfessionalAvailabilityDayResponse[] GlobalDays,
     string ConcurrencyToken, int ExistingReservationsOutsideAvailabilityCount);
 
 public sealed record CreateProfessionalAvailabilityExceptionRequest(DateOnly Date, bool AllDay,

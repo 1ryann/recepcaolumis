@@ -64,14 +64,18 @@ function AvailabilityEditorInner({ value, draft: draftValue, pending, readOnly =
     : 'Sua agenda personalizada será cruzada com o horário do estabelecimento.'
 
   const effectiveDays = normalizeAvailabilityDays(value.effectiveDays)
-  const dayWindow = (dayOfWeek: string) => effectiveDays.find((candidate) => candidate.dayOfWeek === dayOfWeek)
+  // The establishment's raw operating hours per weekday — a fixed reference for the
+  // "Estabelecimento:" hint and the time-grid bounds. Never the professional's own
+  // (clamped) schedule: that is effectiveDays.
+  const globalDays = normalizeAvailabilityDays(value.globalDays)
+  const buildingWindow = (dayOfWeek: string) => globalDays.find((candidate) => candidate.dayOfWeek === dayOfWeek)
   const hintForDay = (dayOfWeek: string) => {
-    const day = dayWindow(dayOfWeek)
+    const day = buildingWindow(dayOfWeek)
     if (!day || day.intervals.length === 0) return 'Estabelecimento: sem atendimento'
     return `Estabelecimento: ${day.intervals.map((interval) => `${toTimeInputValue(interval.startTime)}–${toTimeInputValue(interval.endTime)}`).join(' · ')}`
   }
   const gridRangeForDay = (dayOfWeek: string) => {
-    const day = dayWindow(dayOfWeek)
+    const day = buildingWindow(dayOfWeek)
     if (!day || day.intervals.length === 0) return null
     const starts = day.intervals.map((interval) => toTimeInputValue(interval.startTime)).sort()
     const ends = day.intervals.map((interval) => toTimeInputValue(interval.endTime)).sort()

@@ -189,6 +189,67 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
             TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")));
     }
 
+    [Fact]
+    public async Task GlobalDays_are_the_raw_operating_hours_in_custom_mode()
+    {
+        await factory.ResetAsync();
+        var email = $"globaldays-{Guid.NewGuid():N}@lumis.test";
+        var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
+        await SeedProfessionalAsync(user.Id);
+        await SeedOperatingHoursAsync(new(8, 30), new(18, 30));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
+
+        var current = (await factory.Client.GetFromJsonAsync<AvailabilityPayload>("/api/professional/availability"))!;
+        var put = await factory.PutWithCsrfAsync("/api/professional/availability", new
+        {
+            mode = "CUSTOM",
+            days = Days((DayOfWeek.Wednesday, "09:00", "12:00"), (DayOfWeek.Wednesday, "14:00", "17:00")),
+            concurrencyToken = current.ConcurrencyToken,
+        });
+        put.EnsureSuccessStatusCode();
+        var body = (await put.Content.ReadFromJsonAsync<AvailabilityPayload>())!;
+
+        Assert.Equal("CUSTOM", body.Mode);
+        // globalDays: raw establishment hours, every weekday 08:30-18:30, untouched by the custom schedule
+        Assert.All(body.GlobalDays, day =>
+        {
+            var interval = Assert.Single(day.Intervals);
+            Assert.Equal("08:30", interval.StartTime);
+            Assert.Equal("18:30", interval.EndTime);
+        });
+        // days: the professional's custom schedule
+        Assert.Equal(new[] { ("09:00", "12:00"), ("14:00", "17:00") },
+            body.Days.Single(d => d.DayOfWeek == "WEDNESDAY").Intervals.Select(i => (i.StartTime, i.EndTime)).ToArray());
+        Assert.Empty(body.Days.Single(d => d.DayOfWeek == "MONDAY").Intervals);
+        // effectiveDays: custom clamped to global (unchanged here: 09-17 fits inside 08:30-18:30)
+        Assert.Equal(new[] { ("09:00", "12:00"), ("14:00", "17:00") },
+            body.EffectiveDays.Single(d => d.DayOfWeek == "WEDNESDAY").Intervals.Select(i => (i.StartTime, i.EndTime)).ToArray());
+        Assert.Empty(body.EffectiveDays.Single(d => d.DayOfWeek == "MONDAY").Intervals);
+    }
+
+    [Fact]
+    public async Task GlobalDays_and_effectiveDays_equal_operating_hours_when_inheriting()
+    {
+        await factory.ResetAsync();
+        var email = $"globaldays-inherit-{Guid.NewGuid():N}@lumis.test";
+        var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
+        await SeedProfessionalAsync(user.Id);
+        await SeedOperatingHoursAsync(new(8, 30), new(18, 30));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
+
+        var body = (await factory.Client.GetFromJsonAsync<AvailabilityPayload>("/api/professional/availability"))!;
+
+        Assert.Equal("INHERIT_GLOBAL", body.Mode);
+        foreach (var set in new[] { body.GlobalDays, body.EffectiveDays })
+            Assert.All(set, day =>
+            {
+                var interval = Assert.Single(day.Intervals);
+                Assert.Equal("08:30", interval.StartTime);
+                Assert.Equal("18:30", interval.EndTime);
+            });
+        Assert.All(body.Days, day => Assert.Empty(day.Intervals));
+    }
+
     private static object[] Days(params (DayOfWeek Day, string Start, string End)[] configured) =>
         Enum.GetValues<DayOfWeek>().Select(day => new
         {
@@ -207,7 +268,8 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
         }).Cast<object>().ToArray();
 
     private sealed record AvailabilityPayload(Guid ProfessionalId, string Mode, DayPayload[] Days,
-        DayPayload[] EffectiveDays, string ConcurrencyToken, int ExistingReservationsOutsideAvailabilityCount);
+        DayPayload[] EffectiveDays, DayPayload[] GlobalDays, string ConcurrencyToken,
+        int ExistingReservationsOutsideAvailabilityCount);
     private sealed record DayPayload(string DayOfWeek, IntervalPayload[] Intervals);
     private sealed record IntervalPayload(string StartTime, string EndTime);
     private sealed record OperatingHoursPayload(bool Configured, string ConcurrencyToken);

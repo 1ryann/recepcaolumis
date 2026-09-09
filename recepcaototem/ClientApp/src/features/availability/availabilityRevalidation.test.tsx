@@ -20,7 +20,9 @@ const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'
   dayOfWeek,
   intervals: dayOfWeek === 'MONDAY' ? [{ startTime: '09:00', endTime: '12:00' }] : [],
 }))
-const availability = { mode: 'CUSTOM' as const, days, effectiveDays: days, concurrencyToken: 'tok-1', existingReservationsOutsideAvailabilityCount: 0 }
+const globalDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+  .map((dayOfWeek) => ({ dayOfWeek, intervals: [{ startTime: '08:00', endTime: '18:00' }] }))
+const availability = { mode: 'CUSTOM' as const, days, effectiveDays: days, globalDays, concurrencyToken: 'tok-1', existingReservationsOutsideAvailabilityCount: 0 }
 const identity = { userId: 'u1', displayName: 'Pro', email: 'pro@lumis.test', roles: ['PROFISSIONAL'], mustChangePassword: false }
 
 beforeEach(() => {

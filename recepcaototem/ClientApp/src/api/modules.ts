@@ -91,6 +91,7 @@ export interface ProfessionalAvailabilityDto {
   mode: ProfessionalAvailabilityMode
   days: AvailabilityDayDto[]
   effectiveDays: AvailabilityDayDto[]
+  globalDays: AvailabilityDayDto[]
   concurrencyToken: string
   existingReservationsOutsideAvailabilityCount: number
 }

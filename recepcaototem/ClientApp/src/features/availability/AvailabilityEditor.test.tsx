@@ -4,6 +4,9 @@ import { expect, test, vi } from 'vitest'
 import type { ProfessionalAvailabilityDto } from '../../api/modules'
 import { AvailabilityEditor, ExceptionsEditor } from './AvailabilityEditor'
 
+const buildingDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+  .map((dayOfWeek) => ({ dayOfWeek, intervals: [{ startTime: '08:00', endTime: '18:00' }] }))
+
 const base = {
   mode: 'INHERIT_GLOBAL' as const,
   days: [
@@ -15,6 +18,7 @@ const base = {
   effectiveDays: [
     { dayOfWeek: 'MONDAY', intervals: [{ startTime: '08:00', endTime: '18:00' }] },
   ],
+  globalDays: buildingDays,
   concurrencyToken: 'v1',
   existingReservationsOutsideAvailabilityCount: 2,
 }
@@ -39,10 +43,32 @@ test('custom mode allows adding periods while rejecting an inverted range', () =
   expect(screen.getAllByText(/início deve ser anterior ao fim/i).length).toBeGreaterThan(0)
 })
 
-test('custom mode shows the establishment window on each day', () => {
-  render(<AvailabilityEditor value={{ ...base, mode: 'CUSTOM' }} onChange={vi.fn()} onSave={vi.fn()} pending={false} />)
+test('custom mode shows the real establishment window on each day, from globalDays not effectiveDays', () => {
+  // effectiveDays here is the professional's clamped custom result — deliberately different
+  // from the establishment hours, to prove the hint reads globalDays.
+  const value = {
+    ...base,
+    mode: 'CUSTOM' as const,
+    effectiveDays: [{ dayOfWeek: 'MONDAY', intervals: [{ startTime: '09:00', endTime: '12:00' }] }],
+    globalDays: buildingDays,
+  }
+  render(<AvailabilityEditor value={value} onChange={vi.fn()} onSave={vi.fn()} pending={false} />)
+  // every day shows the building hours, including days with no custom period configured
   expect(within(screen.getByTestId('wpe-day-MONDAY')).getByText('Estabelecimento: 08:00–18:00')).toBeInTheDocument()
-  expect(within(screen.getByTestId('wpe-day-TUESDAY')).getByText('Estabelecimento: sem atendimento')).toBeInTheDocument()
+  expect(within(screen.getByTestId('wpe-day-TUESDAY')).getByText('Estabelecimento: 08:00–18:00')).toBeInTheDocument()
+  // it must NOT reflect the professional's own (effective) schedule
+  expect(within(screen.getByTestId('wpe-day-MONDAY')).queryByText('Estabelecimento: 09:00–12:00')).toBeNull()
+})
+
+test('custom mode reports a closed day when the building itself is closed', () => {
+  const value = {
+    ...base,
+    mode: 'CUSTOM' as const,
+    globalDays: buildingDays.map((day) => (day.dayOfWeek === 'SUNDAY' ? { dayOfWeek: 'SUNDAY', intervals: [] } : day)),
+  }
+  render(<AvailabilityEditor value={value} onChange={vi.fn()} onSave={vi.fn()} pending={false} />)
+  expect(within(screen.getByTestId('wpe-day-SUNDAY')).getByText('Estabelecimento: sem atendimento')).toBeInTheDocument()
+  expect(within(screen.getByTestId('wpe-day-MONDAY')).getByText('Estabelecimento: 08:00–18:00')).toBeInTheDocument()
 })
 
 test('custom periods edited locally are not lost on a re-render with the same record', () => {

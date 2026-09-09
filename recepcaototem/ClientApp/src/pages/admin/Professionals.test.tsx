@@ -90,7 +90,7 @@ test('shows a conflict message and reloads after RESOURCE_MODIFIED', async () =>
 })
 
 test('opens the shared availability editor for the selected professional', async () => {
-  vi.mocked(adminProfessionalAvailabilityApi.get).mockResolvedValue({ mode: 'INHERIT_GLOBAL', days: [], effectiveDays: [], concurrencyToken: 'v1', existingReservationsOutsideAvailabilityCount: 0 })
+  vi.mocked(adminProfessionalAvailabilityApi.get).mockResolvedValue({ mode: 'INHERIT_GLOBAL', days: [], effectiveDays: [], globalDays: [], concurrencyToken: 'v1', existingReservationsOutsideAvailabilityCount: 0 })
   vi.mocked(adminProfessionalAvailabilityApi.listExceptions).mockResolvedValue([])
   render(<Professionals />)
   await screen.findByText('Ana Souza')
