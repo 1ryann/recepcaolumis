@@ -82,4 +82,90 @@ Reservations, RoomBlocks, Rooms, Tenants, VisitTransitions, Visits, __EFMigratio
   user `postgres.xpblbvrmljtvyltvvnpd`).
 - **Transaction Mode 6543 remains excluded.**
 
-_Next: TASK 6 — create the Railway service. Not started._
+---
+
+## TASK 6 / 7 — Railway service + env vars (operator, out of band)
+
+Executed by the operator directly in Railway (not from this repo session). Recorded here from the
+operator's confirmation; the Railway env-var **values** are not in this runbook.
+
+- Public URL: `https://lumis-staging.up.railway.app`
+- Env toggle in effect: `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (see TASK 8 — the `/api/auth/csrf` probe is 200).
+- Runtime DB connection mode: operator to record here which was used —
+  Direct 5432 (needs Railway Outbound IPv6) **or** Supavisor Session Mode 5432. `<FILL: operator>`
+- Transaction Mode 6543: not used.
+
+---
+
+## TASK 8 — First deploy validation
+
+Date: 2026-09-09
+
+### External checks (run from the operator machine against the public URL)
+
+| Path | Status | Expected |
+|---|---|---|
+| `/health` | 200 | 200 |
+| `/health/ready` | 200 | 200 (container reached its Postgres) |
+| `/api/auth/csrf` | 200, body `{"token":"CfDJ8…"}` | **200** — the forwarded-headers gate. `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` is working; **TASK 8b contingency NOT needed.** |
+| `/api/auth/session` | 401 | 401 (anonymous) |
+| `/api/does-not-exist` | 401 | 401 |
+| `/login` | 200 — real Lumis login screen | 200 |
+| `/` | 200 — placeholder "Módulo ainda não disponível" | see note |
+
+- Security headers present on responses: `Strict-Transport-Security: max-age=2592000`, full CSP
+  (`default-src 'self'; …; frame-ancestors 'none'`), `Referrer-Policy: no-referrer`,
+  `X-Content-Type-Options: nosniff`, `Cache-Control: no-store, no-cache`.
+- No `5xx` on any probe.
+- **Future adjustment (not a blocker):** `/` renders the "Módulo ainda não disponível" placeholder instead of a
+  real home. Tracked as a home/initial-route change for later; does not affect staging validation.
+
+### Railway-side checks — operator to confirm (no Railway CLI in the repo session)
+
+| Check | How | Result `<FILL: operator>` |
+|---|---|---|
+| No `500` / startup exception in deploy + runtime logs | `railway logs` (or the Railway dashboard log view) | |
+| Data Protection keys persisted on the volume | `railway run ls -la /data/dpkeys` → expect `key-*.xml` | |
+| Private file storage present | `railway run ls -la /data/private` → exists, writable | |
+| `ConnectionStrings__DefaultConnection` points at `xpblbvrmljtvyltvvnpd` | Railway → Variables (value not recorded here) | |
+
+Indirect confirmation already available: `/api/auth/csrf` returns a valid Data-Protection-protected antiforgery
+token (DP is functioning); `/health/ready` 200 means the container connected to a healthy Postgres; the staging DB
+`xpblbvrmljtvyltvvnpd` holds the full 12-migration schema (TASK 5) and, from TASK 9, the provisioned roles.
+
+---
+
+## TASK 9 — Bootstrap roles + first admin
+
+Date: 2026-09-09
+Run from the operator machine against **lumis-staging only**, via the Supavisor Session Mode 5432 connection
+(`ConnectionStrings:StagingMigration` in `dotnet user-secrets`; the Direct host is IPv6-only and unreachable here).
+`ASPNETCORE_ENVIRONMENT=Production`. CLI published to git-ignored `artifacts/tools/AdminCli/` (not committed, not in the image).
+
+### provision-roles — DONE
+
+- `dotnet artifacts/tools/AdminCli/GestaoPredio.AdminCli.dll provision-roles` → exit 0, "Roles de autenticação provisionadas."
+- Validated via psql: `AspNetRoles` count **5** — `ADMINISTRADOR`, `CUSTOMER`, `GERENTE`, `PROFESSIONAL_APPLICANT`, `PROFISSIONAL`.
+- `AspNetUsers` = 0, `AuditEntries` = 0 at this point.
+
+### bootstrap-admin — PENDING (operator, interactive)
+
+`bootstrap-admin` prompts for display name, e-mail, and password (no-echo, ×2) — it has no non-interactive mode,
+so it is run by the operator, not from this session. **The password is typed interactively; it is never a CLI
+argument, a file, an env var, or committed.**
+
+Operator command (from the worktree root):
+
+```
+ConnectionStrings__DefaultConnection="$(dotnet user-secrets list --project recepcaototem | sed -n 's/^ConnectionStrings:StagingMigration = //p')" \
+ASPNETCORE_ENVIRONMENT=Production \
+dotnet artifacts/tools/AdminCli/GestaoPredio.AdminCli.dll bootstrap-admin
+```
+
+Password policy: ≥ 12 chars, with an uppercase, a lowercase, a digit, and a non-alphanumeric character.
+Expected output: `Administrador inicial criado.` (exit 0).
+
+Post-run validation (controller, via psql): `AspNetUsers` = 1; that user mapped to role `ADMINISTRADOR`;
+an `AuditEntries` row for the bootstrap. `<FILL after operator runs it>`
+
+_Stop point: after the first `ADMINISTRADOR` is created. Full smoke test (TASK 10) not started._
