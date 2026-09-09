@@ -148,24 +148,31 @@ Run from the operator machine against **lumis-staging only**, via the Supavisor 
 - Validated via psql: `AspNetRoles` count **5** — `ADMINISTRADOR`, `CUSTOMER`, `GERENTE`, `PROFESSIONAL_APPLICANT`, `PROFISSIONAL`.
 - `AspNetUsers` = 0, `AuditEntries` = 0 at this point.
 
-### bootstrap-admin — PENDING (operator, interactive)
+### bootstrap-admin — DONE (operator, interactive)
 
-`bootstrap-admin` prompts for display name, e-mail, and password (no-echo, ×2) — it has no non-interactive mode,
-so it is run by the operator, not from this session. **The password is typed interactively; it is never a CLI
-argument, a file, an env var, or committed.**
+`bootstrap-admin` prompts for display name, e-mail, and password (no-echo, ×2) — no non-interactive mode,
+so it was run by the operator. The password was typed interactively; it is not a CLI argument, a file,
+an env var, or committed anywhere.
 
-Operator command (from the worktree root):
+- Command (from the worktree root):
+  ```
+  ConnectionStrings__DefaultConnection="$(dotnet user-secrets list --project recepcaototem | sed -n 's/^ConnectionStrings:StagingMigration = //p')" \
+  ASPNETCORE_ENVIRONMENT=Production \
+  dotnet artifacts/tools/AdminCli/GestaoPredio.AdminCli.dll bootstrap-admin
+  ```
+  Output: `Administrador inicial criado.` (exit 0).
+- Validation (via psql against `xpblbvrmljtvyltvvnpd`):
+  - `AspNetRoles` = 5.
+  - Role mappings: `ADMINISTRADOR` = 1, `CUSTOMER` = 1 (a customer account was also self-registered during setup), users without a role = 0.
+  - `AuditEntries`: `BOOTSTRAP_ADMIN_CREATED` = 1, `Result = SUCCEEDED`, `OccurredAt` 2026-09-09 19:19:30 UTC. Also present: `CUSTOMER_CREATED` / `CUSTOMER_ACCOUNT_LINKED` / `LOGIN_SUCCEEDED`.
+- Domain data at end of TASK 9: `Professionals` 0, `Rooms` 0, `OperatingHoursSchedules` 0, `ProfessionalAvailabilityIntervals` 0, `Customers` 1, `Reservations` 0, `Visits` 0, `Tenants` 0.
 
-```
-ConnectionStrings__DefaultConnection="$(dotnet user-secrets list --project recepcaototem | sed -n 's/^ConnectionStrings:StagingMigration = //p')" \
-ASPNETCORE_ENVIRONMENT=Production \
-dotnet artifacts/tools/AdminCli/GestaoPredio.AdminCli.dll bootstrap-admin
-```
+_Stop point reached: first `ADMINISTRADOR` created. TASK 10 (public smoke) is the next task._
 
-Password policy: ≥ 12 chars, with an uppercase, a lowercase, a digit, and a non-alphanumeric character.
-Expected output: `Administrador inicial criado.` (exit 0).
+---
 
-Post-run validation (controller, via psql): `AspNetUsers` = 1; that user mapped to role `ADMINISTRADOR`;
-an `AuditEntries` row for the bootstrap. `<FILL after operator runs it>`
+## TASK 10 — Public smoke test
 
-_Stop point: after the first `ADMINISTRADOR` is created. Full smoke test (TASK 10) not started._
+Date: 2026-09-09 · Target: `https://lumis-staging.up.railway.app` · Driven in the Claude Browser pane; operator performs each login and watches Railway logs.
+
+_In progress — results appended as the flow runs._
