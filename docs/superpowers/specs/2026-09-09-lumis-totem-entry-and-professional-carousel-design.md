@@ -57,11 +57,11 @@ flowchart TD
   T["/totem — decisão"]
   T -->|"Tenho código"| C["/totem/check-in — QR / código"]
   T -->|"Não tenho código"| P["/totem/profissionais — carrossel"]
-  P -->|"Continuar (activeProfessional.id)"| B["/cliente/agendar?professionalId=<id>&source=totem"]
+  P -->|"Continuar (activeProfessional.id)"| B["/cliente/agendar?professionalId=id"]
   B -->|"CUSTOMER autenticado"| BK["booking com profissional pré-selecionado"]
-  B -->|"anônimo (ProtectedRoute)"| L["/cliente/login?returnUrl=/cliente/agendar?professionalId=<id>&source=totem"]
+  B -->|"anônimo (ProtectedRoute)"| L["/cliente/login?returnUrl=URL_ENCODED(/cliente/agendar?professionalId=id)"]
   L -->|login| B
-  L -->|"cadastro"| R["/cliente/cadastro?returnUrl=..."]
+  L -->|"cadastro"| R["/cliente/cadastro?returnUrl=URL_ENCODED"]
   R -->|registrado| L
   C -->|"← Voltar"| T
   C -->|"sucesso + ~12s / Concluir"| T
@@ -88,7 +88,7 @@ Regras do fluxo:
 | `/totem` | `<TotemEntry />` | pública | **NOVO** — tela de decisão |
 | `/totem/profissionais` | `<TotemProfessionals />` | pública | **NOVO** — carrossel |
 | `/totem/check-in` | `<TotemCheckIn />` | pública | fluxo existente + `← Voltar` + auto‑retorno para `/totem` |
-| `/cliente/agendar` | `<CustomerBooking />` | `ProtectedRoute allowedRoles={['CUSTOMER']}` | lê `?professionalId` e `?source` |
+| `/cliente/agendar` | `<CustomerBooking />` | `ProtectedRoute allowedRoles={['CUSTOMER']}` | lê **apenas** `?professionalId` |
 
 O catch‑all `<Route path="*" element={<Navigate to="/" replace />} />` permanece.
 
@@ -194,8 +194,8 @@ O chip sempre traz **dot colorido + texto**. Profissional `IsActive` porém `UNA
 ### 5.4 Continuar
 
 - Botão `Continuar →` (`RippleButton`). Habilitado assim que há dados (há sempre um card central após o load).
-- Ao tocar: `navigate('/cliente/agendar?professionalId=' + activeProfessional.id + '&source=totem')`, usando **exatamente `activeProfessional.id`** (o id do card centralizado no momento do toque).
-- `source=totem` viaja na URL (analítico/breadcrumb); não altera lógica de booking nesta rodada.
+- Ao tocar: `navigate('/cliente/agendar?professionalId=' + activeProfessional.id)`, usando **exatamente `activeProfessional.id`** (o id do card centralizado no momento do toque).
+- **Nenhum parâmetro de origem/analytics.** A URL é somente `?professionalId=<id>`.
 
 ### 5.5 Voltar
 
@@ -219,9 +219,9 @@ Nada além disso muda em `/totem/check-in`.
 
 ## 7. Backend — `GET /api/totem/professionals` (enriquecido) + foto pública
 
-### 7.1 DTO próprio e mínimo
+### 7.1 DTO próprio e mínimo (minimização de dados)
 
-Novo record em `TotemEndpoints.cs` (o `TotemProfessionalResponse` atual **permanece** para `/api/totem/immediate`):
+Novo record em `TotemEndpoints.cs`, **exatamente 5 campos** e nada além disso:
 
 ```csharp
 public sealed record TotemProfessionalCard(
@@ -233,8 +233,9 @@ public sealed record TotemProfessionalCard(
 ```
 
 - `PhotoUrl` = `p.PhotoFileId is null ? null : $"/api/totem/professionals/{p.Id}/photo"`.
-- **Nunca** retorna: `Description`, `WhatsApp`, `ApplicationUserId`, qualquer id de Identity, e‑mail, telefone, CPF, contratos, financeiro, auditoria, `PhotoFileId` cru, dados internos.
+- **Sem `Description` no DTO público do carrossel.** **Nunca** retorna: `Description`, `WhatsApp`, `ApplicationUserId`, qualquer id de Identity, e‑mail, telefone, CPF, contratos, financeiro, auditoria, `PhotoFileId` cru, dados internos.
 - Não reutiliza `ReceptionProfessionalResponse`, `CustomerProfessionalResponse` nem `ProfessionalResponse` administrativo.
+- **Contrato separado preservado:** `/api/totem/immediate` continua usando `TotemProfessionalResponse(Guid Id, string Name, string Profession, string? Description)` **sem alteração**. Os dois records coexistem como tipos distintos; a existência de `Description` num contrato pré‑existente não justifica incluí‑la no DTO novo, que segue minimização de dados.
 
 ### 7.2 Handler `Professionals` (substitui o corpo atual)
 
@@ -332,61 +333,102 @@ endpoints.MapGet("/api/totem/professionals/{id:guid}/photo", ProfessionalPhoto).
 
 ## 10. Integração `CUSTOMER` — `professionalId` através de login/cadastro
 
-**Mecanismo escolhido: query param `?returnUrl=` com safelist de caminho interno.** Sobrevive a reload (ao contrário de `location.state`), funciona com o link `<a href>` de cadastro, é testável por string. `location.state.from` é mantido por compatibilidade, mas o `returnUrl` é a fonte de verdade.
+**Mecanismo: query param `?returnUrl=<URL_ENCODED>` com allowlist ESTRITA do portal do cliente.** Sobrevive a reload (ao contrário de `location.state`), funciona com link, é testável. `location.state.from` permanece por compatibilidade, mas o `returnUrl` **validado** é a fonte de verdade do destino pós‑login. **Não** se aceita "qualquer caminho interno" — somente rotas conhecidas sob `/cliente`.
 
-### 10.1 Helper compartilhado
+### 10.1 Helper — validação estrita contra open redirect
 
 ```ts
 // src/auth/returnUrl.ts
-export function safeInternalPath(raw: string | null, allowedPrefix = '/'): string | null {
-  if (!raw) return null
-  let value: string
-  try { value = decodeURIComponent(raw) } catch { return null }
-  if (!value.startsWith('/')) return null          // precisa ser caminho absoluto interno
-  if (value.startsWith('//') || value.startsWith('/\\')) return null  // bloqueia //host e /\host
-  if (value.includes('://')) return null           // bloqueia esquema embutido
-  if (!value.startsWith(allowedPrefix)) return null
-  return value
+//
+// Allowlist ESTRITA para redirecionamento pos-login no portal do cliente.
+// Somente caminhos sob /cliente sao aceitos. Qualquer outra coisa -> null.
+// Testes explicitos de open redirect acompanham (secao 22.2).
+
+const hasControlChar = (s: string) =>
+  [...s].some((c) => { const n = c.charCodeAt(0); return n < 0x20 || (n >= 0x7f && n <= 0x9f) })
+const CUSTOMER_PATH = /^\/cliente(?:\/[A-Za-z0-9_-]+)*\/?$/    // /cliente  ou  /cliente/<segmentos>
+const CUSTOMER_QUERY = /^[A-Za-z0-9_-]+=[A-Za-z0-9_-]*(?:&[A-Za-z0-9_-]+=[A-Za-z0-9_-]*)*$/  // pares chave=valor seguros
+
+export function safeCustomerReturnUrl(raw: string | null | undefined): string | null {
+  if (!raw || typeof raw !== 'string') return null
+  if (raw.length > 512) return null
+  if (hasControlChar(raw)) return null
+
+  // Colapsa qualquer nivel de encoding (defesa contra %252F..., %25252F..., etc.).
+  let value = raw
+  for (let i = 0; i < 4; i++) {
+    let next: string
+    try { next = decodeURIComponent(value) } catch { return null }
+    if (next === value) break
+    value = next
+  }
+
+  if (hasControlChar(value)) return null
+  if (value.includes('\\')) return null       // backslash / \evil
+  if (value.includes('%')) return null         // ainda encoded apos 4 decodes -> suspeito
+  if (value.includes('://')) return null       // http:// https:// qualquer esquema
+  if (value.includes('..')) return null        // traversal
+  if (value.startsWith('//')) return null       // protocol-relative //evil.com
+  if (!value.startsWith('/cliente')) return null
+
+  const q = value.indexOf('?')
+  const path = q === -1 ? value : value.slice(0, q)
+  const query = q === -1 ? '' : value.slice(q + 1)
+  if (query.includes('?')) return null          // um unico '?'
+  if (path.includes('//')) return null
+  if (!CUSTOMER_PATH.test(path)) return null
+  if (query && !CUSTOMER_QUERY.test(query)) return null
+
+  return query ? `${path}?${query}` : path
 }
 ```
 
+**Rejeita** (teste explícito para cada — seção 22.2): `null` / `undefined` / string vazia; URLs absolutas; `http://` / `https://` / qualquer `<esquema>://`; `//evil.com` (protocol‑relative); `/\evil` e qualquer `\`; caracteres de controle (U+0000..U+001F, U+007F..U+009F) antes **e** depois do decode; `%2F%2Fevil`, `%252F%252Fevil` e variantes multi‑encoded que decodifiquem para destino externo ou `//`; `/cliente/../admin` e qualquer `..`; `/admin`, `/recepcao`, `/`, `/login` e toda rota fora de `/cliente`; query com caracteres fora de `[A-Za-z0-9_=&-]`; mais de um `?`; string acima de 512 caracteres.
+**Aceita:** `/cliente`, `/cliente/agendar`, `/cliente/agendamentos`, `/cliente/agendamentos/algo`, `/cliente/agendar?professionalId=<guid>`.
+
+A área permitida é fixa (`/cliente`), não configurável. Login administrativo/profissional **não** usa `returnUrl` nesta feature.
+
 ### 10.2 `ProtectedRoute.tsx` (mínimo)
 
-No ramo `status === 'anonymous'`, o alvo do `<Navigate>` passa a incluir `location.search`:
+No ramo `status === 'anonymous'`, apenas para caminhos do cliente o alvo leva `returnUrl` (com `location.search` incluído e encodado):
 
 ```tsx
 const base = location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'
-const returnUrl = encodeURIComponent(location.pathname + location.search)
-return <Navigate to={`${base}?returnUrl=${returnUrl}`} state={{ from: location.pathname }} replace />
+const to = base === '/cliente/login'
+  ? `${base}?returnUrl=${encodeURIComponent(location.pathname + location.search)}`
+  : base
+return <Navigate to={to} state={{ from: location.pathname }} replace />
 ```
 
-A substring `"location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'"` permanece no arquivo (o `frontend-portals.test.ts` continua verde). Os testes atuais de `ProtectedRoute` (latch `validatedOnce`, sem remount) permanecem intactos.
+A substring literal `location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'` permanece no arquivo (os dois testes de `frontend-portals.test.ts` que a verificam continuam verdes). Os testes atuais de `ProtectedRoute` (latch `validatedOnce`, sem remount) permanecem intactos. Login de staff (`/login`) **não** ganha `returnUrl`.
 
 ### 10.3 `Login.tsx` (mínimo)
 
-- `const [params] = useSearchParams()`. `const returnUrl = safeInternalPath(params.get('returnUrl'), audience === 'customer' ? '/cliente/' : '/')`.
+- `const [params] = useSearchParams()`. `const returnUrl = audience === 'customer' ? safeCustomerReturnUrl(params.get('returnUrl')) : null`.
 - Após `login()` bem‑sucedido:
-  - se `current.mustChangePassword` → `navigate('/change-password', { replace: true })` (o `returnUrl` é descartado; caso de borda documentado — após trocar a senha o `CUSTOMER` fica em `/cliente` e pode tocar de novo no Totem).
+  - se `current.mustChangePassword` → `navigate('/change-password', { replace: true })` (o `returnUrl` é descartado — caso de borda **aceito nesta versão**; após trocar a senha o `CUSTOMER` fica em `/cliente` e pode tocar de novo no Totem).
   - senão, se `returnUrl` → `navigate(returnUrl, { replace: true })`; caso contrário → `navigate(homeForRoles(current.roles), { replace: true })`.
-- O botão "Continuar na minha área" (sessão já ativa) também respeita `returnUrl` quando presente e seguro.
-- O link "Criar minha conta" passa a ser `/cliente/cadastro` + `?returnUrl=` propagado quando presente.
+- O botão "Continuar na minha área" (sessão já ativa) respeita `returnUrl` quando válido.
+- O link "Criar minha conta" passa a ser `` `/cliente/cadastro?returnUrl=${encodeURIComponent(returnUrl)}` `` quando `returnUrl` válido; caso contrário `/cliente/cadastro` sem query.
 
 ### 10.4 `CustomerRegister.tsx` (mínimo)
 
-- Lê `returnUrl` seguro. Após `customerApi.register(...)`, `navigate('/cliente/login' + (returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''), { replace: true, state: { registered: true } })`. Sem `returnUrl`, comportamento inalterado.
+- `const returnUrl = safeCustomerReturnUrl(params.get('returnUrl'))`. Após `customerApi.register(...)`:
+  `` navigate(`/cliente/login${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''}`, { replace: true, state: { registered: true } }) ``.
+- Sem `returnUrl` (ou inválido), comportamento inalterado.
 
 ### 10.5 `CustomerBooking.tsx` (mínimo)
 
 - `const [params] = useSearchParams()`. `const preselectId = params.get('professionalId')`.
 - No efeito que carrega `customerApi.professionals()`:
   `setProfessionalId(items.some(i => i.id === preselectId) ? preselectId! : (items[0]?.id ?? ''))`.
-- O `<select>` continua editável (o visitante pode trocar de ideia). `source` é lido mas, nesta rodada, não altera comportamento (pode ajustar o rótulo do link "Voltar" no futuro).
+- O `<select>` continua editável. **Nenhum outro parâmetro é lido** (`source` não existe mais).
 
 ### 10.6 Resultado
 
-- `CUSTOMER` autenticado: `/totem/profissionais` → Continuar → `/cliente/agendar?professionalId=X&source=totem` → profissional X pré‑selecionado.
-- Anônimo: `ProtectedRoute` → `/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3DX%26source%3Dtotem` → login **ou** cadastro → retorna a `/cliente/agendar?professionalId=X&source=totem` → profissional X pré‑selecionado.
-- Nenhum booking anônimo é criado.
+- `CUSTOMER` autenticado: `/totem/profissionais` → Continuar → `/cliente/agendar?professionalId=X` → profissional X pré‑selecionado.
+- Anônimo: `ProtectedRoute` → `/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3DX` → login **ou** cadastro → após autenticar, `safeCustomerReturnUrl` valida e `navigate('/cliente/agendar?professionalId=X')` → profissional X pré‑selecionado.
+- Nenhum booking anônimo é criado. Nenhum parâmetro de origem/analytics.
 
 ---
 
@@ -585,7 +627,7 @@ O plano de implementação **não** deve incluir edição de CSP. Reportar o sta
 | `src/pages/Login.tsx` + `.test.tsx` | honrar `returnUrl` seguro; propagar ao link de cadastro. |
 | `src/pages/customer/CustomerRegister.tsx` + `.test.tsx` | carregar `returnUrl` para `/cliente/login`. |
 | `src/pages/customer/CustomerBooking.tsx` + `.test.tsx` | pré‑selecionar por `?professionalId`. |
-| `src/auth/returnUrl.ts` + `.test.ts` | **novo** — `safeInternalPath`. |
+| `src/auth/returnUrl.ts` + `.test.ts` | **novo** — `safeCustomerReturnUrl` (allowlist estrita `/cliente` + testes de open redirect). |
 | `src/styles.css` | `.totem-entry-*`, `.totem-carousel-*`, `.totem-status-*`, classes dos componentes magic; estende `.totem-kiosk`. Sem alterar regras existentes. |
 | `src/frontend-portals.test.ts` | atualizar asserções de rota do Totem (seção 22.3). |
 
@@ -635,14 +677,16 @@ O plano de implementação **não** deve incluir edição de CSP. Reportar o sta
 - **`TotemProfessionals`:**
   - loading → layout kiosk + skeletons.
   - success → carrossel + `Continuar →` + `← Voltar`.
-  - `Continuar` → `navigate('/cliente/agendar?professionalId=<idAtivo>&source=totem')` com o id do card centralizado.
+  - `Continuar` → `navigate('/cliente/agendar?professionalId=<idAtivo>')` (sem `source`) com o id do card centralizado.
   - `← Voltar` → `/totem`.
   - empty → `Nenhum profissional disponível.` + `Tentar novamente` + `Tenho código` (→ `/totem/check-in`).
   - error → `Não foi possível carregar os profissionais.` + `Tentar novamente` + `Tenho código`.
 - **`TotemCheckIn`:** todos os testes atuais continuam verdes; **novos:** `← Voltar` → `/totem`; auto‑retorno (fake timers) → `/totem`; "Concluir" → `/totem`.
-- **`safeInternalPath`:** rejeita `//evil`, `/\evil`, `https://x`, `javascript:x`, `null`; aceita `/cliente/agendar?professionalId=x`; respeita `allowedPrefix`.
-- **`ProtectedRoute`:** anônimo em `/cliente/agendar?professionalId=x` → redirect para `/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx...`; testes atuais (latch, sem remount) permanecem.
-- **`Login`:** com `?returnUrl=/cliente/agendar?...` seguro → após login `navigate` para esse caminho; sem `returnUrl` → `homeForRoles`; `returnUrl` inseguro → `homeForRoles`; `mustChangePassword` → `/change-password`. Link "Criar minha conta" carrega `returnUrl`.
+- **`safeCustomerReturnUrl` (testes explícitos de open redirect):**
+  - **rejeita** (um `it` por caso): `null`, `undefined`, string vazia; `https://evil.com`, `http://evil.com`, `HTTP://evil.com`; `javascript:alert(1)`, `data:text/html,x`; `//evil.com`, um `/` seguido de barra invertida; qualquer barra invertida no valor; `%2F%2Fevil.com`, `%252F%252Fevil.com`, `%68ttp://evil`; `/cliente/../admin`, `/cliente/%2e%2e/admin`; `/admin`, `/recepcao`, `/`, `/login`, `/cliente-admin`, `/clientefoo`; `/cliente/agendar?x=<script>`, `/cliente/agendar?a=b?c=d` (dois pontos de interrogacao); qualquer caractere de controle U+0000..U+001F ou U+007F..U+009F; string acima de 512 caracteres.
+  - **aceita** (retorna o caminho normalizado): `/cliente`, `/cliente/agendar`, `/cliente/agendamentos`, `/cliente/agendamentos/abc`, `/cliente/agendar?professionalId=8f3c...` (GUID), `%2Fcliente%2Fagendar%3FprofessionalId%3D8f3c...`.
+- **`ProtectedRoute`:** anônimo em `/cliente/agendar?professionalId=x` → redirect para `/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx`; anônimo em `/login`/staff → **sem** `returnUrl`; testes atuais (latch, sem remount) permanecem; a substring literal do ternário continua no arquivo.
+- **`Login`:** `audience="customer"` com `?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx` válido → após login `navigate('/cliente/agendar?professionalId=x', { replace: true })`; sem `returnUrl` → `homeForRoles`; `returnUrl` inseguro (`//evil`, `/admin`, ...) → `homeForRoles`; `mustChangePassword` → `/change-password` (returnUrl descartado); `audience="admin"` ignora `returnUrl`. Link "Criar minha conta" recebe `?returnUrl=` encodado quando válido.
 - **`CustomerRegister`:** propaga `returnUrl` para `/cliente/login`.
 - **`CustomerBooking`:** `?professionalId=<conhecido>` → esse profissional pré‑selecionado (não `items[0]`); id ausente/desconhecido → `items[0]`; `<select>` continua alterável.
 - **`professionalInitials`:** `"Dra. Helena Smoke" → "HS"`; nome único → 1 letra; vazio → placeholder seguro.
@@ -683,11 +727,12 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 2. **DTO:** novo `TotemProfessionalCard` (`id,name,profession,photoUrl,status`); `TotemProfessionalResponse` permanece só para `/api/totem/immediate`.
 3. **Status:** função pura `TotemProfessionalStatus.Resolve(inService, effectivePresence)` alimentada por `Visits.InService` + `PresenceEvaluator.IsEffective`. Sem `hasUsableRoom`, sem `WAITING` (justificado na seção 8).
 4. **Foto pública:** `GET /api/totem/professionals/{id}/photo`, só profissional ativo, helper de streaming compartilhado, `Cache-Control: public, max-age=300`, sem rate limiting. Storage não vira público.
-5. **`professionalId` no login:** `?returnUrl=` com `safeInternalPath` (prefixo `/cliente/` para audience customer); `ProtectedRoute` passa `pathname+search`; `Login`/`CustomerRegister` honram e propagam; `mustChangePassword` descarta `returnUrl` (borda documentada).
+5. **`professionalId` no login:** `?returnUrl=<URL_ENCODED>` validado por `safeCustomerReturnUrl` — **allowlist estrita** fixa em `/cliente` (não "qualquer caminho interno"): rejeita URLs absolutas, `<esquema>://`, `//host`, backslash, `..`, caracteres de controle e variantes multi‑encoded; testes de open redirect obrigatórios. `ProtectedRoute` inclui `pathname+search` só para caminhos `/cliente`; `Login` (só `audience="customer"`) e `CustomerRegister` honram/propagam com encoding; `mustChangePassword` descarta `returnUrl` (borda aceita nesta versão).
 6. **`/totem` deixa de abrir o check‑in** — passa a ser a tela de decisão; `/totem/check-in` mantém o fluxo.
 7. **Auto‑retorno do check‑in:** destino passa a `/totem` (não `reset()` no lugar). Mesmo timer, sem novo `setInterval`.
-8. **Carrossel e Magic UI:** componentes locais, sem lib nova (CSP). Classes `totem-carousel-*` (distintas de `lumis-gallery*` do mock dev).
-9. **CSP:** pré‑requisito separado; o plano não edita `Program.cs`; câmera/QR não é "pronto" até a CSP mudar.
+8. **Sem parâmetro `source`/analytics.** A URL do "Continuar" é apenas `/cliente/agendar?professionalId=<id>`.
+9. **Carrossel e Magic UI:** componentes locais, sem lib nova (CSP). Classes `totem-carousel-*` (distintas de `lumis-gallery*` do mock dev).
+10. **CSP:** pré‑requisito separado; o plano não edita `Program.cs`; câmera/QR não é "pronto" até a CSP mudar.
 
 ---
 
@@ -695,5 +740,5 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 
 - **`vite build` / `tsc`** com muitos arquivos novos: mitigado por TDD task‑a‑task e gates por task.
 - **Carrossel sem lib**: risco de inconsistência de snap entre navegadores; mitigado usando `scroll-snap` nativo + `scrollTo` programático e cobrindo teclado/drag por teste.
-- **`returnUrl`**: risco de open redirect; mitigado por `safeInternalPath` (caminho absoluto interno, sem esquema, sem `//`, com prefixo) + testes negativos.
+- **`returnUrl`**: risco de open redirect; mitigado por `safeCustomerReturnUrl` — allowlist estrita fixa em `/cliente`, colapso de multi‑encoding, rejeição de `<esquema>://` / `//` / backslash / `..` / controle, path e query validados por regex de caracteres seguros + bateria explícita de testes negativos (seção 22.2).
 - **Foto pública**: risco de vazar arquivo não‑foto; mitigado por checagem de `Purpose` + `IsActive` + id→profissional, e teste negativo.
