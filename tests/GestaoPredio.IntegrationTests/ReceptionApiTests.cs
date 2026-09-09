@@ -85,9 +85,16 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     public async Task Reception_can_assist_booking_and_reuse_customer_by_canonical_phone()
     {
         await factory.ResetAsync();
+        // Pin the clock to mid-morning so the [start, start+1h] booking window never straddles
+        // civil midnight in America/Porto_Velho (which would make the professional "unavailable").
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho");
+        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime);
+        factory.FreezeTime(new DateTimeOffset(
+            TimeZoneInfo.ConvertTimeToUtc(localToday.ToDateTime(new TimeOnly(9, 0), DateTimeKind.Unspecified), zone),
+            TimeSpan.Zero));
         var seed = await SeedAsync(withVisit: false, withCustomer: true);
         await LoginAsync(seed.Manager);
-        var start = DateTimeOffset.UtcNow.AddHours(3);
+        var start = factory.UtcNow.AddHours(3);
         var response = await factory.PostWithCsrfAsync("/api/reception/reservations", new
         {
             name = "Nome que não substitui o cadastro", phone = "(69) 99999-9999", professionalId = seed.ProfessionalId,
@@ -239,7 +246,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     {
         await factory.SeedDefaultOperatingHoursAsync();
         var manager = await factory.CreateUserAsync($"reception-manager-{Guid.NewGuid():N}@lumis.test", Password, [SystemRoles.Gerente]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala Recepção {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional Recepção", "Fisioterapia", $"659{Random.Shared.Next(10000000, 99999999)}", now);
         Customer? customer = withCustomer ? Customer.Create("Cliente Recepção", "+5569999999999", now) : null;

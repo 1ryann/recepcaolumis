@@ -41,6 +41,17 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     public string PrivateFilesRoot { get; }
     public HttpClient Client { get; private set; } = null!;
 
+    private readonly TestTimeProvider _clock = new();
+
+    /// <summary>The instant the server currently sees. Equals <see cref="DateTimeOffset.UtcNow"/> unless frozen.</summary>
+    public DateTimeOffset UtcNow => _clock.GetUtcNow();
+
+    /// <summary>Pin the server clock to <paramref name="value"/> for a single test. Cleared by <see cref="ResetAsync"/>.</summary>
+    public void FreezeTime(DateTimeOffset value) => _clock.Freeze(value);
+
+    /// <summary>Return the server to the real system clock.</summary>
+    public void UnfreezeTime() => _clock.UseSystemClock();
+
     public static string CreateTestConnection(string database) =>
         new Npgsql.NpgsqlConnectionStringBuilder(LocalPostgreSqlTestDatabase.LoadBaseConnection())
         {
@@ -74,6 +85,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(ConnectionString));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(_clock);
         });
     }
 
@@ -109,6 +122,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     public async Task ResetAsync()
     {
+        UnfreezeTime();
         await using var scope = Services.CreateAsyncScope();
         await ResetDatabaseAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
         await EnsureRolesAsync(scope.ServiceProvider);
