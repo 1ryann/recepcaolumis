@@ -1033,3 +1033,90 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .sidebar-brand { min-height: 76px; }
   .admin-topbar::after { right: 16px; }
 }
+
+/* --- public home portal (/) --- shares the Lumis premium dark identity with the Totem --- */
+.home-portal {
+  --home-bg: #181818;
+  --home-bg-2: #1c1c1c;
+  --home-card: #222222;
+  --home-card-hover: #272727;
+  --home-ink: #f2f2f2;
+  --home-muted: #888888;
+  --home-line: rgba(255, 255, 255, .08);
+  --home-line-strong: rgba(255, 255, 255, .22);
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding: clamp(40px, 8vh, 96px) clamp(20px, 6vw, 64px);
+  color: var(--home-ink);
+  background: radial-gradient(120% 90% at 15% 0%, var(--home-bg-2), var(--home-bg) 62%);
+}
+/* the abstract Lumis "light beam": a discreet diagonal streak that never touches legibility */
+.home-beam {
+  position: absolute;
+  inset: -20% -30% auto -30%;
+  height: 150%;
+  pointer-events: none;
+  background:
+    linear-gradient(58deg, transparent 42%, rgba(255, 255, 255, .05) 49%, rgba(255, 255, 255, .11) 50%, rgba(255, 255, 255, .05) 51%, transparent 58%);
+  filter: blur(2px);
+  transform: translate3d(0, 0, 0);
+  animation: home-beam-drift 14s ease-in-out infinite alternate;
+}
+@keyframes home-beam-drift { from { transform: translate3d(-3%, -1.5%, 0); opacity: .75; } to { transform: translate3d(3%, 1.5%, 0); opacity: 1; } }
+
+.home-inner { position: relative; z-index: 1; width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 34px; text-align: center; }
+.home-head { display: flex; }
+.home-logo { width: clamp(112px, 22vw, 140px); height: auto; display: block; opacity: .96; }
+
+.home-hero { display: flex; flex-direction: column; gap: 14px; }
+.home-hero h1 { margin: 0; font-size: clamp(36px, 6.4vw, 58px); line-height: 1.04; letter-spacing: -.045em; font-weight: 620; color: var(--home-ink); }
+.home-hero p { margin: 0 auto; max-width: 420px; color: var(--home-muted); font-size: clamp(14px, 2.6vw, 17px); line-height: 1.6; }
+
+.home-access { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.home-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 104px;
+  padding: 20px 22px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--home-ink);
+  border: 1px solid var(--home-line);
+  border-radius: 18px;
+  background: var(--home-card);
+  transition: transform .18s ease, background-color .18s ease, border-color .18s ease;
+}
+.home-card:hover { transform: translateY(-2px); border-color: var(--home-line-strong); background: var(--home-card-hover); }
+.home-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.home-card-icon { width: 44px; height: 44px; display: grid; place-items: center; color: var(--home-ink); border: 1px solid var(--home-line); border-radius: 13px; background: rgba(255, 255, 255, .03); }
+.home-card-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.home-card-body strong { font-size: 16px; font-weight: 750; letter-spacing: -.01em; }
+.home-card-body small { color: var(--home-muted); font-size: 12.5px; line-height: 1.45; }
+.home-card-arrow { flex: 0 0 auto; color: var(--home-muted); transition: transform .18s ease, color .18s ease; }
+.home-card:hover .home-card-arrow { transform: translateX(3px); color: var(--home-ink); }
+
+.home-team { display: inline-flex; align-items: center; gap: 6px; color: var(--home-muted); font-size: 12.5px; font-weight: 700; letter-spacing: .01em; text-decoration: none; transition: color .18s ease; }
+.home-team:hover { color: var(--home-ink); }
+.home-team:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 4px; border-radius: 6px; }
+
+.home-footer { position: relative; z-index: 1; color: var(--home-muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.home-footer strong { color: #cfcfcf; font-weight: 800; }
+
+@media (max-width: 720px) {
+  .home-portal { justify-content: flex-start; gap: 30px; padding-top: clamp(48px, 12vh, 96px); }
+  .home-access { grid-template-columns: 1fr; }
+  .home-card { min-height: 88px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-beam { animation: none; opacity: .9; }
+  .home-card, .home-card-arrow, .home-team { transition: none; }
+}

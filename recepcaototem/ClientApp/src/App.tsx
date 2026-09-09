@@ -4,6 +4,7 @@ import { AdminLayout } from './components/AdminLayout'
 import { ModuleUnavailable } from './components/ModuleUnavailable'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ChangePassword } from './pages/ChangePassword'
+import { Home } from './pages/Home'
 import { Login } from './pages/Login'
 import { Professionals } from './pages/admin/Professionals'
 import { Settings } from './pages/admin/Settings'
@@ -28,7 +29,7 @@ const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./dev/Developmen
 function ProductionApp() {
   return (
     <Routes>
-      <Route path="/" element={<ModuleUnavailable title="Lumis" />} />
+      <Route path="/" element={<Home />} />
   <Route path="/login" element={<Login />} /><Route path="/profissional/login" element={<Login audience="professional" />} />
   <Route path="/cliente/login" element={<Login audience="customer" />} />
   <Route path="/cliente/cadastro" element={<CustomerRegister />} />
