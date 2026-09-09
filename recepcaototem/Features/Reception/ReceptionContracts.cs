@@ -8,10 +8,12 @@ public sealed record ReceptionVisitResponse(Guid Id, Guid ProfessionalId, Guid? 
 
 public sealed record ReceptionCheckInRequest(string? ConcurrencyToken, string? VisitorName) : IStrictModuleRequest;
 
+public sealed record ReceptionPresenceRequest(Guid ProfessionalId, string State) : IStrictModuleRequest;
+
 public sealed record ReceptionProfessionalResponse(Guid ProfessionalId, string Name, string Profession, string? Description,
     bool HasPhoto, string? PhotoUrl, string OperationalStatus, Guid? CurrentRoomId,
     Guid? CurrentVisitId, int WaitingVisitorsCount, DateTimeOffset? NextReservationAt,
-    bool CanReceiveVisitor);
+    bool CanReceiveVisitor, string Presence, DateTimeOffset? AbsentUntil);
 
 public sealed record ReceptionRoomResponse(Guid Id, string Name, string OperationalStatus,
     Guid? CurrentProfessionalId, string? CurrentProfessionalName, Guid? CurrentVisitId,

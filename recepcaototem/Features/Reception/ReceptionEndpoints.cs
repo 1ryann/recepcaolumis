@@ -33,6 +33,7 @@ public static class ReceptionEndpoints
         group.MapGet("/reservations", Reservations);
         group.MapGet("/visits", Visits);
         group.MapGet("/visits/{id:guid}", VisitDetail);
+        group.MapPost("/presence", SetPresence).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations", AssistedReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/check-in", ManualCheckIn).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/visits/{id:guid}/start", VisitEndpoints.StartForReception).AddEndpointFilter<AntiforgeryFilter>();
@@ -67,7 +68,7 @@ public static class ReceptionEndpoints
 
     private static async Task<IResult> Professionals(string? search, string? status, Guid? roomId,
         ApplicationDbContext db, GestaoPredio.Application.Availability.IRoomAvailabilityService roomAvailability,
-        TimeProvider time, CancellationToken ct)
+        TimeZoneInfo zone, TimeProvider time, CancellationToken ct)
     {
         if (roomId == Guid.Empty) return Bad("INVALID_RECEPTION_FILTER");
         var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : TextNormalizer.Normalize(search);
@@ -80,16 +81,28 @@ public static class ReceptionEndpoints
             .Select(x => new { x.Id, x.ProfessionalId, x.RoomId, x.Status, x.ArrivedAt }).ToListAsync(ct);
         var reservations = await db.Reservations.AsNoTracking().Where(x => x.Status == ReservationStatus.Approved && x.Kind != ReservationKind.Cancellation && x.EndAt > now)
             .Select(x => new { x.ProfessionalId, x.RoomId, x.StartAt }).ToListAsync(ct);
+        var professionalIds = professionals.Select(x => x.Id).ToArray();
+        var openPresences = await db.ProfessionalPresences.AsNoTracking()
+            .Where(x => professionalIds.Contains(x.ProfessionalId) && x.EndedAt == null).ToListAsync(ct);
+        var presenceByProfessional = openPresences
+            .GroupBy(x => x.ProfessionalId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(x => x.StartedAt).First());
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
+        var incidentEnds = await IncidentEndsAsync(db, professionalIds, now, zone, ct);
         var rows = professionals.Select(p =>
         {
             var current = visits.Where(x => x.ProfessionalId == p.Id).OrderBy(x => x.Status == VisitStatus.InService ? 0 : 1).ThenBy(x => x.ArrivedAt).FirstOrDefault();
             var next = reservations.Where(x => x.ProfessionalId == p.Id && x.StartAt > now).OrderBy(x => x.StartAt).FirstOrDefault();
             var hasUsableRoom = roomStatuses.Any(x => x.Status is "AVAILABLE" or "RESERVED");
             var operational = current?.Status == VisitStatus.InService ? "IN_SERVICE" : current?.Status == VisitStatus.Waiting ? "WAITING_VISITOR" : !p.IsActive || !hasUsableRoom ? "UNAVAILABLE" : "AVAILABLE";
+            presenceByProfessional.TryGetValue(p.Id, out var presenceRow);
+            var present = PresenceEvaluator.IsEffective(presenceRow, operatingHours, now, zone);
+            incidentEnds.TryGetValue(p.Id, out var absentUntil);
             return new ReceptionProfessionalResponse(p.Id, p.Name, p.Profession, p.Description, p.PhotoFileId is not null,
                 p.PhotoFileId is null ? null : $"/api/admin/professionals/{p.Id}/photo", operational,
                 current?.RoomId, current?.Id, visits.Count(x => x.ProfessionalId == p.Id && x.Status == VisitStatus.Waiting),
-                next?.StartAt, p.IsActive && operational is not "IN_SERVICE" and not "UNAVAILABLE");
+                next?.StartAt, p.IsActive && operational is not "IN_SERVICE" and not "UNAVAILABLE",
+                present ? "PRESENT" : "ABSENT", absentUntil);
         }).Where(x => roomId is null || x.CurrentRoomId == roomId || reservations.Any(r => r.ProfessionalId == x.ProfessionalId && r.RoomId == roomId)).ToArray();
         if (!string.IsNullOrWhiteSpace(status) && !new[] { "ALL", "AVAILABLE", "WAITING_VISITOR", "IN_SERVICE", "UNAVAILABLE" }.Contains(status.Trim().ToUpperInvariant())) return Bad("INVALID_STATUS");
         var selectedStatus = string.IsNullOrWhiteSpace(status) || status.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) ? null : status.Trim().ToUpperInvariant();
@@ -185,6 +198,112 @@ public static class ReceptionEndpoints
             visit.ProfessionalId, NotificationEventTypes.ProfessionalVisitWaiting,
             visit.VisitorName, visit.ArrivedAt, visit.ReservationId), CancellationToken.None);
         return Results.Created($"/api/reception/visits/{visit.Id}", new ReceptionVisitResponse(visit.Id, visit.ProfessionalId, visit.RoomId, visit.ReservationId, visit.CustomerId, visit.VisitorName, "WAITING", visit.ArrivedAt, null, null, ConcurrencyToken.Encode(visit.Version)));
+    }
+
+    private static async Task<IResult> SetPresence(ReceptionPresenceRequest request, HttpContext context,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeZoneInfo zone, TimeProvider time,
+        CancellationToken ct)
+    {
+        if (request.ProfessionalId == Guid.Empty) return Bad("INVALID_RECEPTION_FILTER");
+        var state = (request.State ?? string.Empty).Trim().ToUpperInvariant();
+        if (state is not ("PRESENT" or "ABSENT")) return Bad("INVALID_PRESENCE_STATE");
+        var actor = Actor(context)!;
+        var now = time.GetUtcNow();
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], [], [request.ProfessionalId]), ct);
+        if (!await db.Professionals.AsNoTracking().AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct))
+            return Results.NotFound();
+
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
+        var openPresence = await db.ProfessionalPresences
+            .Where(x => x.ProfessionalId == request.ProfessionalId && x.EndedAt == null)
+            .OrderByDescending(x => x.StartedAt).FirstOrDefaultAsync(ct);
+
+        if (state == "PRESENT")
+        {
+            if (openPresence is not null && !PresenceEvaluator.IsEffective(openPresence, operatingHours, now, zone))
+            {
+                var civilDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(openPresence.StartedAt, zone).DateTime);
+                openPresence.MaterialiseOperatingHoursEnd(
+                    PresenceEvaluator.OperatingHoursEndInstant(civilDay, operatingHours, zone) ?? now);
+                openPresence = null;
+            }
+            if (openPresence is null)
+            {
+                var presence = ProfessionalPresence.StartByManager(request.ProfessionalId, actor, now);
+                db.ProfessionalPresences.Add(presence);
+                db.AuditEntries.Add(new AuditEntry
+                {
+                    Id = Guid.NewGuid(),
+                    Action = AuditActions.ProfessionalPresenceStartedByOperations,
+                    Result = "SUCCEEDED",
+                    TargetEntityType = AuditTargetTypes.ProfessionalPresence,
+                    TargetEntityId = presence.Id,
+                    ActorUserId = actor,
+                    IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                    OccurredAt = now,
+                    CorrelationId = context.TraceIdentifier
+                });
+            }
+        }
+        else
+        {
+            if (openPresence is null)
+            {
+                await transaction.RollbackAsync(ct);
+                return Results.Json(new ApiError("NO_OPEN_PRESENCE", "O profissional não possui presença aberta."),
+                    statusCode: 409);
+            }
+            openPresence.EndManually(actor, now);
+            db.AuditEntries.Add(new AuditEntry
+            {
+                Id = Guid.NewGuid(),
+                Action = AuditActions.ProfessionalPresenceEndedByOperations,
+                Result = "SUCCEEDED",
+                TargetEntityType = AuditTargetTypes.ProfessionalPresence,
+                TargetEntityId = openPresence.Id,
+                ActorUserId = actor,
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                OccurredAt = now,
+                CorrelationId = context.TraceIdentifier
+            });
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(ct);
+            return Modified();
+        }
+        return Results.NoContent();
+    }
+
+    private static async Task<Dictionary<Guid, DateTimeOffset>> IncidentEndsAsync(ApplicationDbContext db,
+        IReadOnlyCollection<Guid> professionalIds, DateTimeOffset now, TimeZoneInfo zone, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+        var rows = await db.ProfessionalAvailabilityExceptions.AsNoTracking()
+            .Where(x => professionalIds.Contains(x.ProfessionalId) &&
+                x.Origin == ProfessionalAvailabilityExceptionOrigin.Incident &&
+                !x.AllDay && x.Date == today && x.EndTime != null)
+            .Select(x => new { x.ProfessionalId, EndTime = x.EndTime!.Value })
+            .ToListAsync(ct);
+
+        var result = new Dictionary<Guid, DateTimeOffset>();
+        foreach (var row in rows)
+        {
+            var local = DateTime.SpecifyKind(today.ToDateTime(row.EndTime), DateTimeKind.Unspecified);
+            var instant = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone), TimeSpan.Zero);
+            if (instant <= now) continue;
+            if (!result.TryGetValue(row.ProfessionalId, out var current) || instant > current)
+                result[row.ProfessionalId] = instant;
+        }
+        return result;
     }
 
     private static async Task<List<ReceptionAgendaItem>> LoadAgenda(ApplicationDbContext db, DateTimeOffset fromAt, DateTimeOffset toAt,

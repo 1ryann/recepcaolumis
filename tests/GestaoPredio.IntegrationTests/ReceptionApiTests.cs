@@ -142,6 +142,99 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         Assert.Equal("ENDED", (await ended.Content.ReadFromJsonAsync<ReceptionVisitPayload>())!.Status);
     }
 
+    [Fact]
+    public async Task Manager_can_mark_a_professional_present_then_absent()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(withVisit: false);
+        await LoginAsync(seed.Manager);
+
+        var present = await factory.PostWithCsrfAsync("/api/reception/presence",
+            new { professionalId = seed.ProfessionalId, state = "PRESENT" });
+        Assert.Equal(HttpStatusCode.NoContent, present.StatusCode);
+        Assert.Equal("PRESENT", await GetPresenceAsync(seed.ProfessionalId));
+
+        var absent = await factory.PostWithCsrfAsync("/api/reception/presence",
+            new { professionalId = seed.ProfessionalId, state = "ABSENT" });
+        Assert.Equal(HttpStatusCode.NoContent, absent.StatusCode);
+        Assert.Equal("ABSENT", await GetPresenceAsync(seed.ProfessionalId));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.True(await db.AuditEntries.AnyAsync(x => x.Action == "PROFESSIONAL_PRESENCE_STARTED_BY_OPERATIONS"));
+        Assert.True(await db.AuditEntries.AnyAsync(x => x.Action == "PROFESSIONAL_PRESENCE_ENDED_BY_OPERATIONS"));
+    }
+
+    [Fact]
+    public async Task Reception_presence_is_operations_only()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(withVisit: false);
+        var professional = await factory.CreateUserAsync($"reception-presence-prof-{Guid.NewGuid():N}@lumis.test",
+            Password, [SystemRoles.Profissional]);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(professional.Email!, Password)).StatusCode);
+
+        var response = await factory.PostWithCsrfAsync("/api/reception/presence",
+            new { professionalId = seed.ProfessionalId, state = "PRESENT" });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reception_presence_projection_exposes_absent_until_for_an_incident()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(withVisit: false);
+        var now = DateTimeOffset.UtcNow;
+        var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")).DateTime);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ProfessionalAvailabilityExceptions.Add(ProfessionalAvailabilityException.Create(
+                seed.ProfessionalId, localDate, false, new TimeOnly(0, 0), new TimeOnly(23, 59, 59),
+                "imprevisto", now, ProfessionalAvailabilityExceptionOrigin.Incident));
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(seed.Manager);
+
+        var row = await GetPresenceRowAsync(seed.ProfessionalId);
+        Assert.Equal("ABSENT", row.Presence);
+        Assert.NotNull(row.AbsentUntil);
+    }
+
+    [Fact]
+    public async Task Concurrent_absent_writes_resolve_to_one_success()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(withVisit: false);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(seed.ProfessionalId, DateTimeOffset.UtcNow.AddMinutes(-10)));
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(seed.Manager);
+
+        var first = factory.PostWithCsrfAsync("/api/reception/presence",
+            new { professionalId = seed.ProfessionalId, state = "ABSENT" });
+        var second = factory.PostWithCsrfAsync("/api/reception/presence",
+            new { professionalId = seed.ProfessionalId, state = "ABSENT" });
+        var responses = await Task.WhenAll(first, second);
+
+        Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.NoContent));
+        Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+    }
+
+    private async Task<string> GetPresenceAsync(Guid professionalId) =>
+        (await GetPresenceRowAsync(professionalId)).Presence;
+
+    private async Task<PresenceProfessionalPayload> GetPresenceRowAsync(Guid professionalId)
+    {
+        var rows = (await (await factory.Client.GetAsync("/api/reception/professionals"))
+            .Content.ReadFromJsonAsync<PresenceProfessionalPayload[]>())!;
+        return rows.Single(x => x.ProfessionalId == professionalId);
+    }
+
     private async Task<Seed> SeedAsync(bool withVisit, bool withCustomer = false)
     {
         await factory.SeedDefaultOperatingHoursAsync();
@@ -170,6 +263,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     private sealed record OverviewPayload(int VisitorsWaiting, int VisitsInService, int ReservationsToday,
         IReadOnlyList<AgendaPayload> UpcomingReservations, IReadOnlyList<ReceptionVisitPayload> WaitingVisits);
     private sealed record ProfessionalPayload(Guid ProfessionalId, int WaitingVisitorsCount);
+    private sealed record PresenceProfessionalPayload(Guid ProfessionalId, string Presence, DateTimeOffset? AbsentUntil);
     private sealed record RoomPayload(Guid Id, string OperationalStatus);
     private sealed record AgendaPayload(Guid ReservationId, string? VisitStatus);
     private sealed record ReservationPayload(string ConcurrencyToken);
