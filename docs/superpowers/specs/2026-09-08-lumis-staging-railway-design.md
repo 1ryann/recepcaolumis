@@ -1,6 +1,7 @@
 # LUMIS — Staging on Railway (single origin) — design
 
-**Status:** approved — architecture decided 2026-09-08. Implementation not started.
+**Status:** approved — architecture and staging decisions final 2026-09-08. Implementation
+not started.
 
 **Supersedes:** the earlier "Vercel (frontend) + Railway (backend) + Supabase" staging
 proposal (delivered as a chat preflight, not a committed doc). That proposal is
@@ -10,8 +11,13 @@ staging design of record.
 
 **Scope:** deploy the existing application (backend API + React SPA, exactly as it is on
 branch `codex/reception-backend`, commit `ba00660`) to a single Railway service backed by a
-dedicated Supabase PostgreSQL staging project. No feature work, no architecture change. The
-only code delta is a forwarded-headers registration (§6).
+dedicated Supabase PostgreSQL staging project. No feature work, no architecture change.
+
+**No application code change.** Everything staging-specific is configuration. The deploy
+adds only two repo files that are not application code — a root `Dockerfile` and a
+`.dockerignore` (§2). The forwarded-headers concern that the withdrawn proposal handled
+with a `Program.cs` edit is handled here entirely by the `ASPNETCORE_FORWARDEDHEADERS_ENABLED`
+environment variable (§6).
 
 ---
 
@@ -76,13 +82,20 @@ Railway builds from a repo-root `Dockerfile`. Multi-stage:
 
 **Stage `build` — `mcr.microsoft.com/dotnet/sdk:10.0` (Debian bookworm):**
 
-- Install **Node 22** (NodeSource `setup_22.x`, or `COPY --from=node:22-bookworm-slim`),
-  because `dotnet publish recepcaototem` invokes the `BuildClientApp` target which needs
-  `npm`. Node/npm are a **build-time** dependency only.
+- Make **Node 22** available in this stage by copying it from the **official
+  `node:22-bookworm-slim` image** — `COPY --from=node:22-bookworm-slim /usr/local/bin/ /usr/local/bin/`
+  and `COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules/ /usr/local/lib/node_modules/`.
+  Do **not** use a NodeSource install script unless the copy approach proves insufficient.
+  Node/npm are a **build-time** dependency only — `dotnet publish recepcaototem` invokes the
+  `BuildClientApp` MSBuild target, which runs `npm ci && npm run build` in `ClientApp/`.
+- Validate the toolchain early in the stage: `node --version` (expect `v22.x`) and
+  `npm --version` must both succeed; a missing/wrong Node fails the build here rather than
+  deep inside `dotnet publish`.
 - `dotnet restore` (solution or `recepcaototem` + its project refs).
-- Optionally run `npm run verify:production-bundle` inside `ClientApp/` (the repo's bundle
-  safety check — rejects source maps, `src/dev`, mock datasets in `dist`). Recommended: run
-  it and fail the build on violation.
+- Run `npm ci` then **`npm run verify:production-bundle`** inside `ClientApp/` — the repo's
+  bundle safety check (rejects source maps, `src/dev`, mock datasets in `dist`). **A
+  violation must fail the Docker build** (non-zero exit; do not `|| true` it). This runs
+  before, or as part of, the publish so a leaked mock/dev artifact never reaches the image.
 - `dotnet publish recepcaototem/recepcaototem.csproj -c Release -o /app/publish`
   → produces `recepcaototem.dll` + `wwwroot/` (SPA) + `web.config` (IIS artifact, ignored
   on Kestrel).
@@ -113,10 +126,16 @@ Railway builds from a repo-root `Dockerfile`. Multi-stage:
 
 ## 3. Railway
 
+- **Region: US East (Virginia).** Chosen to sit next to the Supabase `us-east-1`
+  (N. Virginia) project so DB round-trips stay well inside the fixed 5 s Npgsql command
+  timeout (§4, §8).
 - **One service**, **one instance** (`replicas = 1`). Filesystem-based Data Protection keys
   are not shared across replicas; a second instance would split the key ring and break
   cookie decryption. Multi-instance is a future concern that requires moving the key ring
   to the database/blob (out of scope, §11).
+- **Outbound IPv6: enabled.** The service's egress to Supabase may use IPv6. The connection
+  string (§4) uses the Supabase hostname (not a literal IP), so name resolution picks the
+  available family; IPv6 egress must be on for the direct-connection host to resolve/route.
 - **Persistent volume** mounted at `/data`.
   - `/data/dpkeys` → `Security__DataProtectionPath`.
   - `/data/private` → `Storage__PrivateFilesPath`.
@@ -124,14 +143,13 @@ Railway builds from a repo-root `Dockerfile`. Multi-stage:
     professional photos are not lost.
 - **Networking:** the container listens on `http://0.0.0.0:$PORT` (Railway injects `$PORT`).
   Railway's edge terminates TLS and forwards plain HTTP with `X-Forwarded-Proto: https`
-  and `X-Forwarded-For: <client>`.
+  and `X-Forwarded-For: <client>`. See §6 for how the app is told to honour those.
 - **Health check path:** `/health/ready` (so a new deploy is only marked healthy once the
   container can reach Supabase). `/health` is available for a lighter liveness signal.
 - **Build:** Dockerfile (auto-detected at repo root). Nixpacks not used.
-- **Region:** choose the Railway region closest to the Supabase staging project region
-  (see §10, open decision — affects DB latency vs the 5 s command timeout).
-- **Domain:** the generated `*.up.railway.app` domain is acceptable for staging; a custom
-  domain is optional. Whatever the final host is, it must be listed in `AllowedHosts` (§4).
+- **Domain: the Railway-generated `*.up.railway.app` host.** No custom domain for staging.
+  Its exact hostname is the single value used for `AllowedHosts` and
+  `Rescheduling__PublicBaseUrl` (§4).
 
 ---
 
@@ -144,21 +162,20 @@ Nested keys use the `__` (double-underscore) form.
 |---|---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` | Hardened path: forces the Data Protection guard, enables HSTS + the HTTPS-required middleware, keeps notification/access-control providers on their fail-closed non-dev default. `Staging` as an env name is neither `IsDevelopment()` nor `IsProduction()` and would silently skip the DP guard. |
 | `ASPNETCORE_URLS` | `http://0.0.0.0:$PORT` | Kestrel binds the Railway-assigned port over plain HTTP inside the container. TLS is the edge's job. |
-| `ConnectionStrings__DefaultConnection` | `Host=<supabase-staging-host>;Port=5432;Database=postgres;Username=postgres;Password=<staging-db-password>;SSL Mode=Require;Trust Server Certificate=true;Include Error Detail=false;Maximum Pool Size=20` | Direct connection (5432), TLS required. `Maximum Pool Size` kept small for one instance against a shared Supabase project. `Include Error Detail=false` avoids leaking parameter values in exceptions. |
-| `AllowedHosts` | the exact Railway host, e.g. `lumis-staging.up.railway.app` | `appsettings.json` ships `"localhost;127.0.0.1;[::1]"`; without an override the host-filtering middleware returns **400** for every request on the Railway domain. `*` is tolerable for staging but the explicit host is preferred. |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `true` | Handles the reverse-proxy concern with **no code change** — see §6. |
+| `ConnectionStrings__DefaultConnection` | `Host=<supabase-staging-host>;Port=5432;Database=postgres;Username=postgres;Password=<staging-db-password>;SSL Mode=Require;Trust Server Certificate=true;Include Error Detail=false;Maximum Pool Size=20` | **Direct connection**, port 5432, TLS required. See §8 for the direct-vs-Supavisor decision and fallback. `Maximum Pool Size` kept small for one instance. `Include Error Detail=false` avoids leaking parameter values in exceptions. |
+| `AllowedHosts` | the **exact** Railway-generated hostname, e.g. `lumis-staging.up.railway.app` (no scheme, no path, no wildcard) | `appsettings.json` ships `"localhost;127.0.0.1;[::1]"`; without an override the host-filtering middleware returns **400** for every request on the Railway domain. The final decision is to pin the exact host, not `*`. |
 | `Security__DataProtectionPath` | `/data/dpkeys` | **Required** in `Production` (`Program.cs` throws at startup if unset). Absolute, writable, on the persistent volume. |
 | `Storage__PrivateFilesPath` | `/data/private` | **Required** (`ValidateOnStart`). Absolute, writable, on the volume, must not overlap the content/web root. Pre-created by the container entrypoint. |
 | `Scheduling__TimeZoneId` | `America/Porto_Velho` | Already in `appsettings.json`; kept explicit so the deploy is self-describing. Startup throws if missing/blank. |
+| `Rescheduling__PublicBaseUrl` | `https://<exact-railway-host>` (same host as `AllowedHosts`, with the `https://` scheme, no trailing slash) | Base for the login-free reschedule link (`{PublicBaseUrl}/reagendar/{token}`). No message is actually sent while `Notifications__Provider=Demo`, but the Demo recorder captures the URL, so setting it makes the smoke test's captured link correct and single-origin. |
 | `Notifications__Provider` | `Demo` | Predictable, in-memory recorder, **zero external calls**. (Even the `Meta` provider is a fail-closed stub that never sends, but `Demo` is explicit and quiet.) |
 | `AccessControl__Provider` | `Demo` | In-memory recorder, **no hardware/network call**. (The `Intelbras` provider is likewise a fail-closed stub.) |
 | `Logging__LogLevel__Default` | `Information` | Optional. Raises staging visibility above the `Production` default of `Warning`. EF Core logging stays `None` (no SQL/parameter leakage). |
 | `RateLimiting__PermitLimit` / `RateLimiting__WindowSeconds` | `120` / `60` | Optional; defaults already exist in `appsettings.json`. |
 
 **Deliberately NOT set** (leave unset): `Cors__AllowedOrigins__*` (single origin — no CORS);
-`Notifications__Meta__*`; `AccessControl__Intelbras__*`; `ASPNETCORE_FORWARDEDHEADERS_ENABLED`
-(handled in code, §6); `Rescheduling__PublicBaseUrl` (only used to build the WhatsApp
-reschedule URL — irrelevant while `Notifications__Provider=Demo` sends nothing; if wanted
-later, set it to `https://<railway-host>`).
+`Notifications__Meta__*`; `AccessControl__Intelbras__*`.
 
 **One-off tooling (operator machine, not Railway):** the EF migration step and the
 `GestaoPredio.AdminCli` bootstrap step each read `ConnectionStrings__DefaultConnection`
@@ -185,71 +202,67 @@ shell environment. See §8, §9.
   `**/secrets.json`, `artifacts/`. Committed `appsettings*.json` contain zero credentials.
   The initial admin password is entered interactively into `GestaoPredio.AdminCli`
   (no-echo) and never stored in an argument, file, or variable.
-- **Data Protection at rest:** on Linux the key ring is written to `/data/dpkeys`
-  **unencrypted** (`ProtectKeysWithDpapi()` is Windows-only and skipped). Acceptable for a
-  staging environment on an isolated volume. Hardening for production (certificate/KMS
-  protector, or DB-backed keys) is out of scope here and noted in §11.
+- **Data Protection at rest — staging-only acceptance.** On Linux the key ring is written
+  to `/data/dpkeys` **unencrypted** (`ProtectKeysWithDpapi()` is Windows-only and skipped).
+  This is **explicitly accepted for staging only**, on the isolated `/data` volume of a
+  single-tenant Railway service. Production must revisit key protection (certificate/KMS
+  protector, or a DB/blob-backed key ring) — out of scope here, noted in §11.
 - **HTTPS enforcement:** `Program.cs` rejects non-HTTPS requests with `400 { "code": "HTTPS_REQUIRED" }`
-  in non-Development (except `/health` and `/health/ready`). With §6 in place this evaluates
-  the real external scheme, so legitimate HTTPS traffic passes and any plain-HTTP path that
-  bypasses the edge is still rejected.
+  in non-Development (except `/health` and `/health/ready`). With `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`
+  (§6) this evaluates the real external scheme from `X-Forwarded-Proto`, so legitimate HTTPS
+  traffic passes.
 - **`UseHsts()`** runs in non-Development.
 - **Response security headers** (`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
   strict `Content-Security-Policy`) are applied globally and remain correct for a single origin.
 
 ---
 
-## 6. Forwarded headers (Railway edge)
+## 6. Forwarded headers (Railway edge) — configuration only, no code change
 
-**Problem.** The app has no `UseForwardedHeaders`. Behind Railway's TLS-terminating edge:
+**Problem.** The app has no `UseForwardedHeaders` in `Program.cs`. Behind Railway's
+TLS-terminating edge, with nothing processing the forwarded headers:
 
 - `HttpContext.Request.IsHttps` is `false` → the HTTPS-required middleware returns **400 on
   every request**.
 - `HttpContext.Connection.RemoteIpAddress` is the edge's address → the global rate limiter,
   which partitions on `…:{RemoteIpAddress}`, collapses all traffic into one bucket, and
-  audit entries record the wrong IP.
+  audit entries record the edge IP instead of the client.
 
-**Why the env-only toggle is not enough.** `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`
-enables the middleware but leaves `KnownNetworks`/`KnownProxies` at their loopback default;
-Railway's edge is not on loopback relative to the container, so the forwarded headers are
-ignored.
+**Decision: `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` — no `Program.cs` edit.**
 
-**Approach for staging (safest that actually works on Railway).** Register
-`ForwardedHeadersOptions` explicitly and add the middleware first in the pipeline, gated to
-non-Development so local dev is untouched:
+Per the ASP.NET Core 10 documentation, this host-level environment variable makes the
+framework insert the Forwarded Headers middleware at the front of the pipeline with:
 
-```csharp
-// with the other builder.Services.Configure(...) calls
-builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders =
-        Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
-        Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    options.ForwardLimit = 1;          // exactly one hop: Railway edge → container
-    options.KnownNetworks.Clear();     // the edge IP is dynamic and not on loopback
-    options.KnownProxies.Clear();
-});
+- `ForwardedHeaders = XForwardedFor | XForwardedProto` (both `X-Forwarded-For` and
+  `X-Forwarded-Proto` are consumed), and
+- `KnownProxies` / `KnownNetworks` **cleared** — i.e. the middleware accepts the forwarded
+  values without the caller having to register the platform edge's (dynamic) address. This
+  is the documented cloud-hosting configuration.
 
-// immediately after `var app = builder.Build();`, BEFORE UseMiddleware<GlobalExceptionMiddleware>()
-if (!app.Environment.IsDevelopment())
-    app.UseForwardedHeaders();
-```
+After it runs, `Request.IsHttps` reflects `X-Forwarded-Proto: https`, `Request.Scheme` is
+`https`, and `RemoteIpAddress` is the client. The HTTPS-required check then passes for real
+external HTTPS traffic; the rate limiter partitions and audit IPs are per-client again.
 
-- `ForwardLimit = 1` means only the single closest `X-Forwarded-*` value is honoured — a
-  client-supplied `X-Forwarded-For`/`-Proto` further up the chain is discarded. On Railway
-  the container is reachable only through the edge, so trusting exactly that one hop is
-  correct.
-- After this runs, `Request.IsHttps` reflects `X-Forwarded-Proto: https` and
-  `Request.Scheme`/`RemoteIpAddress` are the client's. The HTTPS-required check then passes
-  for real HTTPS traffic and still blocks a genuine plain-HTTP request.
+The withdrawn proposal's explicit `builder.Services.Configure<ForwardedHeadersOptions>(…)` +
+`app.UseForwardedHeaders()` in `Program.cs` is **removed** from this design. No application
+code is touched.
 
-**Production caveat (documented, not for staging):** do **not** ship `KnownProxies.Clear()`
-to a future production environment without knowing the edge is the only ingress. For
-production, pin `KnownNetworks`/`KnownProxies` to the platform's published proxy CIDRs (or
-keep the container private and set a fixed, audited `ForwardLimit`), and never set
-`ForwardLimit = null`.
+**Staging-specific acceptance.** Clearing `KnownProxies`/`KnownNetworks` means the app
+trusts `X-Forwarded-*` from **any** upstream that can reach the container, not only a
+registered proxy. On Railway the container's `$PORT` bind is reachable only through the
+platform edge, so for **staging** this is an accepted trade-off. It is recorded here as a
+deliberate staging decision, not a default to carry forward.
 
-This is the **only** code change in this design.
+**Production must revisit this** (out of scope, §11): restrict trust to the platform's
+published proxy addresses/networks, or otherwise constrain ingress, rather than accepting
+forwarded headers from unregistered proxies. If a future change ever needs the typed API in
+.NET 10, note that `ForwardedHeadersOptions.KnownNetworks` is **obsolete** — use
+`KnownIPNetworks` (and `KnownProxies`), and never `ForwardLimit = null`.
+
+**Validation (part of the smoke, §10):** after deploy, `GET https://<host>/api/auth/csrf`
+must return **200**, not `400 {"code":"HTTPS_REQUIRED"}`. A `400 HTTPS_REQUIRED` on an
+HTTPS request means the toggle did not take effect as documented — treat that as a
+blocking finding and re-open the explicit-registration option before proceeding.
 
 ---
 
@@ -267,9 +280,21 @@ This is the **only** code change in this design.
 
 ## 8. Database (Supabase staging)
 
-- A **dedicated Supabase project for staging**. No shared credentials, no network path to
-  the production database. The connection string (§4) uses the direct endpoint on 5432
-  with `SSL Mode=Require`.
+- A **dedicated Supabase project for staging**, **region `us-east-1` (N. Virginia)** — same
+  region as the Railway service (§3), so DB round-trips stay well inside the fixed 5 s
+  Npgsql command timeout. No shared credentials, no network path to the production database.
+- **Runtime connection: Direct Connection on port 5432**, `SSL Mode=Require`, as in §4.
+  Preferred because a single always-on instance keeps a stable pool and there are no
+  transaction-pooler prepared-statement caveats.
+  - **Fallback (only if the direct connection fails to establish from Railway — e.g. IPv6
+    egress/routing issues to the direct host):** Supabase **Supavisor in Session Mode**,
+    also on **port 5432**. Session mode preserves session state and prepared statements, so
+    Npgsql behaves the same; only `Host` (and possibly `Username`, which becomes
+    `postgres.<project-ref>`) change in the connection string. `Maximum Pool Size=20` stays.
+  - **Never use Transaction Mode (port 6543).** It breaks Npgsql prepared statements and
+    session-scoped state and is explicitly excluded.
+- The connection string uses the **hostname**, not a literal IP, so DNS selects the
+  reachable address family (Railway "Outbound IPv6" is enabled, §3).
 - **Migrations run out of the application startup.** `Program.cs` never calls
   `Migrate()`/`EnsureCreated()` (explicit comment at the end of the file). The staging
   schema is created by an operator step before the first deploy that needs it:
@@ -334,80 +359,92 @@ migrations**, with `tools/GestaoPredio.AdminCli`:
 
 ## 10. Deploy order
 
-No step below is executed by this document. Order:
+No step below is executed by this document. The first implementation is run **from the
+operator machine**. Order:
 
-1. **Prepare code.** On a branch off `codex/reception-backend`: add the forwarded-headers
-   registration (§6), the `Dockerfile` + `.dockerignore` (§2). Build locally
-   (`dotnet build`, `dotnet test`, `docker build`), verify the timezone check in the image.
-   Do not push.
-2. **Create the Supabase staging project.** Record the direct 5432 connection string and
-   the `postgres` password. Pick the Supabase region.
-3. **Apply migrations** to the staging DB from the operator machine (§8). Verify
-   `__EFMigrationsHistory` head and the `unaccent` extension.
-4. **Create the Railway service** from the repo/Dockerfile. Choose the region closest to
-   the Supabase region.
+1. **Prepare code.** On a branch off `codex/reception-backend`: add **only** the root
+   `Dockerfile` + `.dockerignore` (§2) — **no application code change**. Build locally
+   (`dotnet build`, `dotnet test`, `docker build`); run `docker run --rm <image> sh -c 'TZ=America/Porto_Velho date'`
+   and confirm the app starts without a `TimeZoneNotFoundException`. Do not push.
+2. **Create the Supabase staging project** in **`us-east-1` (N. Virginia)**. Record the
+   **Direct Connection** string (port 5432) and the `postgres` password; also note the
+   Supavisor **Session Mode** host (port 5432) for the fallback (§8). Confirm the project's
+   direct-connection limit is comfortably above `Maximum Pool Size=20`.
+3. **Apply migrations** to the staging DB from the operator machine (§8) with
+   `ConnectionStrings__DefaultConnection` = the staging connection and
+   `ASPNETCORE_ENVIRONMENT=Production`. Verify `__EFMigrationsHistory` head =
+   `20260908210951_ProfessionalPresenceAndRescheduling` (all 12 recorded) and the
+   `unaccent` extension in schema `extensions`.
+4. **Create the Railway service** from the repo `Dockerfile`, **region US East (Virginia)**,
+   **replicas = 1**, **Outbound IPv6 enabled**.
 5. **Configure the volume and environment.** Mount a persistent volume at `/data`; set all
-   variables from §4; set the health check path to `/health/ready`; set replicas to 1.
+   variables from §4 (including `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`,
+   `AllowedHosts` = exact Railway host, `Rescheduling__PublicBaseUrl=https://<same host>`);
+   set the health-check path to `/health/ready`.
 6. **Deploy** the backend + embedded SPA (single build, single service).
 7. **Validate `/health`** over the public HTTPS URL → `{ "status": "Healthy" }`.
 8. **Validate `/health/ready`** → `{ "status": "Healthy" }` (confirms Supabase reachability
-   from Railway). If it is `Unhealthy`, check `ConnectionStrings__DefaultConnection`,
-   Supabase network restrictions, and SSL mode.
-9. **Bootstrap the admin** (§9): `provision-roles`, then `bootstrap-admin`.
-10. **Full smoke test through the public URL** — the same flow validated locally
+   from Railway). If `Unhealthy`: check the connection string, IPv6 egress, SSL mode, and
+   Supabase network restrictions. If the **direct** connection is the failure, switch the
+   `Host` to the Supavisor Session Mode host (§8) and redeploy.
+9. **Validate forwarded headers** (§6): `GET https://<host>/api/auth/csrf` → **200**. A
+   `400 {"code":"HTTPS_REQUIRED"}` on this HTTPS request is a blocking finding — the env
+   toggle did not behave as documented; stop and re-open the explicit-registration
+   contingency before continuing.
+10. **Bootstrap the admin** (§9): `provision-roles`, then `bootstrap-admin`.
+11. **Full smoke test through the public URL** — the flow validated locally
     (GERENTE → Operating Hours + Room; PROFISSIONAL → CUSTOM availability; CUSTOMER →
     booking → reservation; QR → Totem check-in → Visit `WAITING`; RECEPTION → start → end).
-    Watch the Railway logs for `400 HTTPS_REQUIRED` (forwarded headers wrong) or a
-    host-filter 400 (`AllowedHosts` wrong). Confirm login works (proves first-party cookies
-    over the single origin), no 500s, no request loop, no console 401 on an authenticated
-    screen.
+    Watch the Railway logs for `400 HTTPS_REQUIRED` or a host-filter 400. Confirm login
+    works (first-party cookies over the single origin), no 500s, no request loop, no
+    console 401 on an authenticated screen.
 
 ---
 
 ## 11. Out of scope (explicitly deferred)
 
-- Production deployment (separate DB, domains, secrets, Data Protection key protection,
-  possibly multi-instance → DB/blob-backed key ring — a code change at that point).
-- Certificate/KMS protection of the Data Protection key ring.
-- Object storage for private files instead of a volume.
-- CDN / long-lived caching for hashed SPA assets. Today the global
-  `Cache-Control: no-store` header (set for all responses) also lands on
-  `wwwroot/assets/**`, so the browser re-fetches the JS/CSS bundle on every load. This adds
-  latency on staging but is not broken; a production optimization is to exempt the hashed
-  `/assets/*` path from `no-store`.
-- CI/CD pipeline (there is no `.github/workflows`). Staging deploys are manual per §10.
-- Making `Npgsql` command timeout configurable (currently fixed at 5 s in `Program.cs`).
-- Automated staging data reset tooling.
+- **Production deployment** — separate DB, domains, secrets, Data Protection key
+  protection, forwarded-headers trust restriction, possibly multi-instance (→ DB/blob-backed
+  key ring, a code change at that point).
+- **Certificate/KMS protection of the Data Protection key ring.** Staging accepts
+  unencrypted-at-rest keys on the `/data` volume (§5).
+- **Forwarded-headers trust restriction.** Staging accepts `X-Forwarded-*` from any upstream
+  via `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (§6). Production must pin trust to the
+  platform's proxy addresses/networks (typed API in .NET 10: `KnownIPNetworks` /
+  `KnownProxies`; `KnownNetworks` is obsolete).
+- **`Npgsql` command timeout.** Kept at the hard-coded 5 s in `Program.cs`. Railway and
+  Supabase are co-located in US East (§3, §8), so no change now. Only revisit — as a small
+  config-driven change — if staging demonstrates a **real** timeout on a legitimate query.
+- **Object storage for private files** instead of the `/data` volume.
+- **CDN / long-lived caching for hashed SPA assets.** The global `Cache-Control: no-store`
+  header also lands on `wwwroot/assets/**`, so the browser re-fetches the JS/CSS bundle on
+  every load — extra latency on staging, not broken. A production optimization exempts the
+  hashed `/assets/*` path.
+- **CI/CD pipeline** (there is no `.github/workflows`). Staging deploys are manual per §10.
+- **Automated staging data reset tooling.**
 
 ---
 
-## 12. Open decisions (resolve before implementation)
+## 12. Decisions status
 
-1. **Railway ↔ Supabase regions.** The `Npgsql` command timeout is hard-coded at 5 s
-   (`Program.cs`: `postgres.CommandTimeout(5)`). If the Railway region and the Supabase
-   region are far apart, cold or heavier queries (availability slot generation, dashboard,
-   operational alerts) can exceed it and surface as 500s. **Decision needed:** pick a
-   Railway region adjacent to the chosen Supabase region; or accept a small code change to
-   read `Database:CommandTimeoutSeconds` from config (currently listed as out of scope).
-2. **Supabase connection: direct 5432 vs. session pooler.** This design assumes direct
-   5432 with `Maximum Pool Size=20` for a single always-on instance. Confirm the staging
-   Supabase plan's direct-connection limit is comfortably above 20, or switch to the
-   session pooler endpoint (still port 5432-style semantics; **not** the 6543 transaction
-   pooler, which has prepared-statement caveats with Npgsql).
-3. **Public host / domain.** Use the generated `*.up.railway.app` host, or attach a custom
-   staging domain now? The choice sets the exact `AllowedHosts` value and, if the reschedule
-   flow is ever exercised on staging, `Rescheduling__PublicBaseUrl`.
-4. **`verify:production-bundle` in the Docker build.** Run it (and fail the build on
-   violation) or leave it as a local pre-deploy check? Recommendation: run it in the build
-   stage.
-5. **Data Protection keys unencrypted at rest on the volume.** Accept for staging (this
-   design's assumption) or invest in certificate protection now? Recommendation: accept for
-   staging; revisit for production.
-6. **Node install method in the build stage.** NodeSource `setup_22.x` vs.
-   `COPY --from=node:22-bookworm-slim`. Low stakes; pick one at implementation time.
-7. **Where the migration + bootstrap commands run.** A developer/operator laptop with
-   network access to Supabase, or a one-shot Railway job/shell. Either works; the design
-   assumes the operator machine.
+All architecture and staging decisions are **final** (§1–§10). **No blocking design
+decision remains before the implementation plan.**
+
+Two items are **confirmed during implementation**, not resolved on paper — neither blocks
+writing the plan:
+
+1. **`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` behaviour.** The design relies on the
+   ASP.NET Core 10 documented behaviour that this toggle enables `X-Forwarded-For` +
+   `X-Forwarded-Proto` and clears `KnownProxies`/`KnownNetworks` for cloud hosting. Verified
+   empirically at deploy step §10.9 (`GET /api/auth/csrf` must be 200). **Contingency if it
+   does not hold:** fall back to an explicit `builder.Services.Configure<ForwardedHeadersOptions>`
+   + `app.UseForwardedHeaders()` gated to non-Development (using `KnownIPNetworks`, not the
+   obsolete `KnownNetworks`) — a small, isolated code change, only if the env toggle proves
+   insufficient.
+2. **Supabase Direct Connection reachability from Railway** (IPv6 egress). Verified at
+   §10.8. **Contingency:** switch `Host` to the Supavisor **Session Mode** endpoint (port
+   5432) — a connection-string change only, no code, no schema change. Transaction Mode
+   (6543) is excluded.
 
 ---
 
@@ -421,12 +458,14 @@ No step below is executed by this document. Order:
 | Antiforgery `SameSite=Strict` cookie failing cross-site | **Removed.** Antiforgery unchanged and works same-origin. |
 | `client.ts` relative `/api` needing a proxy to reach the backend | **Resolved by topology.** Same origin serves `/api` and the SPA; relative paths are correct. |
 | Two build/deploy targets (Vercel + Railway) | **Collapsed to one.** `dotnet publish` builds and embeds the SPA; one Railway service. |
-| Forwarded headers behind an edge proxy | **Still required.** §6 — the one code change, present in both designs. |
-| `AllowedHosts` localhost default | **Still required** as an env override. §4. |
+| Forwarded headers behind an edge proxy | **Configuration only.** `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (§6). The withdrawn proposal's `Program.cs` edit is removed. **No application code change.** |
+| `AllowedHosts` localhost default | **Still required** as an env override — the exact Railway host. §4. |
 | `Security__DataProtectionPath` / `Storage__PrivateFilesPath` required, persistence | **Unchanged.** §3–§4, backed by the `/data` volume. |
 | Migrations out of startup; `unaccent`; head migration | **Unchanged.** §8. |
 | First admin via `GestaoPredio.AdminCli` | **Unchanged.** §9. |
 | Meta/Intelbras must not fire | **Unchanged.** Fail-closed stubs + `Provider=Demo`. §5. |
 | Debian (not Alpine); timezone; no `InvariantGlobalization` | **Unchanged.** §2. |
+| Node availability for the SPA build during `dotnet publish` | `COPY --from=node:22-bookworm-slim` into the SDK build stage; `node`/`npm --version` validated in the build; NodeSource avoided. §2. |
+| Region / DB latency vs the 5 s command timeout | **Resolved.** Railway US East (Virginia) + Supabase `us-east-1`; timeout kept at 5 s, no code change. §3, §8, §11. |
 
 No residual dependency on Vercel remains anywhere in this document.
