@@ -21,7 +21,15 @@ export interface GetOptions {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store' })
-  if (!response.ok) throw await decodeError(response)
+  if (!response.ok) {
+    // A 401 on any call means the browser cookie is no longer authenticated (session
+    // expired, signed out elsewhere). Signal it once so the SessionProvider can
+    // revalidate and route protected areas back to the login screen instead of
+    // leaving a stale, half-broken shell on screen.
+    if (response.status === 401 && typeof window !== 'undefined')
+      window.dispatchEvent(new Event('lumis:unauthorized'))
+    throw await decodeError(response)
+  }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }

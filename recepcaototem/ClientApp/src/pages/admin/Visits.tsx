@@ -73,10 +73,17 @@ export function Visits() {
     if (professionalMode) return
     const controller = new AbortController()
     const query = { status: 'active' as const, page: 1, pageSize: 100 }
-    void professionalsApi.list(query, controller.signal).then(value => setProfessionals(value.items))
-    void roomsApi.list(query, controller.signal).then(value => setRooms(value.items))
+    // An aborted fetch (unmount / StrictMode remount) rejects with an AbortError:
+    // it is expected teardown, not an application failure, so swallow it. Surface
+    // any other failure of these filter loads on the page.
+    const onFilterError = (reason: unknown) => {
+      if ((reason as DOMException | null)?.name === 'AbortError') return
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os filtros.')
+    }
+    void professionalsApi.list(query, controller.signal).then(value => setProfessionals(value.items)).catch(onFilterError)
+    void roomsApi.list(query, controller.signal).then(value => setRooms(value.items)).catch(onFilterError)
     void reservationsApi.list({ status: 'APPROVED', page: 1, pageSize: 100 }, controller.signal)
-      .then(value => setReservations(value.items))
+      .then(value => setReservations(value.items)).catch(onFilterError)
     return () => controller.abort()
   }, [professionalMode])
 

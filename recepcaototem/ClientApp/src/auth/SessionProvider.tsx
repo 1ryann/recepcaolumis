@@ -19,6 +19,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const generation = useRef(0)
   const changingAccount = useRef(false)
   const channel = useRef<BroadcastChannel | null>(null)
+  const statusRef = useRef(status)
+  const revalidating = useRef(false)
+  statusRef.current = status
   const invalidate = useCallback(() => { generation.current++; setUser(null); setStatus('loading') }, [])
   const refresh = useCallback(async (options?: RefreshOptions) => {
     const version = ++generation.current
@@ -80,6 +83,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Revalidate silently: re-check the cookie without dropping the rendered identity.
     const revalidate = () => { if (!changingAccount.current) void refresh({ background: true }) }
     const restored = (event: PageTransitionEvent) => { if (event.persisted) revalidate() }
+    // A 401 from any API call (session expired mid-use): confirm it once against
+    // /api/auth/session. If the cookie is really gone, refresh() flips status to
+    // 'anonymous' and ProtectedRoute sends the user to login. Guarded so a burst of
+    // simultaneous 401s and the confirming call's own 401 cannot loop.
+    const onUnauthorized = () => {
+      if (changingAccount.current || revalidating.current) return
+      if (statusRef.current !== 'authenticated' && statusRef.current !== 'mustChangePassword') return
+      revalidating.current = true
+      void refresh({ background: true }).finally(() => { revalidating.current = false })
+    }
+    window.addEventListener('lumis:unauthorized', onUnauthorized)
     window.addEventListener('pageshow', restored)
     window.addEventListener('focus', revalidate)
     if (typeof BroadcastChannel !== 'undefined') {
@@ -88,6 +102,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     return () => {
       generation.current++
+      window.removeEventListener('lumis:unauthorized', onUnauthorized)
       window.removeEventListener('pageshow', restored)
       window.removeEventListener('focus', revalidate)
       channel.current?.close(); channel.current = null
