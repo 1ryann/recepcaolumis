@@ -5,7 +5,9 @@ using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
+using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Customers;
+using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
@@ -13,6 +15,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Customers;
+using recepcaototem.Features.Professionals;
 using recepcaototem.Features.Availability;
 
 namespace recepcaototem.Features.Totem;
@@ -20,6 +23,7 @@ namespace recepcaototem.Features.Totem;
 public sealed record TotemCustomerResolveRequest(string Name, string Phone) : IStrictModuleRequest;
 public sealed record TotemReservationRequest(string Name, string Phone, Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt) : IStrictModuleRequest;
 public sealed record TotemCheckInRequest(string Token) : IStrictModuleRequest;
+public sealed record TotemPresenceRequest(string Token) : IStrictModuleRequest;
 public sealed record TotemProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
 public sealed record TotemCheckInPreview(string Professional, string Room, DateTimeOffset StartAt, DateTimeOffset EndAt, bool Eligible);
 
@@ -33,7 +37,115 @@ public static class TotemEndpoints
         endpoints.MapPost("/api/totem/reservations", CreateReservation).AllowAnonymous();
         endpoints.MapPost("/api/totem/check-in/resolve", ResolveCheckIn).AllowAnonymous();
         endpoints.MapPost("/api/totem/check-in/confirm", ConfirmCheckIn).AllowAnonymous();
+        endpoints.MapPost("/api/totem/presence/confirm", ConfirmPresence).AllowAnonymous();
+        endpoints.MapGet("/api/totem/immediate", Immediate).AllowAnonymous();
         return endpoints;
+    }
+
+    private static async Task<IResult> ConfirmPresence(TotemPresenceRequest request, HttpContext context,
+        ProfessionalPresenceRateLimiter limiter, ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
+    {
+        var raw = request.Token ?? string.Empty;
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", raw, ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+
+        byte[] bytes;
+        try { bytes = WebEncoders.Base64UrlDecode(raw); } catch (FormatException) { return InvalidPresence(); }
+        if (bytes.Length != 32) return InvalidPresence();
+        var hash = SHA256.HashData(bytes);
+        var now = time.GetUtcNow();
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var token = await db.ProfessionalPresenceTokens.SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
+        if (token is null || token.RevokedAt is not null || token.UsedAt is not null || token.ExpiresAt <= now)
+            return InvalidPresence();
+
+        var professionalId = token.ProfessionalId;
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], [], [professionalId]), ct);
+
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
+        var openPresence = await db.ProfessionalPresences
+            .Where(x => x.ProfessionalId == professionalId && x.EndedAt == null)
+            .OrderByDescending(x => x.StartedAt).FirstOrDefaultAsync(ct);
+
+        if (openPresence is not null && !PresenceEvaluator.IsEffective(openPresence, operatingHours, now, timeZone))
+        {
+            var civilDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(openPresence.StartedAt, timeZone).DateTime);
+            openPresence.MaterialiseOperatingHoursEnd(
+                PresenceEvaluator.OperatingHoursEndInstant(civilDay, operatingHours, timeZone) ?? now);
+            openPresence = null;
+        }
+
+        if (openPresence is not null)
+        {
+            token.MarkUsed(now);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return Results.Ok(new { status = "PRESENT" });
+        }
+
+        var presence = ProfessionalPresence.StartByQr(professionalId, now);
+        db.ProfessionalPresences.Add(presence);
+        token.MarkUsed(now);
+        db.AuditEntries.Add(new AuditEntry
+        {
+            Id = Guid.NewGuid(),
+            Action = AuditActions.ProfessionalPresenceStarted,
+            Result = "SUCCEEDED",
+            TargetEntityType = AuditTargetTypes.ProfessionalPresence,
+            TargetEntityId = presence.Id,
+            IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+            OccurredAt = now,
+            CorrelationId = context.TraceIdentifier
+        });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(ct);
+        }
+        return Results.Ok(new { status = "PRESENT" });
+    }
+
+    private static async Task<IResult> Immediate(int? durationMinutes, HttpContext context,
+        CustomerPublicRateLimiter limiter, ApplicationDbContext db, IAppointmentAvailabilityService availability,
+        TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
+    {
+        using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", "totem-immediate", ct);
+        if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+        var duration = durationMinutes ?? 0;
+        if (duration is < 15 or > 480 || duration % 15 != 0) return Invalid();
+
+        var now = time.GetUtcNow();
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
+        var professionals = await db.Professionals.AsNoTracking().Where(x => x.IsActive)
+            .OrderBy(x => x.NormalizedName)
+            .Select(x => new TotemProfessionalResponse(x.Id, x.Name, x.Profession, x.Description))
+            .ToArrayAsync(ct);
+        if (professionals.Length == 0) return Results.Ok(Array.Empty<TotemProfessionalResponse>());
+
+        var openPresences = await db.ProfessionalPresences.AsNoTracking()
+            .Where(x => x.EndedAt == null).ToListAsync(ct);
+        var presenceByProfessional = openPresences
+            .GroupBy(x => x.ProfessionalId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(x => x.StartedAt).First());
+
+        var result = new List<TotemProfessionalResponse>();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        foreach (var professional in professionals)
+        {
+            presenceByProfessional.TryGetValue(professional.Id, out var presence);
+            if (!PresenceEvaluator.IsEffective(presence, operatingHours, now, timeZone)) continue;
+            var room = await availability.FindAvailableRoomAsync(
+                professional.Id, now, now.AddMinutes(duration), null, null, ct);
+            if (room.IsAvailable) result.Add(professional);
+        }
+        await transaction.RollbackAsync(ct);
+        return Results.Ok(result);
     }
 
     private static async Task<IResult> Professionals(ApplicationDbContext db, CancellationToken ct) =>
@@ -164,4 +276,5 @@ public static class TotemEndpoints
     private static bool WhatsApp(string input, out string phone) => GestaoPredio.Domain.Professionals.WhatsAppNormalizer.TryNormalize(input, out phone);
     private static IResult Invalid() => Results.BadRequest(new ApiError("INVALID_TOTEM_REQUEST", "Não foi possível concluir a operação."));
     private static IResult InvalidCheckIn() => Results.BadRequest(new ApiError("INVALID_CHECK_IN", "Não foi possível validar o check-in."));
+    private static IResult InvalidPresence() => Results.BadRequest(new ApiError("INVALID_PRESENCE", "Não foi possível validar a presença."));
 }
