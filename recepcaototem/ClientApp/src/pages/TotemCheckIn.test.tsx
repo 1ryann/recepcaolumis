@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemApi } from '../api/modules'
 import { useQrScanner } from '../features/totem/useQrScanner'
 import { TotemCheckIn } from './TotemCheckIn'
@@ -30,7 +30,39 @@ beforeEach(() => {
   vi.mocked(totemApi.confirmCheckIn).mockResolvedValue({ visitId: 'v1', status: 'WAITING' })
 })
 
+afterEach(() => vi.useRealTimers())
+
 const renderPage = () => render(<MemoryRouter><TotemCheckIn /></MemoryRouter>)
+
+test('renders the premium kiosk shell: brand, welcome copy and a live clock', () => {
+  renderPage()
+  expect(screen.getByRole('img', { name: 'LUMIS' })).toBeInTheDocument()
+  expect(screen.getByText('Bem-vindo')).toBeInTheDocument()
+  expect(screen.getByText(/faça seu check-in de forma simples e rápida/i)).toBeInTheDocument()
+  expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument()
+})
+
+test('each check-in option is a large target that explains what it does', () => {
+  renderPage()
+  expect(screen.getByText('Use a câmera para ler seu código')).toBeInTheDocument()
+  expect(screen.getByText('Insira manualmente o código da reserva')).toBeInTheDocument()
+})
+
+test('after a successful check-in the kiosk returns itself to the start', async () => {
+  vi.useFakeTimers()
+  vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
+  renderPage()
+  fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
+  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-AUTO' } })
+  fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  fireEvent.click(screen.getByRole('button', { name: /confirmar chegada/i }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  expect(screen.getByRole('dialog')).toHaveTextContent(/chegada registrada/i)
+  await act(async () => { await vi.advanceTimersByTimeAsync(12_000) })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: /escanear qr/i })).toHaveAttribute('aria-selected', 'true')
+})
 
 test('defaults to the scan segment; choosing manual reveals the code field and stops the camera', () => {
   renderPage()

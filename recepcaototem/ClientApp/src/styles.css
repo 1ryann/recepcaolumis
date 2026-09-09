@@ -1120,3 +1120,108 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .home-beam { animation: none; opacity: .9; }
   .home-card, .home-card-arrow, .home-team { transition: none; }
 }
+
+/* --- public Totem kiosk (/totem and /totem/check-in) --- shares the Lumis premium dark identity with the Home --- */
+.totem-kiosk {
+  --tk-bg: #181818;
+  --tk-bg-2: #1c1c1c;
+  --tk-card: #222222;
+  --tk-card-hover: #272727;
+  --tk-ink: #f2f2f2;
+  --tk-muted: #888888;
+  --tk-line: rgba(255, 255, 255, .08);
+  --tk-line-strong: rgba(255, 255, 255, .22);
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) 1fr;
+  color: var(--tk-ink);
+  background: radial-gradient(120% 90% at 12% 0%, var(--tk-bg-2), var(--tk-bg) 60%);
+}
+.totem-beam {
+  position: absolute;
+  inset: -20% -30% auto -30%;
+  height: 150%;
+  pointer-events: none;
+  background: linear-gradient(58deg, transparent 42%, rgba(255, 255, 255, .05) 49%, rgba(255, 255, 255, .11) 50%, rgba(255, 255, 255, .05) 51%, transparent 58%);
+  filter: blur(2px);
+  transform: translate3d(0, 0, 0);
+  animation: totem-beam-drift 16s ease-in-out infinite alternate;
+}
+@keyframes totem-beam-drift { from { transform: translate3d(-3%, -1.5%, 0); opacity: .7; } to { transform: translate3d(3%, 1.5%, 0); opacity: 1; } }
+
+.totem-aside { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 26px; padding: clamp(30px, 4.5vw, 56px); background: rgba(255, 255, 255, .02); border-right: 1px solid var(--tk-line); }
+.totem-aside-logo { width: clamp(120px, 13vw, 148px); height: auto; display: block; opacity: .96; }
+.totem-aside-copy { margin: auto 0; display: flex; flex-direction: column; gap: 14px; }
+.totem-aside-copy h1 { margin: 0; font-size: clamp(28px, 3.3vw, 40px); line-height: 1.1; letter-spacing: -.035em; font-weight: 620; }
+.totem-aside-copy p { margin: 0; max-width: 40ch; color: var(--tk-muted); font-size: clamp(13px, 1.5vw, 15px); line-height: 1.6; }
+.totem-eyebrow { display: inline-flex; color: var(--tk-muted); font-size: 12px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+.totem-clock { display: flex; flex-direction: column; gap: 2px; }
+.totem-clock strong { font-size: clamp(30px, 3.6vw, 44px); font-weight: 630; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.totem-clock span { color: var(--tk-muted); font-size: 12.5px; }
+
+.totem-stage { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; padding: clamp(26px, 5vw, 60px); overflow-y: auto; }
+.totem-stage-inner { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 20px; }
+.totem-stage-head h2 { margin: 6px 0; font-size: clamp(26px, 3.3vw, 38px); letter-spacing: -.035em; font-weight: 620; }
+.totem-stage-head p { margin: 0; color: var(--tk-muted); font-size: 14px; }
+
+.totem-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.totem-option { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-height: 120px; padding: 18px; color: var(--tk-ink); text-align: left; border: 1px solid var(--tk-line); border-radius: 16px; background: var(--tk-card); cursor: pointer; transition: transform .16s ease, border-color .16s ease, background-color .16s ease; }
+.totem-option:hover { transform: translateY(-2px); border-color: var(--tk-line-strong); background: var(--tk-card-hover); }
+.totem-option.is-active { border-color: #f2f2f2; background: var(--tk-card-hover); }
+.totem-option:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-option-icon { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid var(--tk-line); border-radius: 12px; background: rgba(255, 255, 255, .03); }
+.totem-option-text strong { display: block; font-size: 15px; font-weight: 750; }
+.totem-option-text small { display: block; margin-top: 3px; color: var(--tk-muted); font-size: 12px; line-height: 1.4; }
+
+.totem-scan { display: grid; gap: 12px; }
+.totem-scan-frame { width: 100%; aspect-ratio: 1 / 1; max-height: 44vh; overflow: hidden; border: 1px solid var(--tk-line); border-radius: 16px; background: #000; }
+.totem-scan-frame video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.totem-hint { margin: 0; color: var(--tk-muted); font-size: 12.5px; text-align: center; }
+
+.totem-manual { display: grid; gap: 12px; }
+.totem-field-label { color: var(--tk-ink); font-size: 13px; font-weight: 700; }
+.totem-input { width: 100%; height: 60px; padding: 0 18px; color: var(--tk-ink); border: 1px solid var(--tk-line-strong); border-radius: 14px; background: #141414; font-size: 18px; letter-spacing: .02em; outline: none; transition: border-color .16s ease, box-shadow .16s ease; }
+.totem-input::placeholder { color: #5f5f5f; }
+.totem-input:focus { border-color: #f2f2f2; box-shadow: 0 0 0 3px rgba(255, 255, 255, .12); }
+
+.totem-btn { min-height: 60px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 24px; border: 1px solid transparent; border-radius: 14px; font-size: 16px; font-weight: 750; cursor: pointer; transition: transform .16s ease, background-color .16s ease, border-color .16s ease; }
+.totem-btn:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-btn-primary { color: #181818; background: #f2f2f2; border-color: #f2f2f2; }
+.totem-btn-primary:hover:not(:disabled) { background: #ffffff; transform: translateY(-1px); }
+.totem-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.totem-btn-ghost { color: var(--tk-ink); background: transparent; border-color: var(--tk-line-strong); }
+.totem-btn-ghost:hover { background: rgba(255, 255, 255, .05); }
+.totem-btn-block { width: 100%; }
+
+.totem-alert { padding: 14px 16px; color: #f0b8b8; border: 1px solid rgba(226, 120, 120, .35); border-radius: 12px; background: rgba(226, 120, 120, .08); font-size: 13px; }
+
+.totem-preview { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--tk-line); border-radius: 16px; background: var(--tk-card); }
+.totem-preview-head { display: flex; align-items: center; gap: 8px; color: var(--tk-ink); font-size: 13px; }
+.totem-preview-row { display: flex; align-items: center; gap: 12px; padding-top: 11px; border-top: 1px solid var(--tk-line); }
+.totem-preview-row > svg { flex: none; color: var(--tk-muted); }
+.totem-preview-row small { display: block; color: var(--tk-muted); font-size: 11px; }
+.totem-preview-row strong { display: block; margin-top: 2px; font-size: 15px; }
+.totem-preview-warning { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; color: #e6c07a; font-size: 12.5px; line-height: 1.45; }
+.totem-preview-warning > svg { flex: none; margin-top: 1px; }
+
+.totem-modal-note { margin: -6px 0 2px; color: var(--muted); font-size: 11px; }
+
+@media (max-width: 900px) {
+  .totem-kiosk { grid-template-columns: 1fr; }
+  .totem-aside { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 16px 22px; border-right: 0; border-bottom: 1px solid var(--tk-line); }
+  .totem-aside-copy { margin: 0; flex: 1 1 260px; }
+  .totem-aside-copy h1 { font-size: clamp(22px, 5vw, 30px); }
+  .totem-clock { margin-left: auto; text-align: right; align-items: flex-end; }
+}
+@media (max-width: 560px) {
+  .totem-options { grid-template-columns: 1fr; }
+  .totem-option { min-height: 0; flex-direction: row; align-items: center; }
+  .totem-clock { width: 100%; margin: 0; text-align: left; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .totem-beam { animation: none; opacity: .9; }
+  .totem-option, .totem-btn, .totem-input { transition: none; }
+}

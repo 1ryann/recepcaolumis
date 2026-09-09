@@ -34,6 +34,7 @@ function ProductionApp() {
   <Route path="/cliente/login" element={<Login audience="customer" />} />
   <Route path="/cliente/cadastro" element={<CustomerRegister />} />
   <Route path="/profissional/cadastro" element={<ProfessionalRegistration />} />
+  <Route path="/totem" element={<TotemCheckIn />} />
   <Route path="/totem/check-in" element={<TotemCheckIn />} />
   <Route path="/change-password" element={<ChangePassword />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>

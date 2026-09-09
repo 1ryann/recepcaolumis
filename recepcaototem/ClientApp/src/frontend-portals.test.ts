@@ -56,6 +56,13 @@ test('customer booking and check-in use the real reservation and QR contracts', 
   expect(modulesSource).toContain("'/api/totem/check-in/confirm'")
 })
 
+test('the Totem kiosk is reachable at /totem and /totem/check-in on both route trees', () => {
+  for (const source of [appSource, developmentSource]) {
+    expect(source).toContain('<Route path="/totem" element={<TotemCheckIn />} />')
+    expect(source).toContain('<Route path="/totem/check-in" element={<TotemCheckIn />} />')
+  }
+})
+
 test('reception monitor reads the real queue and transitions visits through the API', () => {
   expect(receptionMonitorSource).toContain('receptionApi.overview')
   expect(receptionMonitorSource).toContain('receptionApi.visits')

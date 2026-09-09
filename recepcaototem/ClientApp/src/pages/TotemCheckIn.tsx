@@ -1,14 +1,18 @@
-import { ArrowLeft, ArrowRight, Camera, Check, Clock3, Keyboard, QrCode, ShieldCheck, TriangleAlert, UserRound } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { ArrowRight, Camera, Check, Clock3, Keyboard, ShieldCheck, TriangleAlert, UserRound } from 'lucide-react'
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { totemApi, type CheckInPreviewDto } from '../api/modules'
 import { Modal } from '../components/Modal'
+import { KioskClock } from '../features/totem/KioskClock'
 import { normalizeToken } from '../features/totem/normalizeToken'
 import { useQrScanner } from '../features/totem/useQrScanner'
 
 type Segment = 'scan' | 'manual'
 type Source = 'scan' | 'manual'
+
+// Seconds the "Chegada registrada" screen stays up before the kiosk resets itself
+// for the next person. It is a kiosk UI convenience only — it changes no server state.
+const AUTO_RESET_MS = 12_000
 
 const errorFor = (caught: unknown, fallback: string) =>
   caught instanceof ApiError && caught.status === 429 ? 'Muitas tentativas. Aguarde um instante.' : fallback
@@ -72,9 +76,16 @@ export function TotemCheckIn() {
     finally { setLoading(false) }
   }
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setConfirmed(false); setPreview(null); setToken(''); setError(''); setSegment('scan')
-  }
+  }, [])
+
+  // After a successful check-in the kiosk hands itself back to the next person.
+  useEffect(() => {
+    if (!confirmed) return
+    const timer = window.setTimeout(reset, AUTO_RESET_MS)
+    return () => window.clearTimeout(timer)
+  }, [confirmed, reset])
 
   const cameraStatus = cameraState === 'starting' ? 'Abrindo a câmera…'
     : cameraState === 'scanning' ? 'Aponte o QR Code para a câmera.'
@@ -83,60 +94,87 @@ export function TotemCheckIn() {
     : cameraState === 'error' ? 'Não foi possível abrir a câmera. Use o código manual.'
     : 'A câmera é aberta somente quando você inicia a leitura.'
 
-  return <main className="totem-checkin-page">
-    <header className="totem-checkin-header">
-      <Link className="customer-brand" to="/recepcao"><img src="/lumis-logo-dark.png" alt="LUMIS" /></Link>
-      <Link className="customer-back-link" to="/recepcao"><ArrowLeft size={16} /> Voltar</Link>
-    </header>
-    <section className="totem-checkin-card panel">
-      <div className="totem-checkin-mark"><QrCode size={25} /></div>
-      <span className="eyebrow">Check-in</span>
-      <h1>Já tenho agendamento</h1>
-      <p>Escaneie seu QR Code com a câmera ou digite o código para confirmar sua chegada.</p>
+  return <main className="totem-kiosk">
+    <div className="totem-beam" aria-hidden="true" />
 
-      <div className="totem-segments" role="tablist">
-        <button type="button" role="tab" aria-selected={segment === 'scan'}
-          className={`totem-segment ${segment === 'scan' ? 'is-active' : ''}`}
-          onClick={() => selectSegment('scan')}><Camera size={16} /> Escanear QR</button>
-        <button type="button" role="tab" aria-selected={segment === 'manual'}
-          className={`totem-segment ${segment === 'manual' ? 'is-active' : ''}`}
-          onClick={() => selectSegment('manual')}><Keyboard size={16} /> Digitar código</button>
+    <aside className="totem-aside">
+      <img className="totem-aside-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
+      <div className="totem-aside-copy">
+        <span className="totem-eyebrow">Bem-vindo</span>
+        <h1>Faça seu check-in de forma simples e rápida.</h1>
+        <p>Tenha em mãos o QR Code do seu agendamento. Se preferir, você pode digitar o código da reserva.</p>
       </div>
+      <KioskClock />
+    </aside>
 
-      {segment === 'scan' ? <div className="totem-scanner">
-        <div className="totem-scanner-frame"><video ref={videoRef} muted playsInline /></div>
-        <p className="totem-scanner-status" role="status">{cameraStatus}</p>
-        {cameraState === 'scanning'
-          ? <button className="secondary-button full-button" type="button" onClick={stop}>Parar leitura</button>
-          : <button className="primary-button full-button" type="button" disabled={cameraState === 'starting'} onClick={() => void start()}>
-              <Camera size={17} /> {cameraState === 'starting' ? 'Abrindo…' : 'Ativar câmera'}
-            </button>}
-      </div> : <form onSubmit={submitManual}>
-        <label className="field-label">Código do QR Code
-          <input className="field-input" value={token} onChange={(event) => setToken(event.target.value)}
-            placeholder="Cole o código aqui" autoComplete="off" />
-        </label>
-        <button className="primary-button full-button" type="submit" disabled={!token.trim() || loading}>
-          {loading ? 'Validando…' : 'Validar agendamento'} <ArrowRight size={17} />
-        </button>
-      </form>}
+    <section className="totem-stage">
+      <div className="totem-stage-inner">
+        <header className="totem-stage-head">
+          <span className="totem-eyebrow">Check-in</span>
+          <h2>Confirme sua chegada</h2>
+          <p>Escolha como quer identificar seu agendamento.</p>
+        </header>
 
-      {error && <div className="form-error" role="alert">{error}</div>}
+        <div className="totem-options" role="tablist" aria-label="Forma de check-in">
+          <button type="button" role="tab" aria-selected={segment === 'scan'}
+            aria-label="Escanear QR: use a câmera para ler seu código"
+            className={`totem-option ${segment === 'scan' ? 'is-active' : ''}`}
+            onClick={() => selectSegment('scan')}>
+            <span className="totem-option-icon" aria-hidden="true"><Camera size={26} /></span>
+            <span className="totem-option-text">
+              <strong>Escanear QR</strong>
+              <small>Use a câmera para ler seu código</small>
+            </span>
+          </button>
+          <button type="button" role="tab" aria-selected={segment === 'manual'}
+            aria-label="Digitar código: insira manualmente o código da reserva"
+            className={`totem-option ${segment === 'manual' ? 'is-active' : ''}`}
+            onClick={() => selectSegment('manual')}>
+            <span className="totem-option-icon" aria-hidden="true"><Keyboard size={26} /></span>
+            <span className="totem-option-text">
+              <strong>Digitar código</strong>
+              <small>Insira manualmente o código da reserva</small>
+            </span>
+          </button>
+        </div>
 
-      {preview && !confirmed && <div className="totem-checkin-preview">
-        <div className="totem-preview-heading"><ShieldCheck size={18} /><strong>Confirme seus dados</strong></div>
-        <div className="totem-preview-row"><UserRound size={17} /><span><small>Profissional</small><strong>{preview.professional}</strong></span></div>
-        <div className="totem-preview-row"><Clock3 size={17} /><span><small>Horário</small><strong>{new Date(preview.startAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong></span></div>
-        {!preview.eligible && <p className="totem-preview-warning"><TriangleAlert size={15} /> Este agendamento ainda não pode ser confirmado agora. Procure a recepção se precisar de ajuda.</p>}
-        <button className="secondary-button full-button" type="button" onClick={() => void confirmManually()} disabled={loading}>Confirmar chegada <Check size={17} /></button>
-      </div>}
+        {segment === 'scan' ? <div className="totem-scan">
+          <div className="totem-scan-frame"><video ref={videoRef} muted playsInline /></div>
+          <p className="totem-hint" role="status">{cameraStatus}</p>
+          {cameraState === 'scanning'
+            ? <button className="totem-btn totem-btn-ghost" type="button" onClick={stop}>Parar leitura</button>
+            : <button className="totem-btn totem-btn-primary" type="button" disabled={cameraState === 'starting'} onClick={() => void start()}>
+                <Camera size={20} aria-hidden="true" /> {cameraState === 'starting' ? 'Abrindo…' : 'Ativar câmera'}
+              </button>}
+        </div> : <form className="totem-manual" onSubmit={submitManual}>
+          <label className="totem-field-label" htmlFor="totem-code">Código do QR Code</label>
+          <input id="totem-code" className="totem-input" value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder="Cole ou digite o código" autoComplete="off" inputMode="text"
+            autoCapitalize="characters" spellCheck={false} />
+          <button className="totem-btn totem-btn-primary" type="submit" disabled={!token.trim() || loading}>
+            {loading ? 'Validando…' : 'Validar agendamento'} <ArrowRight size={20} aria-hidden="true" />
+          </button>
+        </form>}
+
+        {error && <div className="totem-alert" role="alert">{error}</div>}
+
+        {preview && !confirmed && <div className="totem-preview">
+          <div className="totem-preview-head"><ShieldCheck size={20} aria-hidden="true" /><strong>Confirme seus dados</strong></div>
+          <div className="totem-preview-row"><UserRound size={19} aria-hidden="true" /><span><small>Profissional</small><strong>{preview.professional}</strong></span></div>
+          <div className="totem-preview-row"><Clock3 size={19} aria-hidden="true" /><span><small>Horário</small><strong>{new Date(preview.startAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong></span></div>
+          {!preview.eligible && <p className="totem-preview-warning"><TriangleAlert size={17} aria-hidden="true" /> Este agendamento ainda não pode ser confirmado agora. Procure a recepção se precisar de ajuda.</p>}
+          <button className="totem-btn totem-btn-primary" type="button" onClick={() => void confirmManually()} disabled={loading}>Confirmar chegada <Check size={20} aria-hidden="true" /></button>
+        </div>}
+      </div>
     </section>
 
     <Modal open={confirmed} title="Chegada registrada" onClose={reset}>
       <div className="totem-modal-done">
-        <span className="totem-modal-icon"><Check size={30} /></span>
+        <span className="totem-modal-icon" aria-hidden="true"><Check size={30} /></span>
         <p>O profissional foi avisado. Pode aguardar, você será chamado.</p>
-        <button className="primary-button full-button" type="button" onClick={reset}>Concluir <ArrowRight size={17} /></button>
+        <p className="totem-modal-note">Esta tela volta ao início em alguns segundos.</p>
+        <button className="primary-button full-button" type="button" onClick={reset}>Concluir <ArrowRight size={17} aria-hidden="true" /></button>
       </div>
     </Modal>
   </main>
