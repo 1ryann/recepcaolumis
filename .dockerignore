@@ -1,0 +1,35 @@
+# VCS / IDE / worktrees
+.git
+.gitignore
+.vs
+.vscode
+.idea
+.worktrees
+.playwright-mcp
+
+# Build outputs (regenerated inside the image)
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.vite
+artifacts
+TestResults
+
+# Docs and specs are not needed to build the app
+docs
+
+# Secrets / local-only config — must never enter the image
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+**/secrets.json
+
+# Container build inputs themselves
+Dockerfile
+.dockerignore
