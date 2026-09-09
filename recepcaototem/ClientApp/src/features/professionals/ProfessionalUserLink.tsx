@@ -1,4 +1,5 @@
 import { CreateProfessionalAccess } from './CreateProfessionalAccess'
+import { ResetProfessionalPassword } from './ResetProfessionalPassword'
 import { useEffect, useState } from 'react'
 import type { EligibleUserDto, ProfessionalUserLinkDto } from '../../api/modules'
 
@@ -38,6 +39,7 @@ export function ProfessionalUserLink({
   return <div className="link-editor">
     {link?.linked ? <p className="link-current">Conta vinculada: <strong>{link.displayName}</strong><br /><small>{link.email}</small></p>
       : <p className="link-current">Nenhuma conta está vinculada a este profissional.</p>}
+    {link?.linked && link.userId && <ResetProfessionalPassword userId={link.userId} />}
     {professionalName && !link?.linked && <CreateProfessionalAccess name={professionalName} onCreated={userId => { setSelected(userId); onSearch(search) }} />}<label className="field-label">Buscar conta profissional
       <input className="field-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome ou e-mail" />
     </label>
