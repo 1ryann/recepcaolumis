@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemApi } from '../api/modules'
 import { useQrScanner } from '../features/totem/useQrScanner'
@@ -34,12 +34,28 @@ afterEach(() => vi.useRealTimers())
 
 const renderPage = () => render(<MemoryRouter><TotemCheckIn /></MemoryRouter>)
 
-test('renders the premium kiosk shell: brand, welcome copy and a live clock', () => {
+// Like renderPage() but also mounts a /totem sink, so navigation away from the
+// check-in route can be asserted by the presence of "ENTRY".
+const renderWithTotem = () => render(
+  <MemoryRouter initialEntries={['/totem/check-in']}>
+    <Routes>
+      <Route path="/totem/check-in" element={<TotemCheckIn />} />
+      <Route path="/totem" element={<div>ENTRY</div>} />
+    </Routes>
+  </MemoryRouter>,
+)
+
+test('renders the trimmed kiosk shell: brand and a live clock', () => {
   renderPage()
   expect(screen.getByRole('img', { name: 'LUMIS' })).toBeInTheDocument()
-  expect(screen.getByText('Bem-vindo')).toBeInTheDocument()
-  expect(screen.getByText(/faça seu check-in de forma simples e rápida/i)).toBeInTheDocument()
   expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument()
+  expect(screen.queryByText(/faça seu check-in de forma simples e rápida/i)).not.toBeInTheDocument()
+})
+
+test('the discrete Voltar control returns to /totem', async () => {
+  renderWithTotem()
+  fireEvent.click(screen.getByRole('button', { name: /voltar/i }))
+  expect(await screen.findByText('ENTRY')).toBeInTheDocument()
 })
 
 test('each check-in option is a large target that explains what it does', () => {
@@ -48,10 +64,10 @@ test('each check-in option is a large target that explains what it does', () => 
   expect(screen.getByText('Insira manualmente o código da reserva')).toBeInTheDocument()
 })
 
-test('after a successful check-in the kiosk returns itself to the start', async () => {
+test('after a successful check-in the auto-return lands on /totem', async () => {
   vi.useFakeTimers()
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
-  renderPage()
+  renderWithTotem()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
   fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-AUTO' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
@@ -61,7 +77,22 @@ test('after a successful check-in the kiosk returns itself to the start', async 
   expect(screen.getByRole('dialog')).toHaveTextContent(/chegada registrada/i)
   await act(async () => { await vi.advanceTimersByTimeAsync(12_000) })
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  expect(screen.getByRole('tab', { name: /escanear qr/i })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('ENTRY')).toBeInTheDocument()
+})
+
+test('after a successful check-in the kiosk returns to /totem (auto + Concluir)', async () => {
+  vi.useFakeTimers()
+  vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
+  renderWithTotem()
+  fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
+  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-Z' } })
+  fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  fireEvent.click(screen.getByRole('button', { name: /confirmar chegada/i }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  await act(async () => { await vi.advanceTimersByTimeAsync(12_000) })
+  expect(screen.getByText('ENTRY')).toBeInTheDocument()   // auto-return landed on /totem
 })
 
 test('defaults to the scan segment; choosing manual reveals the code field and stops the camera', () => {
@@ -117,17 +148,16 @@ test('manual entry still needs the explicit confirm click, then opens the modal'
   expect(await screen.findByRole('dialog')).toHaveTextContent(/chegada registrada/i)
 })
 
-test('concluding the modal resets the totem to the scan segment', async () => {
+test('concluding the modal returns the kiosk to /totem', async () => {
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
-  renderPage()
+  renderWithTotem()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
   fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-2' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
   fireEvent.click(await screen.findByRole('button', { name: /confirmar chegada/i }))
   fireEvent.click(await screen.findByRole('button', { name: /concluir/i }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  expect(screen.getByRole('tab', { name: /escanear qr/i })).toHaveAttribute('aria-selected', 'true')
-  expect(screen.queryByText('Dra. Ana')).not.toBeInTheDocument()
+  expect(await screen.findByText('ENTRY')).toBeInTheDocument()
 })
 
 test('leaving the page stops the camera', () => {

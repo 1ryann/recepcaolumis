@@ -1,9 +1,11 @@
 import { ArrowRight, Camera, Check, Clock3, Keyboard, ShieldCheck, TriangleAlert, UserRound } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { totemApi, type CheckInPreviewDto } from '../api/modules'
 import { Modal } from '../components/Modal'
 import { KioskClock } from '../features/totem/KioskClock'
+import { LightRays } from '../features/totem/magic/LightRays'
 import { normalizeToken } from '../features/totem/normalizeToken'
 import { useQrScanner } from '../features/totem/useQrScanner'
 
@@ -18,6 +20,7 @@ const errorFor = (caught: unknown, fallback: string) =>
   caught instanceof ApiError && caught.status === 429 ? 'Muitas tentativas. Aguarde um instante.' : fallback
 
 export function TotemCheckIn() {
+  const navigate = useNavigate()
   const [segment, setSegment] = useState<Segment>('scan')
   const [token, setToken] = useState('')
   const [preview, setPreview] = useState<CheckInPreviewDto | null>(null)
@@ -80,12 +83,16 @@ export function TotemCheckIn() {
     setConfirmed(false); setPreview(null); setToken(''); setError(''); setSegment('scan')
   }, [])
 
+  // "← Voltar", "Concluir" and the auto-return all clear the flow state and then
+  // hand the kiosk back to the decision screen at /totem.
+  const goHome = useCallback(() => { reset(); navigate('/totem') }, [reset, navigate])
+
   // After a successful check-in the kiosk hands itself back to the next person.
   useEffect(() => {
     if (!confirmed) return
-    const timer = window.setTimeout(reset, AUTO_RESET_MS)
+    const timer = window.setTimeout(goHome, AUTO_RESET_MS)
     return () => window.clearTimeout(timer)
-  }, [confirmed, reset])
+  }, [confirmed, goHome])
 
   const cameraStatus = cameraState === 'starting' ? 'Abrindo a câmera…'
     : cameraState === 'scanning' ? 'Aponte o QR Code para a câmera.'
@@ -95,15 +102,11 @@ export function TotemCheckIn() {
     : 'A câmera é aberta somente quando você inicia a leitura.'
 
   return <main className="totem-kiosk">
-    <div className="totem-beam" aria-hidden="true" />
+    <LightRays />
+    <button type="button" className="totem-back" aria-label="Voltar" onClick={goHome}>← Voltar</button>
 
     <aside className="totem-aside">
       <img className="totem-aside-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
-      <div className="totem-aside-copy">
-        <span className="totem-eyebrow">Bem-vindo</span>
-        <h1>Faça seu check-in de forma simples e rápida.</h1>
-        <p>Tenha em mãos o QR Code do seu agendamento. Se preferir, você pode digitar o código da reserva.</p>
-      </div>
       <KioskClock />
     </aside>
 
@@ -169,12 +172,12 @@ export function TotemCheckIn() {
       </div>
     </section>
 
-    <Modal open={confirmed} title="Chegada registrada" onClose={reset}>
+    <Modal open={confirmed} title="Chegada registrada" onClose={goHome}>
       <div className="totem-modal-done">
         <span className="totem-modal-icon" aria-hidden="true"><Check size={30} /></span>
         <p>O profissional foi avisado. Pode aguardar, você será chamado.</p>
         <p className="totem-modal-note">Esta tela volta ao início em alguns segundos.</p>
-        <button className="primary-button full-button" type="button" onClick={reset}>Concluir <ArrowRight size={17} aria-hidden="true" /></button>
+        <button className="primary-button full-button" type="button" onClick={goHome}>Concluir <ArrowRight size={17} aria-hidden="true" /></button>
       </div>
     </Modal>
   </main>
