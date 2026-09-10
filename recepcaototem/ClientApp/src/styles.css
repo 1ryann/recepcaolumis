@@ -1225,3 +1225,140 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .totem-beam { animation: none; opacity: .9; }
   .totem-option, .totem-btn, .totem-input { transition: none; }
 }
+
+/* ==========================================================================
+   Totem Magic UI — local, dependency-free visual-effect primitives (Task 6)
+   Dark identity; every animation is disabled under prefers-reduced-motion.
+   Tokens: #181818 #222 #272727 #f2f2f2 #888 #3d3d3d
+   BorderBeam palette is strictly #FFFFFF / #888888 / #3D3D3D.
+   ========================================================================== */
+.totem-magic-rays {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: .5;
+  background: repeating-linear-gradient(58deg, transparent 0 38px, rgba(242, 242, 242, .035) 38px 40px, transparent 40px 94px);
+  background-size: 200% 200%;
+  animation: totem-magic-rays-drift 22s linear infinite;
+}
+@keyframes totem-magic-rays-drift { from { background-position: 0% 0%; } to { background-position: 200% 100%; } }
+
+.totem-magic-fade {
+  opacity: 0;
+  transform: translateY(10px);
+  filter: blur(8px);
+  transition: opacity .5s ease, transform .5s ease, filter .5s ease;
+  will-change: opacity, transform, filter;
+}
+.totem-magic-fade.is-in { opacity: 1; transform: translateY(0); filter: blur(0); }
+
+.totem-magic-card {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  width: 100%;
+  padding: 18px;
+  color: var(--tk-ink, #f2f2f2);
+  text-align: left;
+  background: var(--tk-card, #222222);
+  border: 1px solid var(--tk-line, rgba(255, 255, 255, .08));
+  border-radius: 16px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+.totem-magic-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 50%), rgba(242, 242, 242, .1), transparent 60%);
+  transition: opacity .25s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .totem-magic-card:hover { border-color: var(--tk-line-strong, rgba(255, 255, 255, .22)); background: var(--tk-card-hover, #272727); }
+  .totem-magic-card:hover::before { opacity: 1; }
+}
+.totem-magic-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+
+@property --totem-beam-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.totem-magic-beam {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.totem-magic-beam.is-active {
+  background: conic-gradient(from var(--totem-beam-angle, 0deg), #3D3D3D 0deg, #888888 90deg, #FFFFFF 140deg, #888888 210deg, #3D3D3D 320deg) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: totem-magic-beam-spin 6s linear infinite;
+}
+@keyframes totem-magic-beam-spin { to { --totem-beam-angle: 360deg; } }
+.totem-magic-beam.is-static {
+  background: none;
+  border: 1px solid #3D3D3D;
+  -webkit-mask: none;
+  mask: none;
+  animation: none;
+}
+
+.totem-magic-progblur {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: clamp(48px, 9vw, 120px);
+  z-index: 2;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.totem-magic-progblur--left {
+  left: 0;
+  background: linear-gradient(to right, var(--tk-bg, #181818), transparent);
+  -webkit-mask: linear-gradient(to right, #000, transparent);
+  mask: linear-gradient(to right, #000, transparent);
+}
+.totem-magic-progblur--right {
+  right: 0;
+  background: linear-gradient(to left, var(--tk-bg, #181818), transparent);
+  -webkit-mask: linear-gradient(to left, #000, transparent);
+  mask: linear-gradient(to left, #000, transparent);
+}
+
+.totem-magic-ripple {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+.totem-magic-ripple:disabled { cursor: not-allowed; }
+.totem-magic-ripple-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(242, 242, 242, .28);
+  transform: scale(0);
+  pointer-events: none;
+  animation: totem-magic-ripple-pop .6s ease-out forwards;
+}
+@keyframes totem-magic-ripple-pop { to { transform: scale(1); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .totem-magic-rays { animation: none; }
+  .totem-magic-fade { transition: none; transform: none; filter: none; }
+  .totem-magic-card { transition: none; }
+  .totem-magic-card::before { transition: none; }
+  .totem-magic-beam.is-active { animation: none; }
+  .totem-magic-ripple-dot { display: none; animation: none; }
+}
