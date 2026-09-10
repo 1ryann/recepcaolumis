@@ -1268,6 +1268,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   will-change: opacity, transform, filter;
 }
 .totem-magic-fade.is-in { opacity: 1; transform: translateY(0); filter: blur(0); }
+.totem-magic-fade.is-in.is-settled { filter: none; will-change: auto; }
 
 .totem-magic-card {
   position: relative;
