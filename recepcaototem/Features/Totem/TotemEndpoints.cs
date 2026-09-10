@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using GestaoPredio.Application.Availability;
+using GestaoPredio.Application.Customers;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Notifications;
 using GestaoPredio.Application.Reservations;
@@ -271,20 +272,20 @@ public static class TotemEndpoints
         return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
     }
 
-    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
-        var result = await FindCheckIn(request.Token ?? string.Empty, db, time, ct);
+        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, ct);
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, TimeProvider time, INotificationService notifications, CancellationToken ct)
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, INotificationService notifications, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var result = await FindCheckIn(request.Token ?? string.Empty, db, time, ct);
+        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, ct);
         if (result is null) return InvalidCheckIn();
         var (token, reservation, customer, preview) = result.Value;
         var existing = await db.Visits.SingleOrDefaultAsync(
@@ -302,18 +303,30 @@ public static class TotemEndpoints
         return Results.Ok(new { visitId = visit.Id, status = "WAITING" });
     }
 
-    private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, IManualCheckInCodeHasher hasher, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        byte[] bytes; try { bytes = WebEncoders.Base64UrlDecode(raw); } catch (FormatException) { return null; }
-        if (bytes.Length != 32) return null;
-        var hash = SHA256.HashData(bytes);
+        // Dispatch by string shape (spec 7A.6): a 6-digit manual code is looked up by its keyed
+        // HMAC; anything else keeps the strong-token path (Base64Url -> 32 bytes -> SHA-256).
+        var value = (raw ?? string.Empty).Trim();
+        if (value.Length == 0) return null;
+        byte[] hash;
+        if (ManualCheckInCode.TryParse(value, out var code))
+        {
+            hash = hasher.Hash(code);
+        }
+        else
+        {
+            byte[] bytes;
+            try { bytes = WebEncoders.Base64UrlDecode(value); } catch (FormatException) { return null; }
+            if (bytes.Length != 32) return null;
+            hash = SHA256.HashData(bytes);
+        }
         var row = await (from token in db.CheckInTokens
                          join reservation in db.Reservations on token.ReservationId equals reservation.Id
                          join customer in db.Customers on reservation.CustomerId equals customer.Id
                          join professional in db.Professionals on reservation.ProfessionalId equals professional.Id
                          join room in db.Rooms on reservation.RoomId equals room.Id
-                         where token.TokenHash == hash
+                         where token.TokenHash == hash || token.ManualCodeHash == hash
                          select new { token, reservation, customer, Name = professional.Name, RoomName = room.Name }).SingleOrDefaultAsync(ct);
         if (row is null) return null;
         var now = time.GetUtcNow();
@@ -328,6 +341,6 @@ public static class TotemEndpoints
     }
     private static bool WhatsApp(string input, out string phone) => GestaoPredio.Domain.Professionals.WhatsAppNormalizer.TryNormalize(input, out phone);
     private static IResult Invalid() => Results.BadRequest(new ApiError("INVALID_TOTEM_REQUEST", "Não foi possível concluir a operação."));
-    private static IResult InvalidCheckIn() => Results.BadRequest(new ApiError("INVALID_CHECK_IN", "Não foi possível validar o check-in."));
+    private static IResult InvalidCheckIn() => Results.BadRequest(new ApiError("INVALID_CHECK_IN", "Não foi possível validar este código."));
     private static IResult InvalidPresence() => Results.BadRequest(new ApiError("INVALID_PRESENCE", "Não foi possível validar a presença."));
 }

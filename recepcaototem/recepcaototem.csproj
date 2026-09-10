@@ -11,6 +11,9 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11"><PrivateAssets>all</PrivateAssets></PackageReference>
 </ItemGroup>
 <ItemGroup>
+<InternalsVisibleTo Include="GestaoPredio.IntegrationTests" />
+</ItemGroup>
+<ItemGroup>
 <Content Remove="ClientApp/**;wwwroot/**;Pages/**;Areas/**" />
 <Content Remove="vercel.json" />
 <None Remove="ClientApp/**;wwwroot/**" />
