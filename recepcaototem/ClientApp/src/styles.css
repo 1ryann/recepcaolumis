@@ -1362,3 +1362,88 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .totem-magic-beam.is-active { animation: none; }
   .totem-magic-ripple-dot { display: none; animation: none; }
 }
+
+/* ==========================================================================
+   Totem entry — the /totem decision screen (Task 7)
+   Same dark identity as .totem-kiosk / .totem-magic-*; standalone token set so
+   it does not depend on .totem-kiosk being present.
+   Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
+   ========================================================================== */
+.totem-entry {
+  --te-bg: #181818;
+  --te-bg-2: #1c1c1c;
+  --te-card: #222222;
+  --te-card-hover: #272727;
+  --te-ink: #f2f2f2;
+  --te-muted: #888888;
+  --te-line: #3d3d3d;
+  --tk-ink: var(--te-ink);
+  --tk-muted: var(--te-muted);
+  --tk-card: var(--te-card);
+  --tk-card-hover: var(--te-card-hover);
+  --tk-line: rgba(255, 255, 255, .08);
+  --tk-line-strong: rgba(255, 255, 255, .22);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(28px, 5vh, 56px);
+  padding: clamp(28px, 6vw, 72px);
+  color: var(--te-ink);
+  background: radial-gradient(120% 90% at 50% 0%, var(--te-bg-2), var(--te-bg) 60%);
+  text-align: center;
+}
+.totem-entry-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 3.4vh, 34px);
+}
+.totem-entry-logo { width: clamp(120px, 14vw, 156px); height: auto; display: block; opacity: .96; }
+.totem-entry-eyebrow { justify-content: center; }
+.totem-entry-title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -.035em;
+  font-weight: 620;
+}
+.totem-entry-options {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 22px);
+}
+.totem-entry-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(24px, 3.2vw, 40px);
+  text-align: center;
+  border-radius: 20px;
+  font: inherit;
+}
+.totem-entry-card-icon { width: clamp(34px, 4vw, 46px); height: clamp(34px, 4vw, 46px); stroke-width: 1.5; }
+.totem-entry-card-label { font-size: clamp(17px, 2vw, 22px); font-weight: 600; letter-spacing: -.01em; }
+.totem-entry-hint { margin: 0; color: var(--te-muted); font-size: clamp(13px, 1.5vw, 15px); }
+.totem-entry-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+}
+.totem-entry-footer .totem-clock { align-items: center; text-align: center; }
+
+@media (max-width: 620px) {
+  .totem-entry-options { grid-template-columns: 1fr; }
+}

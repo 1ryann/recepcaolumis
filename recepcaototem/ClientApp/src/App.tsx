@@ -18,6 +18,7 @@ import { CustomerRegister } from './pages/customer/CustomerRegister'
 import { CustomerBooking } from './pages/customer/CustomerBooking'
 import { CustomerReservationDetail } from './pages/customer/CustomerReservationDetail'
 import { TotemCheckIn } from './pages/TotemCheckIn'
+import { TotemEntry } from './pages/TotemEntry'
 import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from './pages/professional/ProfessionalHome'
 import { ProfessionalRegistration } from './pages/professional/ProfessionalRegistration'
 import { ProfessionalApplicationStatus } from './pages/professional/ProfessionalApplicationStatus'
@@ -34,7 +35,7 @@ function ProductionApp() {
   <Route path="/cliente/login" element={<Login audience="customer" />} />
   <Route path="/cliente/cadastro" element={<CustomerRegister />} />
   <Route path="/profissional/cadastro" element={<ProfessionalRegistration />} />
-  <Route path="/totem" element={<TotemCheckIn />} />
+  <Route path="/totem" element={<TotemEntry />} />
   <Route path="/totem/check-in" element={<TotemCheckIn />} />
   <Route path="/change-password" element={<ChangePassword />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
