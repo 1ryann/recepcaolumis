@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GestaoPredio.Application.Abstractions;
 using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Visits;
@@ -127,5 +128,54 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
 
         var cards = await factory.Client.GetFromJsonAsync<List<Card>>("/api/totem/professionals");
         Assert.Equal($"/api/totem/professionals/{withPhoto}/photo", Assert.Single(cards!).PhotoUrl);
+    }
+
+    [Fact]
+    public async Task Public_photo_endpoint_streams_only_for_active_professionals()
+    {
+        await factory.ResetAsync();
+        Guid activeWithPhoto, inactiveWithPhoto, activeNoPhoto;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            var a = Professional.Create("Ativo Foto", "X", "+5569999994001", now);
+            var b = Professional.Create("Inativo Foto", "X", "+5569999994002", now);
+            var c = Professional.Create("Ativo Sem Foto", "X", "+5569999994003", now);
+            a.SetPhoto(await SeedPhotoFileAsync(db), now);
+            b.SetPhoto(await SeedPhotoFileAsync(db), now);
+            b.Deactivate(now);
+            db.Professionals.AddRange(a, b, c);
+            await db.SaveChangesAsync();
+            (activeWithPhoto, inactiveWithPhoto, activeNoPhoto) = (a.Id, b.Id, c.Id);
+        }
+
+        var ok = await factory.Client.GetAsync($"/api/totem/professionals/{activeWithPhoto}/photo");
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal("public, max-age=300", ok.Headers.CacheControl?.ToString());
+        Assert.False(string.IsNullOrEmpty(ok.Content.Headers.ContentType?.MediaType));
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.Client.GetAsync($"/api/totem/professionals/{inactiveWithPhoto}/photo")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.Client.GetAsync($"/api/totem/professionals/{activeNoPhoto}/photo")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.Client.GetAsync($"/api/totem/professionals/{Guid.NewGuid()}/photo")).StatusCode);
+    }
+
+    // Stage a real PROFESSIONAL_PHOTO file through IPrivateFileStorage (mirrors ProfessionalPhotoFailureTests)
+    // and return its PrivateFile id. The metadata row is added to the supplied context and persisted by the caller.
+    private async Task<Guid> SeedPhotoFileAsync(ApplicationDbContext db)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IPrivateFileStorage>();
+        var bytes = TestImageData.Png();
+        await using var source = new MemoryStream(bytes);
+        var staged = await storage.StageAsync(source, 5 * 1024 * 1024, CancellationToken.None);
+        var key = await storage.CommitAsync(staged, CancellationToken.None);
+        var file = PrivateFile.Create(key, "image/png", bytes.Length,
+            PrivateFilePurposes.ProfessionalPhoto, DateTimeOffset.UtcNow);
+        db.PrivateFiles.Add(file);
+        return file.Id;
     }
 }

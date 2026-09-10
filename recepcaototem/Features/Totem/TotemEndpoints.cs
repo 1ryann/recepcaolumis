@@ -33,6 +33,7 @@ public static class TotemEndpoints
     public static IEndpointRouteBuilder MapTotemEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/totem/professionals", Professionals).AllowAnonymous();
+        endpoints.MapGet("/api/totem/professionals/{id:guid}/photo", ProfessionalPhoto).AllowAnonymous();
         endpoints.MapGet("/api/totem/availability", Availability).AllowAnonymous();
         endpoints.MapPost("/api/totem/customers/resolve", ResolveCustomer).AllowAnonymous();
         endpoints.MapPost("/api/totem/reservations", CreateReservation).AllowAnonymous();
@@ -189,6 +190,18 @@ public static class TotemEndpoints
         }).ToArray();
 
         return Results.Ok(cards);
+    }
+
+    private static async Task<IResult> ProfessionalPhoto(
+        Guid id, HttpContext context, ApplicationDbContext db,
+        GestaoPredio.Application.Abstractions.IPrivateFileStorage storage,
+        ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        var professional = await db.Professionals.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
+        if (professional is null) return Results.NotFound();
+        return await recepcaototem.Features.Professionals.ProfessionalPhotoStreaming.StreamAsync(
+            professional, db, storage, loggerFactory, context, "public, max-age=300", ct);
     }
 
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,

@@ -40,33 +40,9 @@ public static class ProfessionalPhotoEndpoints
     {
         var professional = await db.Professionals.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (professional is null || professional.PhotoFileId is null) return Results.NotFound();
-
-        var metadata = await db.PrivateFiles.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == professional.PhotoFileId, cancellationToken);
-        if (metadata is null || !string.Equals(metadata.Purpose, PrivateFilePurposes.ProfessionalPhoto,
-                StringComparison.Ordinal))
-            return PhotoUnavailable(loggerFactory, context, professional.Id, professional.PhotoFileId.Value);
-
-        Stream? stream;
-        try
-        {
-            stream = await storage.OpenReadAsync(metadata.StorageKey, cancellationToken);
-            if (stream is null || !stream.CanSeek || stream.Length != metadata.Length)
-            {
-                if (stream is not null) await stream.DisposeAsync();
-                return PhotoUnavailable(loggerFactory, context, professional.Id, metadata.Id);
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return PhotoUnavailable(loggerFactory, context, professional.Id, metadata.Id);
-        }
-
-        context.Response.Headers.ContentDisposition = "inline";
-        context.Response.Headers.CacheControl = "private, no-store";
-        context.Response.Headers.XContentTypeOptions = "nosniff";
-        return Results.Stream(stream, metadata.MimeType, enableRangeProcessing: false);
+        if (professional is null) return Results.NotFound();
+        return await ProfessionalPhotoStreaming.StreamAsync(
+            professional, db, storage, loggerFactory, context, "private, no-store", cancellationToken);
     }
 
     private static async Task<IResult> Put(
