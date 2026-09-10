@@ -276,7 +276,7 @@ public static class TotemEndpoints
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
-        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, ct);
+        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: false, ct);
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
@@ -285,7 +285,7 @@ public static class TotemEndpoints
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, ct);
+        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: true, ct);
         if (result is null) return InvalidCheckIn();
         var (token, reservation, customer, preview) = result.Value;
         var existing = await db.Visits.SingleOrDefaultAsync(
@@ -303,7 +303,7 @@ public static class TotemEndpoints
         return Results.Ok(new { visitId = visit.Id, status = "WAITING" });
     }
 
-    private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, IManualCheckInCodeHasher hasher, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, IManualCheckInCodeHasher hasher, ApplicationDbContext db, TimeProvider time, bool allowUsed, CancellationToken ct)
     {
         // Dispatch by string shape (spec 7A.6): a 6-digit manual code is looked up by its keyed
         // HMAC; anything else keeps the strong-token path (Base64Url -> 32 bytes -> SHA-256).
@@ -330,7 +330,10 @@ public static class TotemEndpoints
                          select new { token, reservation, customer, Name = professional.Name, RoomName = room.Name }).SingleOrDefaultAsync(ct);
         if (row is null) return null;
         var now = time.GetUtcNow();
-        if (row.token.RevokedAt is not null || row.token.ExpiresAt <= now || row.reservation.Status != ReservationStatus.Approved || !row.customer.IsActive || now < row.reservation.StartAt.Subtract(TimeSpan.FromHours(1)) || now >= row.reservation.EndAt) return null;
+        if (row.token.RevokedAt is not null || row.token.ExpiresAt <= now
+            || (!allowUsed && row.token.UsedAt is not null)
+            || row.reservation.Status != ReservationStatus.Approved || !row.customer.IsActive
+            || now < row.reservation.StartAt.Subtract(TimeSpan.FromHours(1)) || now >= row.reservation.EndAt) return null;
         return (row.token, row.reservation, row.customer, new TotemCheckInPreview(row.Name, row.RoomName, row.reservation.StartAt, row.reservation.EndAt, true));
     }
 

@@ -150,10 +150,8 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
         var a = await factory.SeedEligibleReservationAsync();
         var ia = await a.IssueAsync();
         await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = ia.ManualCode });
-        // consumed via the manual code -> MarkUsed nulls ManualCodeHash (7A.4), so the manual
-        // representation stops resolving. The QR TokenHash survives MarkUsed (same rationale as
-        // RULING 5), so it is not asserted here — the frozen FindCheckIn gate has no UsedAt check.
-        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = ia.ManualCode })).StatusCode);
+        // consuming via the manual code invalidates the QR token (UsedAt gate)
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = ia.Token })).StatusCode);
 
         var b = await factory.SeedEligibleReservationAsync();
         var ib = await b.IssueAsync();
