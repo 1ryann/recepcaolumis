@@ -60,6 +60,7 @@ test('the Totem kiosk is reachable at /totem and /totem/check-in on both route t
   for (const source of [appSource, developmentSource]) {
     expect(source).toContain('<Route path="/totem" element={<TotemEntry />} />')
     expect(source).toContain('<Route path="/totem/check-in" element={<TotemCheckIn />} />')
+    expect(source).toContain('<Route path="/totem/profissionais" element={<TotemProfessionals />} />')
   }
   expect(totemCheckInSource).toContain('totemApi.resolveCheckIn')
   expect(totemCheckInSource).toContain('totemApi.confirmCheckIn')

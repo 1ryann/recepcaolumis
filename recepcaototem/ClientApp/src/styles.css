@@ -1621,3 +1621,142 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .totem-carousel-card { transform: none; }
   .totem-carousel-card.is-active { transform: none; }
 }
+
+/* ==========================================================================
+   Totem professionals — the /totem/profissionais screen (Task 9)
+   Kiosk shell (top bar: LUMIS logo left, KioskClock right) + LightRays + a
+   centred BlurFade column that holds either the swipe carousel with the
+   Continuar CTA and Voltar, or the loading skeletons / empty / error states.
+   Standalone token set so it does not depend on .totem-kiosk being present.
+   Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
+   ========================================================================== */
+.totem-professionals {
+  --tp-bg: #181818;
+  --tp-bg-2: #1c1c1c;
+  --tp-card: #222222;
+  --tp-card-2: #2b2b2b;
+  --tp-ink: #f2f2f2;
+  --tp-muted: #888888;
+  --tp-line: #3d3d3d;
+  --tk-line: rgba(255, 255, 255, .08);
+  --tk-line-strong: rgba(255, 255, 255, .22);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--tp-ink);
+  background: radial-gradient(120% 90% at 50% 0%, var(--tp-bg-2), var(--tp-bg) 60%);
+}
+
+.totem-professionals-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: clamp(20px, 3.5vw, 44px);
+}
+.totem-professionals-logo { width: clamp(104px, 12vw, 140px); height: auto; display: block; opacity: .96; }
+.totem-professionals-bar .totem-clock { align-items: flex-end; text-align: right; }
+
+.totem-professionals-inner {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 48px) clamp(28px, 6vh, 64px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 4vh, 44px);
+  text-align: center;
+}
+.totem-professionals-title {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -.035em;
+  font-weight: 620;
+}
+
+.totem-professionals-slot {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(16px, 3vh, 28px);
+}
+.totem-professionals-message { margin: 0; color: var(--tp-muted); font-size: clamp(14px, 1.7vw, 17px); }
+
+.totem-professionals-skeletons {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: clamp(14px, 2.4vw, 28px);
+  overflow: hidden;
+}
+.totem-skeleton-card {
+  flex: 0 0 clamp(200px, 22vw, 264px);
+  height: clamp(240px, 34vh, 320px);
+  border: 1px solid var(--tk-line);
+  border-radius: 20px;
+  background:
+    linear-gradient(100deg, var(--tp-card) 30%, var(--tp-card-2) 50%, var(--tp-card) 70%);
+  background-size: 220% 100%;
+  animation: totem-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes totem-skeleton-shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -180% 0; }
+}
+
+.totem-continue {
+  min-height: 64px;
+  min-width: clamp(220px, 30vw, 300px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 32px;
+  color: #181818;
+  background: #f2f2f2;
+  border: 1px solid #f2f2f2;
+  border-radius: 16px;
+  font-size: clamp(16px, 2vw, 19px);
+  font-weight: 750;
+  cursor: pointer;
+}
+.totem-continue:not(:disabled):hover { background: #ffffff; }
+.totem-continue:disabled { opacity: .5; cursor: not-allowed; }
+.totem-continue:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+
+.totem-back {
+  padding: 10px 18px;
+  color: var(--tp-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-size: clamp(13px, 1.6vw, 15px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .16s ease;
+}
+.totem-back:hover { color: var(--tp-ink); }
+.totem-back:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+
+@media (max-width: 720px) {
+  .totem-professionals-skeletons { gap: 12px; }
+  .totem-skeleton-card { flex-basis: clamp(150px, 62vw, 220px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .totem-skeleton-card { animation: none; background: var(--tp-card); }
+  .totem-back { transition: none; }
+}

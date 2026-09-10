@@ -18,6 +18,7 @@ import { CustomerBooking } from '../pages/customer/CustomerBooking'
 import { CustomerReservationDetail } from '../pages/customer/CustomerReservationDetail'
 import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { TotemEntry } from '../pages/TotemEntry'
+import { TotemProfessionals } from '../pages/TotemProfessionals'
 import { ProfessionalAgenda, ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from '../pages/professional/ProfessionalHome'
 import { ProfessionalRegistration } from '../pages/professional/ProfessionalRegistration'
 import { ProfessionalApplicationStatus } from '../pages/professional/ProfessionalApplicationStatus'
@@ -36,6 +37,7 @@ export default function DevelopmentApp() {
         <Route path="/profissional/cadastro" element={<ProfessionalRegistration />} />
         <Route path="/totem" element={<TotemEntry />} />
         <Route path="/totem/check-in" element={<TotemCheckIn />} />
+        <Route path="/totem/profissionais" element={<TotemProfessionals />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
           <Route path="/cliente" element={<CustomerShell />}>
