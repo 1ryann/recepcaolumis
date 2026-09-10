@@ -81,6 +81,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "10000");
         builder.UseSetting("RateLimiting:PermitLimit", "10000");
         builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
+        builder.UseSetting("CheckIn:ManualCodeHmacKey", "integration-tests-manual-code-hmac-key-not-a-secret");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();

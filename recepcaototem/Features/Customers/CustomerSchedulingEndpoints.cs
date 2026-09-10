@@ -26,6 +26,20 @@ public sealed record CustomerReservationPageResponse(ReservationResponse[] Items
 public sealed record CustomerProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
 public sealed record AvailabilitySlotResponse(DateTimeOffset StartAt, DateTimeOffset EndAt);
 
+/// <summary>
+/// RNG seam for the 6-digit manual check-in code (spec 7A.5). Kept next to the endpoint so a
+/// scripted source can be substituted per-test (Task 16); production uses <see cref="DefaultManualCodeSource"/>.
+/// </summary>
+internal interface IManualCodeSource
+{
+    ManualCheckInCode Next();
+}
+
+internal sealed class DefaultManualCodeSource : IManualCodeSource
+{
+    public ManualCheckInCode Next() => ManualCheckInCode.Generate();
+}
+
 public static class CustomerSchedulingEndpoints
 {
     public static IEndpointRouteBuilder MapCustomerSchedulingEndpoints(this IEndpointRouteBuilder endpoints)
@@ -136,7 +150,7 @@ public static class CustomerSchedulingEndpoints
     }
 
     private static async Task<IResult> IssueToken(Guid id, ClaimsPrincipal principal, HttpContext context,
-        ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
+        ApplicationDbContext db, IManualCodeSource codes, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
@@ -144,16 +158,66 @@ public static class CustomerSchedulingEndpoints
         var now = time.GetUtcNow();
         if (reservation.Status != ReservationStatus.Approved || reservation.EndAt <= now || now < reservation.StartAt.Subtract(TimeSpan.FromHours(1)))
             return Results.BadRequest(new ApiError("CHECK_IN_NOT_ELIGIBLE", "O check-in não está disponível para esta reserva."));
+
+        // Strong QR token: one CSPRNG draw, hashed once. Only the 6-digit manual code is redrawn
+        // per attempt via the bounded collision loop + lazy reclaim (spec 7A.5 / 7A.7).
         var raw = RandomNumberGenerator.GetBytes(32);
-        var hash = SHA256.HashData(raw);
-        // Task 14: replace with the 7A.5 collision loop + reclaim + the 7A.7 enriched { token, manualCode, expiresAt } response.
-        var manualCodeHash = hasher.Hash(ManualCheckInCode.Generate());
-        var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
-        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, manualCodeHash, now, reservation.EndAt));
-        else token.Rotate(hash, manualCodeHash, now, reservation.EndAt);
-        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = now, CorrelationId = context.TraceIdentifier });
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });
+        var tokenHash = SHA256.HashData(raw);
+
+        // One shared budget: each iteration draws exactly one code, so total codes.Next() calls <= maxAttempts.
+        // A still-resolvable collision (continue) and a unique-violation race (caught DbUpdateException) each
+        // spend one iteration of this same loop; both exhaustion routes converge on the single 503 below.
+        const int maxAttempts = 5;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var code = codes.Next();
+            var manualCodeHash = hasher.Hash(code);
+
+            var clash = await db.CheckInTokens
+                .SingleOrDefaultAsync(x => x.ReservationId != id && x.ManualCodeHash == manualCodeHash, ct);
+            if (clash is not null)
+            {
+                var resolvable = clash.RevokedAt == null && clash.UsedAt == null && clash.ExpiresAt > now;
+                if (resolvable)
+                {
+                    // Real collision with a live credential -> redraw, spending this attempt (7A.5 step 5).
+                    await transaction.RollbackAsync(ct);
+                    db.ChangeTracker.Clear();
+                    continue;
+                }
+                // Stale colliding row -> lazy reclaim in this same transaction; keep the code (7A.5 step 6).
+                clash.ClearManualCode();
+            }
+
+            var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
+            if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, tokenHash, manualCodeHash, now, reservation.EndAt));
+            else token.Rotate(tokenHash, manualCodeHash, now, reservation.EndAt);
+
+            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = now, CorrelationId = context.TraceIdentifier });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), manualCode = code.Value, expiresAt = reservation.EndAt });
+            }
+            catch (DbUpdateException)
+            {
+                // A concurrent issuer won the unique-violation race on UX_CheckInTokens_ManualCodeHash
+                // (7A.5 step 7). Roll back and fall through: the SAME attempt budget covers this retry.
+                await transaction.RollbackAsync(ct);
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        // Budget exhausted (7A.5 step 8): 503 + CHECK_IN_TOKEN_ISSUE_FAILED audit — no code, no hash.
+        await using (var failTransaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUE_FAILED", Result = "FAILED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = now, CorrelationId = context.TraceIdentifier });
+            await db.SaveChangesAsync(ct);
+            await failTransaction.CommitAsync(ct);
+        }
+        return Results.Json(new ApiError("CHECK_IN_CODE_UNAVAILABLE", "Não foi possível gerar o código agora. Tente novamente."), statusCode: 503);
     }
 
     private static async Task<IResult> RescheduleReservation(Guid id, CustomerReservationRescheduleRequest request, ClaimsPrincipal principal,

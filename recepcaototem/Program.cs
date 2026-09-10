@@ -73,6 +73,7 @@ builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGene
 builder.Services.Configure<ManualCheckInCodeHashingOptions>(
     builder.Configuration.GetSection(ManualCheckInCodeHashingOptions.SectionName));
 builder.Services.AddSingleton<IManualCheckInCodeHasher, HmacManualCheckInCodeHasher>();
+builder.Services.AddSingleton<IManualCodeSource, DefaultManualCodeSource>();
 var operationalTimeZoneId = builder.Configuration["Scheduling:TimeZoneId"];
 if (string.IsNullOrWhiteSpace(operationalTimeZoneId))
     throw new InvalidOperationException("Scheduling:TimeZoneId must be configured.");
