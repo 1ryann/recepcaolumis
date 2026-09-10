@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useEffect, useState } from 'react'
-import { MemoryRouter, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { vi } from 'vitest'
 import { SessionProvider, useSession } from '../auth/SessionProvider'
 import { apiClient, ApiError } from '../api/client'
@@ -200,4 +200,42 @@ test('role guard still redirects a disallowed role after the one-time validation
  expect(await screen.findByText('customer home')).toBeInTheDocument()
  expect(screen.queryByText('salas page')).not.toBeInTheDocument()
  expect(screen.queryByTestId('admin-shell')).not.toBeInTheDocument()
+})
+
+// --- returnUrl is carried into the customer login redirect, never the staff one ---
+
+test('anonymous on a /cliente route redirects to /cliente/login with an encoded returnUrl', async () => {
+ vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+ function CustomerLoginSink() {
+  const location = useLocation()
+  return <p data-testid="customer-login-sink">{location.search}</p>
+ }
+ render(<MemoryRouter initialEntries={['/cliente/agendar?professionalId=abc']}><SessionProvider><Routes>
+  <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
+   <Route path="/cliente/agendar" element={<p>booking content</p>} />
+  </Route>
+  <Route path="/cliente/login" element={<CustomerLoginSink />} />
+ </Routes></SessionProvider></MemoryRouter>)
+ const sink = await screen.findByTestId('customer-login-sink')
+ expect(sink.textContent).toBe('?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dabc')
+ expect(decodeURIComponent(new URLSearchParams(sink.textContent ?? '').get('returnUrl') ?? '')).toBe('/cliente/agendar?professionalId=abc')
+ expect(screen.queryByText('booking content')).not.toBeInTheDocument()
+})
+
+test('anonymous on a staff route redirects to /login WITHOUT returnUrl', async () => {
+ vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+ function StaffLoginSink() {
+  const location = useLocation()
+  return <p data-testid="staff-login-sink">{`search=${location.search}`}</p>
+ }
+ render(<MemoryRouter initialEntries={['/admin']}><SessionProvider><Routes>
+  <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
+   <Route path="/admin" element={<p>admin content</p>} />
+  </Route>
+  <Route path="/login" element={<StaffLoginSink />} />
+ </Routes></SessionProvider></MemoryRouter>)
+ const sink = await screen.findByTestId('staff-login-sink')
+ expect(sink.textContent).toBe('search=')
+ expect(sink.textContent).not.toContain('returnUrl')
+ expect(screen.queryByText('admin content')).not.toBeInTheDocument()
 })

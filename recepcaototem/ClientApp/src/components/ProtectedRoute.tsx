@@ -35,7 +35,13 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
 
   if (!validatedOnce) return <div className="route-loading" role="status">Carregando…</div>
   if (status === 'error') return <div role="alert">Não foi possível confirmar a sessão. <button onClick={() => void refresh()}>Tentar novamente</button></div>
-  if (status === 'anonymous') return <Navigate to={location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'} state={{ from: location.pathname }} replace />
+  if (status === 'anonymous') {
+    const base = location.pathname.startsWith('/cliente') ? '/cliente/login' : '/login'
+    const to = base === '/cliente/login'
+      ? `${base}?returnUrl=${encodeURIComponent(location.pathname + location.search)}`
+      : base
+    return <Navigate to={to} state={{ from: location.pathname }} replace />
+  }
   if (status === 'mustChangePassword') return <Navigate to="/change-password" replace />
   if (allowedRoles && user && !allowedRoles.some((role) => user.roles.includes(role))) {
     return <Navigate to={homeForRoles(user.roles)} replace />

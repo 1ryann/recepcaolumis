@@ -1,8 +1,9 @@
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { customerApi } from '../../api/modules'
+import { safeCustomerReturnUrl } from '../../auth/returnUrl'
 
 const passwordHint = 'Use pelo menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'
 
@@ -16,6 +17,8 @@ function isValidCustomerPassword(password: string) {
 
 export function CustomerRegister() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const returnUrl = safeCustomerReturnUrl(params.get('returnUrl'))
   const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', confirmation: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
@@ -32,7 +35,7 @@ export function CustomerRegister() {
     setLoading(true)
     try {
       await customerApi.register({ ...form, name })
-      navigate('/cliente/login', { replace: true, state: { registered: true } })
+      navigate(`/cliente/login${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''}`, { replace: true, state: { registered: true } })
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 429) setError('Muitas tentativas. Aguarde um pouco e tente novamente.')
       else setError('Não foi possível criar sua conta. Confira os dados e tente novamente.')

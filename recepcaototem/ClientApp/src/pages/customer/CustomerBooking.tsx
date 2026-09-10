@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3, UserRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { customerApi, type AvailabilitySlotDto, type CustomerProfessionalDto } from '../../api/modules'
 
@@ -17,6 +17,7 @@ function timeLabel(value: string) {
 
 export function CustomerBooking() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const [professionals, setProfessionals] = useState<CustomerProfessionalDto[]>([])
   const [professionalId, setProfessionalId] = useState('')
   const [date, setDate] = useState(todayInputValue)
@@ -30,7 +31,8 @@ export function CustomerBooking() {
   useEffect(() => {
     customerApi.professionals().then((items) => {
       setProfessionals(items)
-      if (items[0]) setProfessionalId(items[0].id)
+      const preselect = params.get('professionalId')
+      setProfessionalId(items.some((i) => i.id === preselect) ? preselect! : (items[0]?.id ?? ''))
     }).catch(() => setError('Não foi possível carregar os profissionais.')).finally(() => setLoading(false))
   }, [])
 
