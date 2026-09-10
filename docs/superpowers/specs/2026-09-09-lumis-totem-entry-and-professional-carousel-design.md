@@ -331,13 +331,14 @@ endpoints.MapGet("/api/totem/professionals/{id:guid}/photo", ProfessionalPhoto).
 
 **Decisão (aprovada):** o token forte do QR e o código manual de 6 dígitos são **duas representações da mesma credencial** — a única linha `CheckInToken` da reserva. `IssuedAt`, `ExpiresAt`, `RevokedAt`, `UsedAt` são **compartilhados**. Consequências, todas automáticas por serem a mesma linha:
 
-- Check‑in por **qualquer um** dos dois → `token.MarkUsed(now)` na linha → o **outro** para de resolver (gate `UsedAt`/`FindCheckIn`).
+- Check‑in por **qualquer um** dos dois → `token.MarkUsed(now)` na linha → `ManualCodeHash = null` **e** `UsedAt` setado → o **outro** para de resolver (gate `UsedAt`/`FindCheckIn`) e a combinação de 6 dígitos volta ao pool.
 - **Rotacionar** (nova chamada a `IssueToken`) substitui **os dois** hashes e zera `RevokedAt`/`UsedAt` → QR antigo **e** código antigo morrem juntos.
-- **Cancelar/remarcar** → `Revoke` na linha → os dois inválidos. Remarcação cria nova reserva sem `CheckInToken` → nova credencial só quando o cliente solicitar.
+- **Cancelar/remarcar** → `Revoke` na linha → `ManualCodeHash = null` + `RevokedAt` setado → os dois inválidos e o código liberado. Remarcação cria nova reserva sem `CheckInToken` → nova credencial só quando o cliente solicitar.
+- A regra de elegibilidade é **uma só** (7A.6): não há regra separada para QR vs manual.
 
-### 7A.3 Representação do `manualCode`
+### 7A.3 Representação do `manualCode` (value object puro — sem hashing)
 
-Novo value object `GestaoPredio.Domain.Customers.ManualCheckInCode`:
+Novo value object `GestaoPredio.Domain.Customers.ManualCheckInCode`. Responsabilidade **apenas**: `Generate`, `TryParse`/validação, `Value`. **Não** faz hashing (o hash keyed é serviço próprio — 7A.3b) e **não** lê `IConfiguration`.
 
 ```csharp
 public readonly struct ManualCheckInCode
@@ -362,42 +363,102 @@ public readonly struct ManualCheckInCode
         return true;
     }
 
-    public byte[] Hash() =>
-        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(Value));
-
     public override string ToString() => Value;
 }
 ```
 
 - **Nunca `int`.** `string` de 6 dígitos preserva `"004821"`.
 - RNG: `RandomNumberGenerator.GetInt32` (criptográfico, uniforme por rejeição).
-- Hash: **SHA‑256 do texto ASCII de 6 dígitos**, 32 bytes — mesmo padrão de `TokenHash`. Tradeoff registrado em **7A.9**.
+- **Sem método `Hash()`.** O hash persistido é produzido por `IManualCheckInCodeHasher` (7A.3b) — HMAC‑SHA‑256 com segredo do servidor.
 
-### 7A.4 Persistência — estender `CheckInToken` (sem tabela nova)
+### 7A.3b Hash keyed — `IManualCheckInCodeHasher` (HMAC‑SHA‑256)
 
-Extensão limpa da entidade e da configuração (não cria tabela):
+**Decisão (obrigatória):** SHA‑256 puro é insuficiente para um segredo de apenas 1.000.000 combinações — um vazamento do banco permitiria pré‑computar `000000..999999` e recuperar todos os `manualCodes` ativos por força bruta **offline**. Usar **HMAC‑SHA‑256 com segredo dedicado do servidor**.
+
+```
+ManualCodeHash = HMACSHA256(serverSecret, Encoding.ASCII.GetBytes(manualCode.Value))   // 32 bytes
+```
+
+Abstração (em `GestaoPredio.Application`, não no domínio):
+
+```csharp
+public interface IManualCheckInCodeHasher
+{
+    byte[] Hash(ManualCheckInCode code);   // determinístico, 32 bytes, indexável
+}
+```
+
+Implementação (`GestaoPredio.Infrastructure`), via **Options pattern** (consistente com os demais `IOptions` do projeto):
+
+```csharp
+public sealed class ManualCheckInCodeHashingOptions
+{
+    public const string SectionName = "CheckIn";     // seção "CheckIn"
+    public string ManualCodeHmacKey { get; set; } = "";   // chave "CheckIn:ManualCodeHmacKey" / env CheckIn__ManualCodeHmacKey
+}
+
+internal sealed class HmacManualCheckInCodeHasher : IManualCheckInCodeHasher
+{
+    private readonly byte[] _key;
+    public HmacManualCheckInCodeHasher(IOptions<ManualCheckInCodeHashingOptions> options, IHostEnvironment env)
+    {
+        var configured = options.Value.ManualCodeHmacKey;
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            if (env.IsProduction())
+                throw new InvalidOperationException(
+                    "CheckIn:ManualCodeHmacKey ausente. O código de check-in de 6 dígitos exige um segredo HMAC dedicado em Production.");
+            configured = "dev-only-manual-check-in-hmac-key-do-not-use-in-prod";   // determinístico e explícito só fora de Production
+        }
+        _key = Encoding.UTF8.GetBytes(configured);
+    }
+
+    public byte[] Hash(ManualCheckInCode code) =>
+        HMACSHA256.HashData(_key, Encoding.ASCII.GetBytes(code.Value));
+}
+```
+
+- **Determinístico:** mesmo `(código, chave)` → mesmo hash → lookup por igualdade de `byte[]` (indexável), sem plaintext no banco.
+- **Fail‑closed em Production:** chave ausente → o app **não sobe** (exceção no ctor durante a resolução do serviço) / a emissão falha — nunca silenciosamente cai para um default.
+- **Development/Test:** segredo determinístico explícito. As factories de teste (`ModulesApiFactory` etc.) **injetam** `CheckIn:ManualCodeHmacKey` (valor fixo de teste) via configuração — não dependem do fallback.
+- **Sem rotação de chave neste MVP.** Registrado em 7A.11: se a chave for perdida/trocada, `manualCodes` emitidos antes **deixam de resolver**; os **QR tokens fortes continuam válidos** (hash independente, sem chave) e o cliente pode gerar nova credencial.
+- Segredo: dedicado da aplicação — **nunca** a senha do banco, JWT secret improvisado, DataProtection key lida manualmente, nem valor hardcoded (o fallback de dev é explícito e só fora de Production). Nunca logado, nunca em auditoria.
+- DI: `services.Configure<ManualCheckInCodeHashingOptions>(config.GetSection("CheckIn"))` + `services.AddSingleton<IManualCheckInCodeHasher, HmacManualCheckInCodeHasher>()`, onde os demais serviços da feature são registrados.
+
+### 7A.4 Persistência — `ManualCodeHash` é um valor TRANSITÓRIO
+
+Estende `CheckInToken` (sem tabela nova). O `ManualCodeHash` **só existe enquanto o código pode precisar resolver** — é zerado assim que a credencial é usada ou revogada, liberando de volta aquela combinação das 1.000.000.
 
 - `CheckInToken`: novo campo `public byte[]? ManualCodeHash { get; private set; }`.
-- `Create` e `Rotate` ganham o parâmetro `byte[] manualCodeHash` (32 bytes, obrigatório em emissões novas). Assinaturas:
-  - `Create(Guid reservationId, byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)`
-  - `Rotate(byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)` — substitui **ambos** os hashes, zera `RevokedAt`/`UsedAt`.
-  - Validação: `manualCodeHash?.Length == 32` (mesma regra de `tokenHash`).
-- EF (`CheckInTokenConfiguration`): `Property(x => x.ManualCodeHash).HasColumnType("bytea")` (**nullable**); `HasIndex(x => x.ManualCodeHash).IsUnique().HasFilter("\"ManualCodeHash\" IS NOT NULL").HasDatabaseName("UX_CheckInTokens_ManualCodeHash")` — **índice único parcial** (único entre linhas com `ManualCodeHash` não nulo).
+- Assinaturas / lifecycle:
+  - `Create(Guid reservationId, byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)` — `ManualCodeHash = manualCodeHash`.
+  - `Rotate(byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)` — substitui **ambos** os hashes; `RevokedAt`/`UsedAt` → `null`.
+  - `MarkUsed(at)` — além de setar `UsedAt`, **`ManualCodeHash = null`**.
+  - `Revoke(at)` — além de setar `RevokedAt`, **`ManualCodeHash = null`**.
+  - novo `ClearManualCode()` (interno ao domínio) — usado pelo **reclaim preguiçoso** (7A.5) quando uma linha obsoleta é liberada durante a geração; não mexe em `RevokedAt`/`UsedAt`.
+  - Validação: `tokenHash.Length == 32`; `manualCodeHash.Length == 32` quando não nulo.
+  - `TokenHash` **não** é zerado por `MarkUsed`/`Revoke` — o QR continua sendo o registro histórico da credencial; a elegibilidade compartilhada (`UsedAt`/`RevokedAt`/`ExpiresAt`) é o que impede nova chegada. `ManualCodeHash` some porque a combinação de 6 dígitos precisa voltar ao pool.
+- Consequência: **cancelamento** (`Revoke`) e **remarcação** (`Revoke` na credencial antiga; nova reserva sem linha) **liberam** o código imediatamente. **Check‑in** por QR **ou** manual (`MarkUsed`) libera o código imediatamente e o QR deixa de permitir nova chegada.
+- EF (`CheckInTokenConfiguration`): `Property(x => x.ManualCodeHash).HasColumnType("bytea")` (**nullable**); `HasIndex(x => x.ManualCodeHash).IsUnique().HasFilter("\"ManualCodeHash\" IS NOT NULL").HasDatabaseName("UX_CheckInTokens_ManualCodeHash")` — **índice único parcial**.
 - **Migration:** exigida — **documentada na seção 26**, **não criada nesta etapa**.
 
-### 7A.5 Unicidade / colisão
+### 7A.5 Unicidade / colisão / reclaim preguiçoso
 
-Espaço de apenas 1.000.000 combinações. Garantias divididas:
+Espaço de 1.000.000 combinações. Garantias divididas:
 
-- **No banco (garantia dura):** `UX_CheckInTokens_ManualCodeHash` (único parcial, não nulo) ⇒ um hash de código manual mapeia para **no máximo uma** linha `CheckInToken` em qualquer instante — **resolução nunca ambígua**. Isso vale para **todas** as linhas (ativas, revogadas, usadas, expiradas): uma linha revogada/usada ainda "reserva" seu hash até ser rotacionada.
-  - Índice **parcial** (`WHERE "ManualCodeHash" IS NOT NULL`) porque linhas pré‑migration têm `ManualCodeHash = NULL` (a condição "ativo/não expirado" **não** cabe num índice: `now()` não é imutável no PostgreSQL).
-- **Na aplicação (garantia de UX + concorrência):** loop de geração em `IssueToken`:
-  1. `ManualCheckInCode.Generate()` (CSPRNG).
-  2. `hash = code.Hash()`.
-  3. Consulta: existe **outra** linha `CheckInToken` com `ManualCodeHash == hash` **e ainda resolvível** (`RevokedAt == null && UsedAt == null && ExpiresAt > now`)? Se sim → colisão → tenta de novo.
-  4. `SaveChanges`: se um emissor concorrente pegou o mesmo valor, o `UPDATE`/`INSERT` viola `UX_CheckInTokens_ManualCodeHash` → `DbUpdateException` → captura → tenta de novo.
-  5. **Máximo 5 tentativas.** Excedido → `Results.Json(new ApiError("CHECK_IN_CODE_UNAVAILABLE", "Não foi possível gerar o código agora. Tente novamente."), statusCode: 503)` + auditoria `CHECK_IN_TOKEN_ISSUE_FAILED` (**sem** valor). Com poucas centenas de credenciais ativas contra 1M, P(colisão) por tentativa < 0,001; exaustão de 5 tentativas é praticamente impossível.
-- **Escopo de unicidade adotado:** unicidade **entre códigos ainda resolvíveis** (a garantia do banco é mais forte — global — e é o backstop; a condição "resolvível" é aplicada na consulta da app + no gate de resolve).
+- **No banco (garantia dura, contra race):** `UX_CheckInTokens_ManualCodeHash` (único parcial, não nulo) ⇒ um hash mapeia para **no máximo uma** linha com `ManualCodeHash` não nulo — **resolução nunca ambígua** e barreira final contra corrida entre emissores concorrentes.
+  - Índice **parcial** (`WHERE "ManualCodeHash" IS NOT NULL`) porque `ManualCodeHash` é nulo em linhas pré‑migration **e** em toda credencial já usada/revogada/reclamada (a condição "ativo/não expirado" não cabe num índice: `now()` não é imutável no PostgreSQL).
+- **Na aplicação — geração com reclaim preguiçoso** (dentro da **mesma transação** de `IssueToken`):
+  1. `code = source.Next()` (CSPRNG por padrão — 7A.9).
+  2. `hash = hasher.Hash(code)` (`IManualCheckInCodeHasher`, HMAC).
+  3. Buscar a linha `CheckInToken` (se houver) com `ManualCodeHash == hash` **e** `ReservationId != <reserva atual>`.
+  4. **Nenhuma linha** → usar `code`.
+  5. **Linha ainda resolvível** (`RevokedAt == null && UsedAt == null && ExpiresAt > now`) → colisão real → voltar ao passo 1.
+  6. **Linha obsoleta** (`RevokedAt != null` **ou** `UsedAt != null` **ou** `ExpiresAt <= now`) → chamar `stale.ClearManualCode()`, marcar para persistir **na mesma transação**, e usar `code`. (Cobre o caso `ExpiresAt < now && UsedAt == null && RevokedAt == null && ManualCodeHash != null` — expirado não utilizado não reserva o código para sempre.)
+  7. `Create`/`Rotate` a linha da reserva com `hash` e `SaveChanges`. Se um emissor concorrente cravou o mesmo valor entre os passos 3 e 7, o `INSERT`/`UPDATE` viola `UX_CheckInTokens_ManualCodeHash` → `DbUpdateException` → captura → voltar ao passo 1.
+  8. **Máximo 5 tentativas.** Excedido → `Results.Json(new ApiError("CHECK_IN_CODE_UNAVAILABLE", "Não foi possível gerar o código agora. Tente novamente."), statusCode: 503)` + auditoria `CHECK_IN_TOKEN_ISSUE_FAILED` (**sem** valor/hash). Com o volume esperado, exaustão é praticamente impossível.
+- **Sem job/cleanup global/background.** O reclaim é **preguiçoso** — só acontece quando um candidato colide com uma linha obsoleta.
+- **Escopo de unicidade:** entre credenciais **ainda resolvíveis** (índice parcial = garantia dura; o reclaim mantém o pool livre de linhas obsoletas que colidiram).
 
 ### 7A.6 Resolve — endpoint único, regra única
 
@@ -405,24 +466,24 @@ Espaço de apenas 1.000.000 combinações. Garantias divididas:
 
 ```
 raw = (request.Token ?? "").Trim()
-se ManualCheckInCode.TryParse(raw, out code)  →  lookup por ManualCodeHash == code.Hash()
+se ManualCheckInCode.TryParse(raw, out code)  →  lookup por ManualCodeHash == hasher.Hash(code)   (IManualCheckInCodeHasher, HMAC)
 senão                                         →  caminho atual: Base64UrlDecode → 32 bytes → SHA256 → lookup por TokenHash
 ```
 
-- `FindCheckIn` passa a receber "por qual hash procurar", mas o **restante é idêntico**: mesmos joins, **mesmo gate de elegibilidade**, mesmo retorno `(CheckInToken, Reservation, Customer, TotemCheckInPreview)`. **Não há segundo conjunto de regras.**
-- `ManualCodeHash == null` (linha pré‑migration) nunca casa com um input de 6 dígitos.
+- `FindCheckIn` passa a receber "por qual hash procurar" (o do token forte, calculado como hoje; **ou** o do código manual, via `IManualCheckInCodeHasher`), mas o **restante é idêntico**: mesmos joins, **mesmo gate de elegibilidade**, mesmo retorno `(CheckInToken, Reservation, Customer, TotemCheckInPreview)`. **Não há segundo conjunto de regras.**
+- `ManualCodeHash == null` (linha pré‑migration, **ou** credencial já usada/revogada/reclamada) nunca casa com um input de 6 dígitos.
 - Um token forte é Base64Url de 32 bytes (43 chars) — **nunca** 6 dígitos; sem ambiguidade de despacho.
 - `ConfirmCheckIn` usa o **mesmo despacho** e o **mesmo `FindCheckIn`**; idempotência, criação de `Visit` e `MarkUsed` inalterados.
 - **Resposta pública para código manual inválido/expirado/consumido/inexistente:** `400` `ApiError("INVALID_CHECK_IN", "Não foi possível validar este código.")`. **Sem** distinguir "existe mas expirou" / "existe mas foi usado" / reserva específica / qualquer dado antes de uma resolução elegível — mesma não‑divulgação que o caminho do token forte.
 
 ### 7A.7 Emissão / exibição
 
-`IssueToken` (mesmo gate de elegibilidade atual — **reutilizado, não duplicado**):
+`IssueToken` (mesmo gate de elegibilidade atual — **reutilizado, não duplicado**; tudo numa transação):
 
 1. Gera token forte (atual: 32 bytes CSPRNG → SHA‑256).
-2. Gera `ManualCheckInCode` com o loop da **7A.5** → `manualCodeHash`.
-3. Linha única da reserva: `Create(id, tokenHash, manualCodeHash, now, reservation.EndAt)` **ou** `Rotate(tokenHash, manualCodeHash, now, reservation.EndAt)`.
-4. Auditoria `CHECK_IN_TOKEN_ISSUED` inalterada — **sem** token, **sem** código.
+2. Obtém `ManualCheckInCode` via `IManualCodeSource` (default CSPRNG) e resolve colisão/reclaim pelo loop da **7A.5**, calculando `manualCodeHash = IManualCheckInCodeHasher.Hash(code)` (HMAC).
+3. Linha única da reserva: `Create(id, tokenHash, manualCodeHash, now, reservation.EndAt)` **ou** `Rotate(tokenHash, manualCodeHash, now, reservation.EndAt)`. Qualquer `stale.ClearManualCode()` do passo de reclaim é persistido na **mesma** transação.
+4. Auditoria `CHECK_IN_TOKEN_ISSUED` inalterada — **sem** token, **sem** código, **sem** hash.
 5. Resposta **enriquecida**: `{ token: "<base64url>", manualCode: "482731", expiresAt: "<reservation.EndAt>" }`.
 
 - **Plaintext do `manualCode` só nessa resposta.** Nunca persistido, nunca logado, nunca auditado.
@@ -451,12 +512,23 @@ O plaintext **não** é armazenado, logo **não é recuperável**. Reexibir = **
 
 - `resolve` e `confirm` já usam `CustomerPublicRateLimiter` com chave `(ip, token)`. Orçamento efetivo: a **partição por IP** limita o total a `RateLimiting:CustomerIpPermitLimit` (**default 30 / 60 s**) **independentemente** de variar o palpite; a partição por identificador (15/60 s por hash de código distinto) é secundária.
 - 1.000.000 combinações. A 30 palpites/min/IP, o número esperado de palpites para acertar **um código específico** ≈ 500.000 → ≈ **11,5 dias** de abuso contínuo em taxa máxima de um único IP — e o código expira em `reservation.EndAt` (horas). Abuso distribuído entre IPs é o risco residual aceito (sem CAPTCHA neste MVP, por decisão).
-- **Decisão:** manter `CustomerPublicRateLimiter` como está (**não** afrouxar, **não** endurecer). Testes obrigatórios: N chamadas rápidas de `resolve` do mesmo IP → `429` no limite. Knob opcional documentado: baixar `RateLimiting:CustomerIpPermitLimit` (só config, sem código).
-- **Hash SHA‑256 puro** do código de 6 dígitos: comprometimento do banco já é catastrófico (o atacante teria `Reservations`/`Customers`); o valor de um código manual roubado é baixo (fazer um check‑in). Ataque online é limitado pelo rate limit. Endurecimento opcional (fora do MVP): HMAC‑SHA‑256 com pepper do servidor.
+- **Decisão:** manter `CustomerPublicRateLimiter` como está para o MVP (**não** afrouxar, **não** endurecer). Testes obrigatórios: N chamadas rápidas de `resolve` do mesmo IP → `429` no limite. Knob opcional documentado: baixar `RateLimiting:CustomerIpPermitLimit` (só config, sem código). **Sem CAPTCHA nesta fase.**
+- **Offline (vazamento de banco):** mitigado por **HMAC‑SHA‑256 com segredo do servidor** (7A.3b) — sem a chave, pré‑computar `000000..999999` não recupera nenhum `manualCode`. A chave não está no banco.
+- **Online distribuído (vários IPs):** risco residual **aceito nesta fase** (sem CAPTCHA). Mitigantes intrínsecos: espaço de 1M, expiração em `reservation.EndAt` (horas), reclaim que reduz a janela de linhas obsoletas, erro genérico sem sinal de "perto".
 
 ### 7A.10 Logs / auditoria
 
-- O plaintext dos 6 dígitos **nunca** aparece em `AuditEntries` (o audit de emissão continua sem valor) nem em `ILogger` (nenhuma interpolação do código em log). O gerador loga apenas contagem de tentativas / falha — nunca o valor.
+- O plaintext dos 6 dígitos e o `ManualCodeHash` **nunca** aparecem em `AuditEntries` (o audit de emissão/falha continua sem valor) nem em `ILogger`. O **segredo HMAC** (`CheckIn:ManualCodeHmacKey`) **nunca** é logado nem auditado. O gerador loga apenas contagem de tentativas / resultado — nunca o valor, o hash ou a chave.
+
+### 7A.11 Segredo HMAC — configuração, ambientes, perda de chave
+
+- **Nome de configuração:** seção `CheckIn`, chave `ManualCodeHmacKey` → `CheckIn:ManualCodeHmacKey` (env `CheckIn__ManualCodeHmacKey`), via **Options pattern** (`ManualCheckInCodeHashingOptions`, 7A.3b).
+- **Origem:** configuração/secret dedicado da aplicação. **Nunca**: senha do banco, JWT secret improvisado, DataProtection key lida manualmente, valor hardcoded (o fallback de dev é explícito e só ativa fora de `Production`).
+- **Nunca commitado** (fica em user‑secrets/variável de ambiente/secret manager), **nunca logado**, **nunca em auditoria**.
+- **Fail‑closed em `Production`:** chave ausente/vazia → `HmacManualCheckInCodeHasher` lança na construção → o serviço não resolve → a app não sobe / a emissão retorna erro. Nunca cai silenciosamente para um default.
+- **Development/Test:** segredo determinístico explícito. As factories de teste injetam `CheckIn:ManualCodeHmacKey` (valor fixo) na configuração de teste; não dependem do fallback.
+- **Sem rotação de chave neste MVP.**
+- **Perda / troca de chave:** `manualCodes` emitidos **antes** deixam de resolver (hash não bate). Os **QR tokens fortes continuam válidos** (hash SHA‑256 sem chave). O cliente resolve gerando nova credencial (`IssueToken` → novo par). Nenhuma migração de dados é necessária; nenhuma `Visit` já criada é afetada.
 
 ---
 
@@ -742,12 +814,12 @@ Reutilizar `src/features/totem/KioskClock.tsx` tal como está. Timezone `America
 - Nenhuma infraestrutura nova (sem novo limiter, sem novo storage, sem novo bucket público).
 - CSP: `img-src 'self'` já cobre `/api/totem/professionals/{id}/photo`. O carrossel **não** depende de `font-src`/`worker-src`.
 
-Código manual de 6 dígitos (detalhe em 7A.5, 7A.9, 7A.10):
+Código manual de 6 dígitos (detalhe em 7A.3b, 7A.5, 7A.9, 7A.10, 7A.11):
 
-- Hash SHA‑256 do texto de 6 dígitos; **plaintext nunca persistido/logado/auditado**.
-- Unicidade: índice único parcial `UX_CheckInTokens_ManualCodeHash` (garantia dura no banco) + loop de geração com retry limitado (garantia de UX/concorrência).
-- Brute force: `resolve`/`confirm` mantêm `CustomerPublicRateLimiter` (≈ 30 tentativas/min/IP); teste obrigatório de `429`; **sem CAPTCHA**; sem afrouxar a UX do Totem.
-- Resolve de código inválido/expirado/consumido/inexistente: `400` genérico `"Não foi possível validar este código."` — zero divulgação.
+- **Hash keyed HMAC‑SHA‑256** com segredo do servidor (`CheckIn:ManualCodeHmacKey`, fail‑closed em `Production`); `plaintext`, hash e chave **nunca** persistidos em claro/logados/auditados.
+- Unicidade: índice único parcial `UX_CheckInTokens_ManualCodeHash` (garantia dura) + geração com **reclaim preguiçoso** de linhas obsoletas + retry limitado (`máx 5` → `503`). `ManualCodeHash` é **transitório** — zerado em `MarkUsed`/`Revoke`, liberando a combinação.
+- Brute force offline: mitigado pelo HMAC. Online: `resolve`/`confirm` mantêm `CustomerPublicRateLimiter` (≈ 30/min/IP); teste obrigatório de `429`; **sem CAPTCHA**; abuso distribuído = risco residual aceito.
+- Resolve de código inválido/expirado/consumido/revogado/inexistente: `400` genérico `"Não foi possível validar este código."` — zero divulgação.
 
 ---
 
@@ -791,14 +863,19 @@ O plano de implementação **não** deve incluir edição de CSP. Reportar o sta
 | `recepcaototem/Features/Professionals/ProfessionalPhotoEndpoints.cs` | `Get` passa a delegar ao helper (cache `private, no-store`); sem mudança de comportamento. |
 | `tests/GestaoPredio.UnitTests/TotemProfessionalStatusTests.cs` | **novo** — matriz da regra de status. |
 | `tests/GestaoPredio.IntegrationTests/TotemProfessionalsCarouselTests.cs` | **novo** — endpoint list + foto (ver seção 22.1). |
-| `src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs` | **novo** — value object (Generate/TryParse/Hash). |
-| `src/GestaoPredio.Domain/Customers/CheckInToken.cs` | `ManualCodeHash: byte[]?`; `Create`/`Rotate` recebem `manualCodeHash` (32 bytes). |
+| `src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs` | **novo** — value object **puro** (Generate / TryParse / Value). Sem `Hash()`, sem `IConfiguration`. |
+| `src/GestaoPredio.Application/Customers/IManualCheckInCodeHasher.cs` | **novo** — `byte[] Hash(ManualCheckInCode code)`. |
+| `src/GestaoPredio.Application/Customers/ManualCheckInCodeHashingOptions.cs` | **novo** — Options (`CheckIn:ManualCodeHmacKey`). |
+| `src/GestaoPredio.Infrastructure/Customers/HmacManualCheckInCodeHasher.cs` | **novo** — HMAC‑SHA‑256; fail‑closed em `Production`; fallback determinístico só fora de `Production`. |
+| `recepcaototem/Program.cs` (DI) **ou** o módulo de composição existente | `Configure<ManualCheckInCodeHashingOptions>(config.GetSection("CheckIn"))` + `AddSingleton<IManualCheckInCodeHasher, HmacManualCheckInCodeHasher>()` + `AddSingleton<IManualCodeSource, DefaultManualCodeSource>()`. **Apenas registro de serviços — não tocar na CSP (linha 141).** |
+| `src/GestaoPredio.Domain/Customers/CheckInToken.cs` | `ManualCodeHash: byte[]?`; `Create`/`Rotate` recebem `manualCodeHash` (32 bytes); `MarkUsed`/`Revoke` **zeram** `ManualCodeHash`; novo `ClearManualCode()` (reclaim). |
 | `src/GestaoPredio.Infrastructure/Persistence/Configurations/CheckInTokenConfiguration.cs` | mapear `ManualCodeHash` (nullable) + índice único parcial `UX_CheckInTokens_ManualCodeHash`. |
 | `src/GestaoPredio.Infrastructure/Persistence/Migrations/PostgreSql/<timestamp>_CheckInManualCode.cs` | **novo** — `dotnet ef migrations add CheckInManualCode`; **não aplicar** a staging/produção (ver seção 26). |
-| `recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs` | `IssueToken`: gerar `ManualCheckInCode` + loop de colisão/retry + `Create`/`Rotate` com os dois hashes + resposta `{ token, manualCode, expiresAt }`. |
-| `recepcaototem/Features/Totem/TotemEndpoints.cs` | `FindCheckIn`/`ResolveCheckIn`/`ConfirmCheckIn`: despacho por forma (`ManualCheckInCode.TryParse` → lookup `ManualCodeHash`; senão caminho atual `TokenHash`); mesmo gate; erro genérico `"Não foi possível validar este código."`. |
-| `tests/GestaoPredio.UnitTests/ManualCheckInCodeTests.cs` | **novo** — 6 dígitos, zeros à esquerda, RNG, hash, `TryParse` (ver 22.4). |
-| `tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` | **novo** — emissão, resolve/confirm, QR↔manual, cancel/remarcação, colisão/retry, rate limit, ausência em log/audit (ver 22.4). |
+| `recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs` | `IssueToken`: `IManualCodeSource` + `IManualCheckInCodeHasher` + loop de colisão **com reclaim preguiçoso** (7A.5), tudo na transação + `Create`/`Rotate` com os dois hashes + resposta `{ token, manualCode, expiresAt }`. |
+| `recepcaototem/Features/Totem/TotemEndpoints.cs` | `FindCheckIn`/`ResolveCheckIn`/`ConfirmCheckIn`: despacho por forma (`ManualCheckInCode.TryParse` → lookup `ManualCodeHash == IManualCheckInCodeHasher.Hash(code)`; senão `TokenHash`); mesmo gate; erro genérico `"Não foi possível validar este código."`. |
+| `tests/GestaoPredio.UnitTests/ManualCheckInCodeTests.cs` | **novo** — 6 dígitos, zeros à esquerda, RNG, `TryParse` (ver 22.4). |
+| `tests/GestaoPredio.UnitTests/HmacManualCheckInCodeHasherTests.cs` | **novo** — determinismo, key‑sensitivity, ≠ SHA‑256 puro, fail‑closed em `Production`, fallback só fora de `Production` (ver 22.4). |
+| `tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` | **novo** — emissão, resolve/confirm, QR↔manual, cancel/remarcação, **lifecycle transitório**, **reclaim de expirado**, colisão/retry, rate limit, ausência de valor/hash/segredo em log/audit (ver 22.4). |
 
 ### Frontend
 | Arquivo | Ação |
@@ -905,28 +982,42 @@ expect(modulesSource).toContain("'/api/totem/professionals'")
 
 `ManualCheckInCodeTests` (unit, puro):
 - `Generate()` retorna string de **exatamente 6** caracteres, todos `[0-9]`.
-- zeros à esquerda preservados: forçando o RNG (ou repetindo N vezes) aparece pelo menos um `"0…"`; nunca vira `int` (comprimento sempre 6).
-- distribuição básica: 10.000 gerações → todos com 6 dígitos, `>` 9.000 valores distintos (sanidade de RNG, sem afirmar uniformidade exata).
+- zeros à esquerda preservados: 10.000 gerações → aparece pelo menos um `"0…"`; comprimento sempre 6; nunca vira `int`.
+- distribuição básica: 10.000 gerações → `>` 9.000 valores distintos (sanidade de RNG).
 - `TryParse`: `"482731"`→ok; `"004821"`→ok (valor preservado); `"48273"`, `"4827311"`, `"48a731"`, `" 482731 "` (trim→ok), `null`, `""` → conforme regra.
-- `Hash()` = SHA‑256 (32 bytes), determinístico; `Hash()` de `"004821"` ≠ `Hash()` de `"4821"`.
+- **`ManualCheckInCode` não expõe `Hash()`** — a struct não tem membro de hashing.
 
-`CheckInManualCodeTests` (integração, `ModulesApiFactory`, cliente autenticado + Totem anônimo):
+`HmacManualCheckInCodeHasherTests` (unit):
+- **Determinismo:** `Hash(code)` com a **mesma** chave, duas vezes → mesmo `byte[]` (32 bytes); `SequenceEqual`.
+- **Key‑sensitivity:** mesma `code`, chave A vs chave B → hashes **diferentes**.
+- **≠ SHA‑256 puro:** `Hash("482731")` ≠ `SHA256(ASCII("482731"))`.
+- **Zeros à esquerda distinguem:** `Hash("004821")` ≠ `Hash("048210")`.
+- **Fail‑closed em `Production`:** `IHostEnvironment` = Production + `ManualCodeHmacKey` vazio/ausente → o ctor de `HmacManualCheckInCodeHasher` lança `InvalidOperationException`.
+- **Fallback só fora de `Production`:** environment = Development/Staging + chave vazia → usa o segredo determinístico de dev, **não** lança; environment = Production + chave presente → ok.
+- **Segredo não vaza:** a exceção de fail‑closed **não** contém o valor da chave; nada loga a chave.
+
+`CheckInManualCodeTests` (integração, `ModulesApiFactory` com `CheckIn:ManualCodeHmacKey` de teste fixo injetada, cliente autenticado + Totem anônimo):
 - **Emissão:** `POST /api/customer/reservations/{id}/check-in-token` retorna `{ token, manualCode, expiresAt }`; `manualCode` casa `^\d{6}$`; `token` é o Base64Url atual; `manualCode` ≠ `token`.
-- **Plaintext não persistido:** nenhuma coluna de `CheckInTokens` contém `manualCode`; a linha tem `ManualCodeHash` = `SHA256(ASCII(manualCode))` e `TokenHash` = hash do token.
-- **Resolve/confirm por código:** `POST /api/totem/check-in/resolve { token: manualCode }` dentro da janela de elegibilidade → `200` com o mesmo `preview` do QR; `confirm` cria `Visit` (`WAITING`), idempotente numa segunda chamada.
-- **Regra única:** resolve por `manualCode` e resolve pelo `token` forte da **mesma** reserva retornam `preview` equivalente.
+- **Hash correto e não plaintext:** a linha `CheckInTokens` tem `ManualCodeHash` = `HMACSHA256(chaveDeTeste, ASCII(manualCode))` (recomputado no teste) e `TokenHash` = SHA‑256 do token; **nenhuma** coluna contém a string de 6 dígitos.
+- **Mesmo `manualCode` + mesma chave → mesmo hash** (recomputa e casa com a linha). **Chave diferente → hash diferente** (recomputa com outra chave e **não** casa).
+- **Resolve/confirm por código:** `POST /api/totem/check-in/resolve { token: manualCode }` dentro da janela → `200` com o mesmo `preview` do QR; `confirm` cria `Visit` (`WAITING`), idempotente numa 2ª chamada.
+- **Regra única:** resolve por `manualCode` e resolve pelo `token` forte da **mesma** reserva → `preview` equivalente.
 - **QR ↔ manual (mesma credencial):**
-  - confirmar via `manualCode` → depois `resolve`/`confirm` do **token QR** correspondente → `400` genérico.
-  - confirmar via **token QR** → depois `resolve`/`confirm` do `manualCode` → `400` genérico.
-  - reemitir (`IssueToken` de novo) → `manualCode` **e** token **anteriores** → `400` genérico; o novo par resolve.
-- **Erros genéricos:** `manualCode` inexistente / de 6 dígitos aleatórios / expirado (`ExpiresAt` no passado) / já consumido → sempre `400 ApiError("INVALID_CHECK_IN", "Não foi possível validar este código.")`; corpo **não** revela existência/estado/reserva.
-- **Cancelamento:** `POST /api/customer/reservations/{id}/cancel` → `manualCode` e token → `400` genérico.
-- **Remarcação:** `POST /api/customer/reservations/{id}/reschedule` → credencial anterior (ambos) inválida; a **nova** reserva não tem `CheckInToken` até nova emissão.
-- **Colisão/retry:** com um `CheckInToken` ativo cujo `ManualCodeHash` é conhecido, forçar o gerador a produzir esse valor uma vez (RNG injetável/seam de teste) → a emissão **tenta de novo** e conclui com um código diferente; ultrapassar o limite de tentativas → `503 CHECK_IN_CODE_UNAVAILABLE` (sem vazar valor) + audit `CHECK_IN_TOKEN_ISSUE_FAILED`.
-- **Concorrência:** duas emissões concorrentes para reservas diferentes não produzem duas linhas com o mesmo `ManualCodeHash` (índice único parcial dispara → retry).
-- **Rate limit:** `> CustomerIpPermitLimit` chamadas rápidas de `/api/totem/check-in/resolve` do mesmo IP com códigos de 6 dígitos → `429` (espelha teste de limite existente).
-- **Sem vazamento:** varrer `AuditEntries` após emissão/resolve/confirm — nenhum registro contém a string de 6 dígitos; nenhum log capturado contém o valor (usar `ILogger` fake/coletor como nos testes existentes).
-- **Sem regressão do QR:** os testes atuais de `TotemPresenceApiTests`/`CustomerApiTests`/`ReservationWorkflowTests` continuam verdes; o fluxo do token forte é idêntico.
+  - confirmar via `manualCode` → `resolve`/`confirm` do **token QR** correspondente → `400` genérico; a linha tem `UsedAt != null` e **`ManualCodeHash == null`**.
+  - confirmar via **token QR** → `resolve`/`confirm` do `manualCode` → `400` genérico; **`ManualCodeHash == null`**.
+  - reemitir → `manualCode` **e** token **anteriores** → `400`; o novo par resolve.
+- **Lifecycle transitório:**
+  - após `MarkUsed` (confirm) → `ManualCodeHash == null`; **`TokenHash` permanece** (histórico) mas o QR não permite nova chegada.
+  - após `Revoke` (cancel/reschedule) → `ManualCodeHash == null`.
+  - **Cancelamento libera o código:** cancelar a reserva, depois emitir uma **nova** credencial para **outra** reserva e forçar o gerador a produzir o mesmo 6‑dígitos → **resolve** (não colide, porque a linha antiga foi liberada).
+  - **Remarcação libera o código:** análogo.
+- **Reclaim de expirado (não utilizado):** semear um `CheckInToken` de outra reserva com `ExpiresAt` no passado, `UsedAt == null`, `RevokedAt == null`, `ManualCodeHash != null`; forçar o gerador a produzir esse mesmo código → a emissão **reclama** (`ClearManualCode` na linha obsoleta, mesma transação) e **usa** o código; a linha obsoleta fica com `ManualCodeHash == null`.
+- **Ainda resolvível NÃO é reclaimed:** linha de outra reserva ainda dentro da janela e não usada/revogada → forçar colisão → a emissão **gera outro** código (não limpa a linha alheia).
+- **Concorrência:** duas emissões concorrentes para reservas diferentes não geram duas linhas com o mesmo `ManualCodeHash` (índice único parcial dispara → retry). Após 5 tentativas todas colidindo (source com script fixo) → `503 CHECK_IN_CODE_UNAVAILABLE` + audit `CHECK_IN_TOKEN_ISSUE_FAILED` **sem** valor/hash.
+- **Erros genéricos:** `manualCode` inexistente / 6 dígitos aleatórios / expirado / consumido / revogado → sempre `400 ApiError("INVALID_CHECK_IN", "Não foi possível validar este código.")`; corpo **não** revela existência/estado/reserva.
+- **Rate limit:** `> CustomerIpPermitLimit` chamadas rápidas de `/api/totem/check-in/resolve` do mesmo IP com códigos de 6 dígitos → `429`.
+- **Sem vazamento:** varrer `AuditEntries` após emissão/resolve/confirm/falha — nenhum registro contém a string de 6 dígitos, o `ManualCodeHash` (hex), nem o valor da chave HMAC; idem nos logs capturados (`ILogger` coletor).
+- **QR sem regressão:** `TotemPresenceApiTests`/`CustomerApiTests`/`ReservationWorkflowTests` continuam verdes; o fluxo do token forte é idêntico; **o QR continua resolvendo mesmo depois de `ManualCodeHash` ter sido limpo** por um lifecycle que não consumiu a credencial? — não aplicável: o único caminho que limpa `ManualCodeHash` sem invalidar a credencial é o **reclaim** de uma linha **de outra reserva** já obsoleta (cujo QR já não resolvia). Teste: reclaim de linha obsoleta não afeta o QR de nenhuma credencial ainda válida.
 
 ### 22.5 Frontend — código manual de 6 dígitos
 
@@ -969,13 +1060,16 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 9. **Carrossel e Magic UI:** componentes locais, sem lib nova (CSP). Classes `totem-carousel-*` (distintas de `lumis-gallery*` do mock dev).
 10. **CSP:** pré‑requisito separado; o plano não edita `Program.cs`; câmera/QR não é "pronto" até a CSP mudar.
 11. **Foto — status codes:** `404` só para inexistente / inativo / sem foto / `Purpose` errado; **`503`** para falha real de I/O/storage (comportamento histórico preservado pelo helper). Nunca forçar `404` por indisponibilidade de storage.
-12. **Código manual = mesma credencial do QR.** Uma linha `CheckInToken` por reserva carrega `TokenHash` **e** `ManualCodeHash`; `Used/Revoked/Expires` compartilhados. Consumir ou invalidar um invalida o outro; rotacionar troca os dois.
-13. **Representação do `manualCode`:** `string` de 6 dígitos (nunca `int`), zeros à esquerda preservados; `RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6")`; hash SHA‑256 do texto ASCII; plaintext só na resposta de emissão, nunca persistido/logado/auditado.
-14. **Persistência:** estender `CheckInToken` com `ManualCodeHash byte[]?` + índice único **parcial** `UX_CheckInTokens_ManualCodeHash` (`WHERE ... IS NOT NULL`). **Migration exigida** — documentada na seção 26, **não criada** nesta etapa.
-15. **Unicidade:** garantia dura no banco (índice único parcial → hash mapeia ≤ 1 linha, sempre); garantia de UX/concorrência na aplicação (loop de geração: gera → checa conflito com códigos ainda resolvíveis → retry, **máx 5** → `503` controlado). Escopo: unicidade entre credenciais ainda resolvíveis.
-16. **Reexibição — Estratégia A:** plaintext não recuperável ⇒ reexibir = reemitir; o botão "Gerar QR Code" já rotaciona e passa a rotacionar o par; o par anterior morre na reemissão.
-17. **Resolve — endpoint e regra únicos:** `POST /api/totem/check-in/resolve` (forma inalterada) despacha por forma da string (`^\d{6}$` → `ManualCodeHash`; senão `TokenHash`) para o **mesmo** `FindCheckIn` e o **mesmo** gate. Erro público único: `"Não foi possível validar este código."` (zero divulgação).
-18. **Rate limit:** manter `CustomerPublicRateLimiter` no `resolve`/`confirm` (≈ 30/min/IP). Testes de `429`. Sem CAPTCHA. Hash SHA‑256 puro do código (tradeoff em 7A.9; HMAC/pepper = endurecimento futuro).
+12. **Código manual = mesma credencial do QR.** Uma linha `CheckInToken` por reserva carrega `TokenHash` **e** (transitoriamente) `ManualCodeHash`; `Used/Revoked/Expires` compartilhados. Consumir ou invalidar um invalida o outro; rotacionar troca os dois.
+13. **Representação do `manualCode`:** value object **puro** `ManualCheckInCode` — `string` de 6 dígitos (nunca `int`), zeros à esquerda preservados; `RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6")`. **Não** tem `Hash()` nem lê `IConfiguration`.
+14. **Hash keyed:** `IManualCheckInCodeHasher` (Application) + `HmacManualCheckInCodeHasher` (Infrastructure) = **HMAC‑SHA‑256 com segredo do servidor** (`CheckIn:ManualCodeHmacKey`, Options pattern). Determinístico, 32 bytes, indexável, sem plaintext. **Fail‑closed em `Production`** se a chave faltar; fallback determinístico **só fora de `Production`**; **sem rotação** no MVP. Perda de chave → `manualCodes` antigos param de resolver, **QR forte continua**, cliente reemite. Segredo nunca commitado/logado/auditado.
+15. **Persistência TRANSITÓRIA:** `CheckInToken.ManualCodeHash byte[]?` + índice único **parcial** `UX_CheckInTokens_ManualCodeHash` (`WHERE ... IS NOT NULL`). `MarkUsed` e `Revoke` **zeram** `ManualCodeHash` (código volta ao pool); `Rotate` troca; novo `ClearManualCode()` para o reclaim. `TokenHash` nunca é zerado. **Migration exigida** — seção 26, **não criada** nesta etapa.
+16. **Unicidade + reclaim preguiçoso:** garantia dura no banco (índice único parcial → hash mapeia ≤ 1 linha ativa). Na geração (mesma transação): candidato colide com linha **ainda resolvível** → gera outro; colide com linha **obsoleta** (usada/revogada/expirada) → `ClearManualCode()` na obsoleta + reutiliza o candidato. `máx 5` tentativas → `503 CHECK_IN_CODE_UNAVAILABLE`. **Sem job/cleanup global.**
+17. **Reexibição — Estratégia A:** plaintext não recuperável ⇒ reexibir = reemitir; o botão "Gerar QR Code" já rotaciona e passa a rotacionar o par; o par anterior morre na reemissão.
+18. **Resolve — endpoint e regra únicos:** `POST /api/totem/check-in/resolve` (forma inalterada) despacha por forma da string (`^\d{6}$` → `ManualCodeHash == IManualCheckInCodeHasher.Hash(code)`; senão `TokenHash`) para o **mesmo** `FindCheckIn` e o **mesmo** gate. Erro público único: `"Não foi possível validar este código."` (zero divulgação).
+19. **Rate limit:** manter `CustomerPublicRateLimiter` no `resolve`/`confirm` (≈ 30/min/IP) para o MVP. Testes de `429`. **Sem CAPTCHA.** Offline mitigado por HMAC (decisão 14); online distribuído = risco residual **aceito nesta fase**.
+20. **Auditoria/logs do código manual:** emissão/falha auditadas **sem** valor/hash; nada loga o `manualCode`, o `ManualCodeHash` ou a chave HMAC.
+21. **Concorrência:** o índice único parcial é a barreira final; `DbUpdateException` (unique violation) → retry dentro do limite de 5.
 
 ---
 
@@ -985,8 +1079,11 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 - **Carrossel sem lib**: risco de inconsistência de snap entre navegadores; mitigado usando `scroll-snap` nativo + `scrollTo` programático e cobrindo teclado/drag por teste.
 - **`returnUrl`**: risco de open redirect; mitigado por `safeCustomerReturnUrl` — allowlist estrita fixa em `/cliente`, colapso de multi‑encoding, rejeição de `<esquema>://` / `//` / backslash / `..` / controle, path e query validados por regex de caracteres seguros + bateria explícita de testes negativos (seção 22.2).
 - **Foto pública**: risco de vazar arquivo não‑foto; mitigado por checagem de `Purpose` + `IsActive` + id→profissional, e teste negativo.
-- **Código manual — brute force**: 1M combinações; mitigado por rate limit por IP (≈ 30/min → ≈ 11,5 dias para um código específico) + expiração em `reservation.EndAt` + erro genérico. Residual aceito: abuso distribuído por múltiplos IPs (sem CAPTCHA no MVP). Endurecimento futuro: HMAC+pepper, contador de falhas por IP.
-- **Código manual — colisão**: 1M espaço; mitigado por índice único parcial (banco) + loop de geração com retry limitado (app); exaustão de 5 tentativas → `503` controlado, praticamente impossível com o volume esperado.
+- **Código manual — brute force offline (vazamento de banco)**: mitigado por **HMAC‑SHA‑256 com segredo do servidor** (a chave não está no banco) — pré‑computar `000000..999999` sem a chave não recupera nada.
+- **Código manual — brute force online**: 1M combinações; rate limit por IP (≈ 30/min → ≈ 11,5 dias para um código específico) + expiração em `reservation.EndAt` + erro genérico + reclaim (janela menor de linhas obsoletas). Residual aceito **nesta fase**: abuso distribuído por múltiplos IPs (sem CAPTCHA). Endurecimento futuro: contador de falhas por IP.
+- **Perda/troca da chave HMAC**: `manualCodes` antigos deixam de resolver; **QR forte continua**; cliente reemite. Sem migração de dados, sem `Visit` afetada. Sem rotação automatizada no MVP.
+- **Código manual — colisão**: 1M espaço; índice único parcial (banco) + geração com **reclaim preguiçoso** de linhas obsoletas + retry limitado (app); exaustão de 5 → `503` controlado, praticamente impossível com o volume esperado. Sem job de limpeza.
+- **`ManualCodeHash` transitório**: some em `MarkUsed`/`Revoke` e no reclaim; o único caminho que o limpa sem invalidar a credencial é o reclaim de uma linha **de outra reserva já obsoleta** (cujo QR já não resolvia) — coberto por teste.
 - **Migration `CheckInManualCode`**: coluna aditiva nullable + índice parcial; linhas antigas seguem QR‑only até a próxima emissão; rollback = drop index + drop column, sem migração de dados. Não aplicar a staging/produção nesta feature (seção 26).
 
 ---
@@ -999,7 +1096,7 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 
 | Coluna | Tipo | Nullable | Observação |
 |---|---|---|---|
-| `CheckInTokens.ManualCodeHash` | `bytea` | **SIM** | SHA‑256 (32 bytes) do texto ASCII de 6 dígitos. Linhas pré‑migration ficam `NULL`. |
+| `CheckInTokens.ManualCodeHash` | `bytea` | **SIM** | **HMAC‑SHA‑256** (32 bytes) do texto ASCII de 6 dígitos, chave `CheckIn:ManualCodeHmacKey`. **Valor TRANSITÓRIO:** presente enquanto o código pode precisar resolver; `NULL` quando usado/revogado; `NULL` quando reclamado por colisão com expirado. Linhas pré‑migration ficam `NULL`. |
 
 `TokenHash`, `ReservationId`, `IssuedAt`, `ExpiresAt`, `RevokedAt`, `UsedAt`, `Version` — **inalterados**.
 
@@ -1015,14 +1112,20 @@ Walk‑in; `Visit` só pela seleção; booking anônimo backend; WhatsApp/Resend
 
 - **Sem backfill.** Não é possível (nem desejável) gerar códigos para reservas que ninguém solicitou.
 - Linhas `CheckInToken` existentes mantêm `ManualCodeHash = NULL` e continuam **funcionando por QR**. Um `resolve` de 6 dígitos nunca casa com `NULL`.
-- Na **próxima** emissão do cliente (`IssueToken` → `Rotate`), a linha recebe `ManualCodeHash` e passa a ter as duas representações.
+- Na **próxima** emissão do cliente (`IssueToken` → `Rotate`), a linha recebe `ManualCodeHash` (HMAC) e passa a ter as duas representações; ele volta a `NULL` assim que a credencial for usada/revogada.
+- **Não é necessário** que `HmacManualCheckInCodeHasher` exista para as linhas antigas resolverem — o caminho do QR não usa hasher.
+
+### Segredo HMAC — provisionamento (fora desta migration)
+
+- `CheckIn:ManualCodeHmacKey` deve estar configurado (user‑secrets/env/secret manager) **antes** de a feature subir em qualquer ambiente onde a emissão do código manual seja exercida. Em `Production` a ausência é **fail‑closed** (7A.11).
+- Não é migração de banco; é configuração de deploy. Documentar no runbook de operações quando a feature for para staging.
 
 ### Rollback
 
 1. `DROP INDEX "UX_CheckInTokens_ManualCodeHash";`
 2. `ALTER TABLE "CheckInTokens" DROP COLUMN "ManualCodeHash";`
 
-Sem migração de dados no rollback — a coluna é aditiva e o caminho do token forte é intocado. O código de aplicação que referencia `ManualCodeHash`/`ManualCheckInCode` precisa ser revertido junto (mesma branch/PR).
+Sem migração de dados no rollback — a coluna é aditiva e o caminho do token forte é intocado. O código de aplicação que referencia `ManualCodeHash`/`ManualCheckInCode`/`IManualCheckInCodeHasher` precisa ser revertido junto (mesma branch/PR). A chave `CheckIn:ManualCodeHmacKey` pode ser removida da configuração após o rollback.
 
 ### `down()` da migration
 
