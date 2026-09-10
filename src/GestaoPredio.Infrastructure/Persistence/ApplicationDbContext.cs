@@ -39,6 +39,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<ProfessionalPresence> ProfessionalPresences => Set<ProfessionalPresence>();
  public DbSet<ProfessionalPresenceToken> ProfessionalPresenceTokens => Set<ProfessionalPresenceToken>();
  public DbSet<RescheduleToken> RescheduleTokens => Set<RescheduleToken>();
+ public DbSet<TotemBookingHandoff> TotemBookingHandoffs => Set<TotemBookingHandoff>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -66,6 +67,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new ProfessionalPresenceConfiguration());
   builder.ApplyConfiguration(new ProfessionalPresenceTokenConfiguration());
   builder.ApplyConfiguration(new RescheduleTokenConfiguration());
+  builder.ApplyConfiguration(new TotemBookingHandoffConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);

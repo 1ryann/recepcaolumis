@@ -265,6 +265,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"ProfessionalPresence\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"VisitTransitions\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Visits\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"TotemBookingHandoffs\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Reservations\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Customers\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"ProfessionalRegistrationRequests\"");
