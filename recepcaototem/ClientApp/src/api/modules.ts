@@ -156,6 +156,14 @@ export interface RoomBlockQuery {
 export interface RoomBlockCreateInput { roomId: string, startAt: string, endAt: string, reason: string }
 export interface RoomBlockUpdateInput { startAt: string, endAt: string, reason: string, concurrencyToken: string }
 
+export interface TotemProfessionalCardDto {
+  id: string
+  name: string
+  profession: string
+  photoUrl: string | null
+  status: 'AVAILABLE' | 'IN_SERVICE' | 'UNAVAILABLE'
+}
+
 export interface CheckInPreviewDto {
   professional: string
   room: string
@@ -652,6 +660,9 @@ export const roomBlocksApi = {
 }
 
 export const totemApi = {
+  professionals(signal?: AbortSignal) {
+    return apiClient.get<TotemProfessionalCardDto[]>('/api/totem/professionals', { signal })
+  },
   resolveCheckIn(token: string) {
     return apiClient.post<CheckInPreviewDto>('/api/totem/check-in/resolve', { token })
   },
