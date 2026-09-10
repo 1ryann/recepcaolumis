@@ -21,13 +21,13 @@ public sealed class TotemHandoffRateLimitTests(ModulesApiFactory factory)
         var create = await host.Client.PostAsJsonAsync("/api/totem/booking-handoffs", new { professionalId = prof });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var body = await create.Content.ReadFromJsonAsync<CreateBody>();
-        for (var i = 0; i < 45; i++)   // ~90 s of 2 s polling
+        for (var i = 0; i < 50; i++)   // a full window of 2 s polling stays within the 50 budget
         {
             var r = await host.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{body!.Id}/status", new { statusToken = body.StatusToken });
             Assert.NotEqual(HttpStatusCode.TooManyRequests, r.StatusCode);
         }
         var r51 = await host.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{body!.Id}/status", new { statusToken = body.StatusToken });
-        Assert.Equal(HttpStatusCode.TooManyRequests, r51.StatusCode);   // 46th..51st cross the 50 limit
+        Assert.Equal(HttpStatusCode.TooManyRequests, r51.StatusCode);   // the 51st poll crosses the 50 limit
     }
 
     private sealed record CreateBody(Guid Id, string HandoffToken, string StatusToken, DateTimeOffset ExpiresAt, string ProfessionalName, string Profession);

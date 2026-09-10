@@ -194,6 +194,7 @@ app.MapDashboardEndpoints();
 app.MapCustomerEndpoints();
 app.MapCustomerSchedulingEndpoints();
 app.MapTotemEndpoints();
+app.MapTotemBookingHandoffEndpoints();
 app.MapReceptionEndpoints();
 app.MapAccessControlEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
