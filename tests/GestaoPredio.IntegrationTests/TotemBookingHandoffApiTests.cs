@@ -190,6 +190,127 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
         Assert.Equal("INVALID_HANDOFF", (await res.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
     }
 
+    [Fact]
+    public async Task Claim_marks_started_without_auth_extends_the_window_once_and_returns_no_pii()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync("Dra. Ana", "Fisioterapia");
+        factory.FreezeTime(SecondAlignedUtcNow());
+        var b = await CreateHandoffAsync(prof);
+        var log = factory.CaptureLogs();
+
+        // The visitor's phone claims the handoff BEFORE authenticating: no auth header at all.
+        factory.FreezeTime(factory.UtcNow.AddMinutes(4));
+        var first = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken });
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var body = await first.Content.ReadAsStringAsync();
+        Assert.Contains("STARTED", body);
+        Assert.DoesNotContain("Dra. Ana", body);          // no professional name
+        Assert.DoesNotContain("Fisioterapia", body);      // no profession
+        Assert.DoesNotContain(prof.ToString(), body);     // no professionalId
+
+        DateTimeOffset? startedAfterFirst;
+        DateTimeOffset expiresAfterFirst;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var row = await db.TotemBookingHandoffs.SingleAsync();
+            Assert.NotNull(row.StartedAt);
+            Assert.Equal(factory.UtcNow, row.StartedAt);                  // StartedAt == the claim instant
+            Assert.Equal(factory.UtcNow.AddMinutes(10), row.ExpiresAt);   // extended to now+grace (=T+14), under the T+20 ceiling
+            startedAfterFirst = row.StartedAt;
+            expiresAfterFirst = row.ExpiresAt;
+        }
+
+        // A second claim 3 minutes later must NOT re-set StartedAt and must NOT re-extend the window.
+        factory.FreezeTime(factory.UtcNow.AddMinutes(3));
+        var second = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken });
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        await using (var scope2 = factory.Services.CreateAsyncScope())
+        {
+            var row2 = await scope2.ServiceProvider.GetRequiredService<ApplicationDbContext>().TotemBookingHandoffs.SingleAsync();
+            Assert.Equal(startedAfterFirst, row2.StartedAt);              // not re-set
+            Assert.Equal(expiresAfterFirst, row2.ExpiresAt);             // unchanged from the first claim
+            Assert.Equal(factory.UtcNow.AddMinutes(7), row2.ExpiresAt);  // i.e. still T+14
+        }
+
+        Assert.DoesNotContain(b.HandoffToken, log.Text);                 // the token is never logged
+    }
+
+    [Fact]
+    public async Task Claim_after_expiry_is_410_and_bad_token_is_400()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync();
+        factory.FreezeTime(SecondAlignedUtcNow());
+        var b = await CreateHandoffAsync(prof);
+
+        var bad = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = "xxx" });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        Assert.Equal("INVALID_HANDOFF", (await bad.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+
+        factory.FreezeTime(factory.UtcNow.AddMinutes(6));   // past the initial 5-minute window
+        var expired = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken });
+        Assert.Equal(HttpStatusCode.Gone, expired.StatusCode);
+        Assert.Equal("HANDOFF_EXPIRED", (await expired.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+    }
+
+    [Fact]
+    public async Task Claim_on_a_non_pending_handoff_is_410()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync();
+        factory.FreezeTime(SecondAlignedUtcNow());
+        var b = await CreateHandoffAsync(prof);
+
+        // Cancel folds the row to Expired while it is still inside the time window.
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync(
+            $"/api/totem/booking-handoffs/{b.Id}/cancel", new { statusToken = b.StatusToken })).StatusCode);
+
+        var res = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken });
+        Assert.Equal(HttpStatusCode.Gone, res.StatusCode);
+        Assert.Equal("HANDOFF_EXPIRED", (await res.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+    }
+
+    [Fact]
+    public async Task Concurrent_claims_on_the_same_pending_handoff_never_500_and_extend_once()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync();
+        factory.FreezeTime(SecondAlignedUtcNow());
+        var b = await CreateHandoffAsync(prof);
+        factory.FreezeTime(factory.UtcNow.AddMinutes(4));
+
+        // Three overlapping claims all load the same Pending row and race to write StartedAt /
+        // ExpiresAt. The losers MUST hit DbUpdateConcurrencyException (Version is xmin); the
+        // handler swallows it, re-reads, and still returns 200 — MarkStarted is idempotent.
+        var calls = new[]
+        {
+            factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken }),
+            factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken }),
+            factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken }),
+        };
+        var responses = await Task.WhenAll(calls);
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var row = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().TotemBookingHandoffs.SingleAsync();
+        Assert.Equal(factory.UtcNow, row.StartedAt);
+        Assert.Equal(factory.UtcNow.AddMinutes(10), row.ExpiresAt);   // extended exactly once
+    }
+
+    /// <summary>
+    /// The brief freezes <c>DateTimeOffset.UtcNow</c> directly; the domain normalizes persisted
+    /// instants to microsecond precision, so an exact <c>ExpiresAt</c> / <c>StartedAt</c> equality
+    /// assertion would be flaky against a sub-microsecond wall-clock tick. Anchoring the frozen
+    /// clock to a whole second removes that without changing any window arithmetic.
+    /// </summary>
+    private static DateTimeOffset SecondAlignedUtcNow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
+    }
+
     private async Task<CreateBody> CreateHandoffAsync(Guid professionalId)
     {
         var res = await factory.Client.PostAsJsonAsync("/api/totem/booking-handoffs", new { professionalId });

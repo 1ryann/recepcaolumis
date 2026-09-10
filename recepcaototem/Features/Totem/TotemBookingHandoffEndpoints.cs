@@ -29,6 +29,7 @@ public static class TotemBookingHandoffEndpoints
         e.MapPost("/api/totem/booking-handoffs", Create).AllowAnonymous();
         e.MapPost("/api/totem/booking-handoffs/{id:guid}/status", Status).AllowAnonymous();
         e.MapPost("/api/totem/booking-handoffs/{id:guid}/cancel", Cancel).AllowAnonymous();
+        e.MapPost("/api/totem/booking-handoffs/claim", Claim).AllowAnonymous();
         return e;
     }
 
@@ -153,6 +154,41 @@ public static class TotemBookingHandoffEndpoints
         return new { status = "COMPLETED", professionalName = row?.Name, startAt = row?.StartAt, roomName = row?.RoomName };
     }
 
+    // The visitor's phone hits this BEFORE it authenticates — that is the whole point: opening the
+    // link must start the clock (and buy the grace window) even though there is no session yet.
+    // Possession of the handoff token is the only credential; every failure collapses to the two
+    // generic shapes (400 INVALID_HANDOFF / 410 HANDOFF_EXPIRED) and the response carries NO PII.
+    private static async Task<IResult> Claim(HandoffClaimRequest request, HttpContext ctx,
+        TotemHandoffRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        using var lease = await limiter.AcquireAsync(ClientIp(ctx), "claim", ct);
+        if (!lease.IsAcquired) return TooMany();
+        if (!TryDecodeHash(request.HandoffToken, out var hash)) return Invalid();
+
+        var handoff = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.HandoffTokenHash == hash, ct);
+        var now = time.GetUtcNow();
+        if (handoff is null || !handoff.IsUsable(now)) return Expired();
+
+        handoff.MarkStarted(now, HandoffWindows.Grace, handoff.CreatedAt + HandoffWindows.HardCeiling);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A concurrent claim wrote StartedAt / ExpiresAt on this same Pending row first
+            // (`Version` is xmin, so our UPDATE lost). MarkStarted is idempotent, so just drop the
+            // losing unit of work, re-read the committed row, and answer from it. If a racing
+            // cancel / lazy-expiry folded it to a terminal state instead, collapse to the generic
+            // expired — the same answer an already-terminal row would have produced up front.
+            db.ChangeTracker.Clear();
+            handoff = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.HandoffTokenHash == hash, ct);
+            if (handoff is null || !handoff.IsUsable(now)) return Expired();
+        }
+
+        return Results.Ok(new { status = "STARTED", expiresAt = handoff.ExpiresAt });
+    }
+
     // AUTHORIZATION: {id} alone NEVER authorizes cancellation. The row is fetched ONLY when
     // SHA-256(base64url-decode(statusToken)) == StatusTokenHash for that same id, and no
     // mutation happens before that check passes. A bad / missing / wrong-handoff token yields
@@ -205,3 +241,4 @@ public static class TotemBookingHandoffEndpoints
 
 public sealed record CreateHandoffRequest(Guid ProfessionalId) : IStrictModuleRequest;
 public sealed record HandoffStatusRequest(string StatusToken) : IStrictModuleRequest;
+public sealed record HandoffClaimRequest(string HandoffToken) : IStrictModuleRequest;
