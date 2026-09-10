@@ -566,7 +566,7 @@ export const customerApi = {
     return apiClient.post<ReservationDto>('/api/customer/reservations', input)
   },
   issueCheckInToken(id: string) {
-    return apiClient.post<{ token: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
+    return apiClient.post<{ token: string, manualCode: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
   },
 }
 

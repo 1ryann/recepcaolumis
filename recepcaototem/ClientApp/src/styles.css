@@ -1760,3 +1760,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .totem-skeleton-card { animation: none; background: var(--tp-card); }
   .totem-back { transition: none; }
 }
+
+.customer-checkin-code { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 10px 0 2px; padding: 12px 20px; border: 1px solid #dbe7e5; border-radius: 12px; background: #f6faf9; }
+.customer-checkin-code small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
+.customer-checkin-code strong { color: var(--brand); font-size: 27px; font-weight: 700; letter-spacing: .34em; padding-left: .34em; font-variant-numeric: tabular-nums; }
+.customer-checkin-code span { max-width: 220px; color: var(--muted); font-size: 11px; line-height: 1.5; }
