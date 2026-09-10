@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { KioskClock } from '../features/totem/KioskClock'
 import { LightRays } from '../features/totem/magic/LightRays'
 import { normalizeToken } from '../features/totem/normalizeToken'
+import { isComplete6, onlyDigits6 } from '../features/totem/sixDigitCode'
 import { useQrScanner } from '../features/totem/useQrScanner'
 
 type Segment = 'scan' | 'manual'
@@ -42,7 +43,7 @@ export function TotemCheckIn() {
     try {
       dto = await totemApi.resolveCheckIn(trimmed)
     } catch (caught) {
-      setPreview(null); setError(errorFor(caught, 'Não foi possível validar este QR Code.')); setLoading(false)
+      setPreview(null); setError(errorFor(caught, source === 'scan' ? 'Não foi possível validar este QR Code.' : 'Não foi possível validar este código.')); setLoading(false)
       return
     }
     setPreview(dto)
@@ -70,7 +71,7 @@ export function TotemCheckIn() {
     setSegment(next)
   }
 
-  const submitManual = (event: FormEvent) => { event.preventDefault(); void resolveToken(token, 'manual') }
+  const submitManual = (event: FormEvent) => { event.preventDefault(); if (!isComplete6(token)) return; void resolveToken(token, 'manual') }
 
   const confirmManually = async () => {
     setLoading(true); setError('')
@@ -150,12 +151,12 @@ export function TotemCheckIn() {
                 <Camera size={20} aria-hidden="true" /> {cameraState === 'starting' ? 'Abrindo…' : 'Ativar câmera'}
               </button>}
         </div> : <form className="totem-manual" onSubmit={submitManual}>
-          <label className="totem-field-label" htmlFor="totem-code">Código do QR Code</label>
-          <input id="totem-code" className="totem-input" value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="Cole ou digite o código" autoComplete="off" inputMode="text"
-            autoCapitalize="characters" spellCheck={false} />
-          <button className="totem-btn totem-btn-primary" type="submit" disabled={!token.trim() || loading}>
+          <label className="totem-field-label" htmlFor="totem-code">Código de 6 dígitos</label>
+          <input id="totem-code" className="totem-input totem-code-input" value={token}
+            onChange={(event) => setToken(onlyDigits6(event.target.value))}
+            inputMode="numeric" autoComplete="one-time-code" maxLength={6} spellCheck={false}
+            placeholder="000000" />
+          <button className="totem-btn totem-btn-primary" type="submit" disabled={!isComplete6(token) || loading}>
             {loading ? 'Validando…' : 'Validar agendamento'} <ArrowRight size={20} aria-hidden="true" />
           </button>
         </form>}

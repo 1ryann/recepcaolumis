@@ -1765,3 +1765,11 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .customer-checkin-code small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
 .customer-checkin-code strong { color: var(--brand); font-size: 27px; font-weight: 700; letter-spacing: .34em; padding-left: .34em; font-variant-numeric: tabular-nums; }
 .customer-checkin-code span { max-width: 220px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+/* ==========================================================================
+   Totem check-in — 6-digit manual code field (Task 18)
+   Appended: centres and spaces the digits for kiosk legibility; the
+   text-indent offsets the trailing letter-spacing so the block stays centred.
+   ========================================================================== */
+.totem-code-input { text-align: center; letter-spacing: 0.4em; text-indent: 0.4em; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.totem-code-input::placeholder { letter-spacing: 0.4em; color: #3d3d3d; }

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { ApiError } from '../api/client'
 import { totemApi } from '../api/modules'
 import { useQrScanner } from '../features/totem/useQrScanner'
 import { TotemCheckIn } from './TotemCheckIn'
@@ -69,7 +70,7 @@ test('after a successful check-in the auto-return lands on /totem', async () => 
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
   renderWithTotem()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
-  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-AUTO' } })
+  fireEvent.change(screen.getByLabelText(/código de 6 dígitos/i), { target: { value: '004821' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
   await act(async () => { await vi.advanceTimersByTimeAsync(0) })
   fireEvent.click(screen.getByRole('button', { name: /confirmar chegada/i }))
@@ -85,7 +86,7 @@ test('after a successful check-in the kiosk returns to /totem (auto + Concluir)'
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
   renderWithTotem()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
-  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-Z' } })
+  fireEvent.change(screen.getByLabelText(/código de 6 dígitos/i), { target: { value: '004821' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
   await act(async () => { await vi.advanceTimersByTimeAsync(0) })
   fireEvent.click(screen.getByRole('button', { name: /confirmar chegada/i }))
@@ -99,7 +100,7 @@ test('defaults to the scan segment; choosing manual reveals the code field and s
   renderPage()
   expect(screen.getByRole('tab', { name: /escanear qr/i })).toHaveAttribute('aria-selected', 'true')
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
-  expect(screen.getByLabelText(/código do qr code/i)).toBeInTheDocument()
+  expect(screen.getByLabelText(/código de 6 dígitos/i)).toBeInTheDocument()
   expect(scanner.stop).toHaveBeenCalled()
 })
 
@@ -107,7 +108,7 @@ test('a denied camera falls back to the manual segment', async () => {
   scanner.state = 'denied'
   renderPage()
   await waitFor(() => expect(screen.getByRole('tab', { name: /digitar código/i })).toHaveAttribute('aria-selected', 'true'))
-  expect(screen.getByLabelText(/código do qr code/i)).toBeInTheDocument()
+  expect(screen.getByLabelText(/código de 6 dígitos/i)).toBeInTheDocument()
 })
 
 test('a decoded URL is normalized and resolves the appointment', async () => {
@@ -139,12 +140,12 @@ test('manual entry still needs the explicit confirm click, then opens the modal'
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
   renderPage()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
-  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-1' } })
+  fireEvent.change(screen.getByLabelText(/código de 6 dígitos/i), { target: { value: '004821' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
   expect(await screen.findByText('Dra. Ana')).toBeInTheDocument()
   expect(totemApi.confirmCheckIn).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: /confirmar chegada/i }))
-  await waitFor(() => expect(totemApi.confirmCheckIn).toHaveBeenCalledWith('MAN-1'))
+  await waitFor(() => expect(totemApi.confirmCheckIn).toHaveBeenCalledWith('004821'))
   expect(await screen.findByRole('dialog')).toHaveTextContent(/chegada registrada/i)
 })
 
@@ -152,7 +153,7 @@ test('concluding the modal returns the kiosk to /totem', async () => {
   vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(true))
   renderWithTotem()
   fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
-  fireEvent.change(screen.getByLabelText(/código do qr code/i), { target: { value: 'MAN-2' } })
+  fireEvent.change(screen.getByLabelText(/código de 6 dígitos/i), { target: { value: '004821' } })
   fireEvent.click(screen.getByRole('button', { name: /validar agendamento/i }))
   fireEvent.click(await screen.findByRole('button', { name: /confirmar chegada/i }))
   fireEvent.click(await screen.findByRole('button', { name: /concluir/i }))
@@ -164,4 +165,51 @@ test('leaving the page stops the camera', () => {
   const view = renderPage()
   view.unmount()
   expect(scanner.stop).toHaveBeenCalled()
+})
+
+const openManual = () => {
+  renderPage()
+  fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
+  return screen.getByLabelText(/código de 6 dígitos/i)
+}
+
+test('the manual segment offers a 6-digit numeric input', () => {
+  const input = openManual()
+  expect(input).toHaveAttribute('inputmode', 'numeric')
+})
+
+test('the manual input ignores letters and keeps only the digits', () => {
+  const input = openManual()
+  fireEvent.change(input, { target: { value: 'a1b2c3' } })
+  expect(input).toHaveValue('123')
+})
+
+test('pasting a full code keeps its leading zeros', () => {
+  const input = openManual()
+  fireEvent.change(input, { target: { value: '004821' } })
+  expect(input).toHaveValue('004821')
+})
+
+test('"Validar agendamento" is disabled below 6 digits and enabled at 6', () => {
+  const input = openManual()
+  fireEvent.change(input, { target: { value: '00482' } })
+  expect(screen.getByRole('button', { name: /validar agendamento/i })).toBeDisabled()
+  fireEvent.change(input, { target: { value: '004821' } })
+  expect(screen.getByRole('button', { name: /validar agendamento/i })).not.toBeDisabled()
+})
+
+test('submitting six digits resolves the check-in by code', async () => {
+  vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(false))
+  const input = openManual()
+  fireEvent.change(input, { target: { value: '004821' } })
+  fireEvent.submit(input.closest('form') as HTMLFormElement)
+  await waitFor(() => expect(totemApi.resolveCheckIn).toHaveBeenCalledWith('004821'))
+})
+
+test('a rejected manual code shows the generic validation message', async () => {
+  vi.mocked(totemApi.resolveCheckIn).mockRejectedValue(new ApiError(400, 'INVALID_CHECK_IN', ''))
+  const input = openManual()
+  fireEvent.change(input, { target: { value: '004821' } })
+  fireEvent.submit(input.closest('form') as HTMLFormElement)
+  expect(await screen.findByText('Não foi possível validar este código.')).toBeInTheDocument()
 })
