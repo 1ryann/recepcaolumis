@@ -73,4 +73,37 @@ public class FoundationTests
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/health/ready")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
     }
+
+    [Fact]
+    public async Task Content_security_policy_allows_data_fonts_and_blob_workers_without_relaxing_scripts()
+    {
+        await using var api = CreateApi();
+        using var client = api.CreateClient(new() { AllowAutoRedirect = false, BaseAddress = new Uri("https://localhost") });
+        var response = await client.GetAsync("/health");
+
+        var csp = response.Headers.GetValues("Content-Security-Policy").Single();
+        var directives = csp.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        // The two directives the Totem QR scanner needs: a data: font fallback and a blob: Web Worker.
+        Assert.Contains("font-src 'self' data:", directives);
+        Assert.Contains("worker-src 'self' blob:", directives);
+
+        // Scripts stay locked to same-origin — no unsafe-eval, no blob:, no wildcard anywhere.
+        Assert.Contains("script-src 'self'", directives);
+        Assert.DoesNotContain("unsafe-eval", csp);
+        Assert.DoesNotContain("*", csp);
+        Assert.DoesNotContain("blob:", csp.Split(';').Single(d => d.TrimStart().StartsWith("script-src")));
+
+        // Framing / object / base URI stay restrictive.
+        Assert.Contains("frame-ancestors 'none'", directives);
+        Assert.Contains("object-src 'none'", directives);
+        Assert.Contains("base-uri 'self'", directives);
+
+        // Full contract — any future relaxation shows up as a diff here.
+        Assert.Equal(
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; " +
+            "img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; " +
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+            csp);
+    }
 }
