@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
@@ -7,8 +8,10 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -40,6 +43,36 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     public string ConnectionString { get; }
     public string PrivateFilesRoot { get; }
     public HttpClient Client { get; private set; } = null!;
+
+    /// <summary>
+    /// Sink wired into the SAME server <see cref="Client"/> talks to (registered unconditionally in
+    /// <see cref="ConfigureWebHost"/>). <see cref="CaptureLogs"/> hands out an offset-anchored view so a
+    /// test can assert the pipeline never logged a secret / code / hash (spec 7A.10 / Task 16).
+    /// </summary>
+    private readonly CapturingLoggerProvider _logSink = new();
+
+    /// <summary>The effective configuration of the running server (Task 16 RULING 3).</summary>
+    public IConfiguration Configuration => Services.GetRequiredService<IConfiguration>();
+
+    /// <summary>Anchor a log view at "everything logged from now on" — call before the request under test.</summary>
+    public LogCapture CaptureLogs() => new(_logSink, _logSink.Length);
+
+    /// <summary>
+    /// A throw-away derived host with one configuration value overridden, plus a ready client
+    /// (Task 16 RULING 3). Same Postgres schema and clock as the parent (config inherited). Dispose
+    /// disposes both the derived factory and its client.
+    /// </summary>
+    public ConfiguredFactory WithConfig(string key, string value)
+    {
+        var derived = WithWebHostBuilder(builder => builder.UseSetting(key, value));
+        var client = derived.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        return new ConfiguredFactory(derived, client);
+    }
 
     private readonly TestTimeProvider _clock = new();
 
@@ -88,6 +121,10 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(ConnectionString));
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(_clock);
+            // Added AFTER Program.cs ran Logging.ClearProviders(), so the capture survives and
+            // observes everything the real pipeline logs. No filter change: app-category logs are
+            // Information by default, which is exactly where an accidental code/hash leak would land.
+            services.AddSingleton<ILoggerProvider>(_logSink);
         });
     }
 
@@ -274,4 +311,84 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     }
 
     private sealed record CsrfPayload(string Token);
+}
+
+/// <summary>
+/// Minimal in-memory <see cref="ILoggerProvider"/> for no-leak assertions (spec 7A.10). Thread-safe;
+/// every formatted message (and scope state) is appended to one shared buffer. Built here rather than
+/// reused from another test file so the Modules suite owns its own collector (Task 16 RULING 1).
+/// </summary>
+public sealed class CapturingLoggerProvider : ILoggerProvider
+{
+    private readonly StringBuilder _sink = new();
+    private readonly object _gate = new();
+
+    /// <summary>Current length of the shared buffer — the anchor a <see cref="LogCapture"/> remembers.</summary>
+    public int Length
+    {
+        get { lock (_gate) return _sink.Length; }
+    }
+
+    /// <summary>Everything appended at or after <paramref name="fromOffset"/>.</summary>
+    public string Read(int fromOffset)
+    {
+        lock (_gate)
+            return fromOffset >= _sink.Length ? string.Empty : _sink.ToString(fromOffset, _sink.Length - fromOffset);
+    }
+
+    public ILogger CreateLogger(string categoryName) => new SinkLogger(categoryName, this);
+
+    public void Dispose() { }
+
+    private void Append(string text)
+    {
+        lock (_gate) _sink.AppendLine(text);
+    }
+
+    private sealed class SinkLogger(string category, CapturingLoggerProvider owner) : ILogger
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull
+        {
+            owner.Append($"scope {category} {state}");
+            return NullScope.Instance;
+        }
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            owner.Append($"[{logLevel}] {category} {formatter(state, exception)} {exception}");
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
+    }
+}
+
+/// <summary>An offset-anchored view over <see cref="CapturingLoggerProvider"/>: text logged since it was taken.</summary>
+public sealed class LogCapture(CapturingLoggerProvider provider, int fromOffset)
+{
+    public string Text => provider.Read(fromOffset);
+}
+
+/// <summary>A derived <see cref="WebApplicationFactory{T}"/> plus its client; disposing releases both.</summary>
+public sealed class ConfiguredFactory : IDisposable
+{
+    private readonly WebApplicationFactory<recepcaototem.Pages.IndexModel> _factory;
+
+    internal ConfiguredFactory(WebApplicationFactory<recepcaototem.Pages.IndexModel> factory, HttpClient client)
+    {
+        _factory = factory;
+        Client = client;
+    }
+
+    public HttpClient Client { get; }
+
+    public void Dispose()
+    {
+        Client.Dispose();
+        _factory.Dispose();
+    }
 }

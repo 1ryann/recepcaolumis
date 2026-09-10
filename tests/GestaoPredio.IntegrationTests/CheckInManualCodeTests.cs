@@ -2,20 +2,24 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using GestaoPredio.Application.Customers;
+using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using recepcaototem.Features.Customers;
 using Xunit;
 
@@ -265,6 +269,205 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
         Assert.NotEqual(liveIssue.ManualCode, scripted.ManualCode);
         Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = liveIssue.ManualCode })).StatusCode);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Task 16 — security: HMAC key handling, brute-force limit, collision/reclaim exhaustion, no-leak
+    // (spec 7A.5 / 7A.9 / 7A.10 / 7A.11)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The persisted code hash is the keyed HMAC of the app hasher — provably not a plain SHA-256 of the digits.</summary>
+    [Fact]
+    public async Task Persisted_hash_is_keyed_hmac_not_plain_sha256()
+    {
+        await factory.ResetAsync();
+        var ctx = await factory.SeedEligibleReservationAsync();
+        var issue = await ctx.IssueAsync();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IManualCheckInCodeHasher>();
+        Assert.True(ManualCheckInCode.TryParse(issue.ManualCode, out var code));
+
+        var row = await db.CheckInTokens.SingleAsync(x => x.ReservationId == ctx.ReservationId);
+        Assert.Equal(hasher.Hash(code), row.ManualCodeHash);                                              // matches the app hasher (test key)
+        Assert.NotEqual(SHA256.HashData(Encoding.ASCII.GetBytes(issue.ManualCode)), row.ManualCodeHash);  // not plain SHA-256
+    }
+
+    /// <summary>
+    /// Swap the HMAC key on a fresh host: a previously issued 6-digit code no longer resolves (keyed hash),
+    /// while the strong QR token still resolves (its hash is keyless SHA-256) — spec 7A.11 key-loss semantics.
+    /// </summary>
+    [Fact]
+    public async Task A_different_hmac_key_does_not_resolve_previously_issued_codes()
+    {
+        await factory.ResetAsync();
+        var ctx = await factory.SeedEligibleReservationAsync();
+        var issue = await ctx.IssueAsync();
+
+        using var withOtherKey = factory.WithConfig("CheckIn:ManualCodeHmacKey", "a-totally-different-key");
+
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await withOtherKey.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode })).StatusCode);
+        // ...but the strong QR token still resolves under the new key (hash is keyless)
+        Assert.Equal(HttpStatusCode.OK,
+            (await withOtherKey.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.Token })).StatusCode);
+    }
+
+    /// <summary>
+    /// RULING 2 (option B — least brittle): a real Production host with no <c>CheckIn:ManualCodeHmacKey</c>.
+    /// <c>HmacManualCheckInCodeHasher</c> is internal to Infrastructure and not visible to this test project,
+    /// so a hand-mirrored <c>ServiceCollection</c> cannot name the concrete type; booting the real
+    /// <c>Program.cs</c> wiring proves the fail-closed path and that neither the 500 body nor the logs
+    /// carry key material. The fail-closed message names the config key only — never a secret value.
+    /// </summary>
+    [Fact]
+    public async Task Missing_hmac_key_in_production_fails_closed()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var production = new WebApplicationFactory<recepcaototem.Pages.IndexModel>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("ConnectionStrings:DefaultConnection", "");
+                builder.UseSetting("AllowedHosts", "localhost");
+                builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Task16-ProdKeys"));
+                builder.UseSetting("Storage:PrivateFilesPath", Path.GetTempPath());
+                builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
+                // deliberately NO CheckIn:ManualCodeHmacKey
+                builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(logs));
+            });
+        using var client = production.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false
+        });
+
+        // A 6-digit token forces the endpoint to resolve IManualCheckInCodeHasher, which throws on construction.
+        using var response = await client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = "482731" });
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("dev-only", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ManualCodeHmacKey", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("482731", body, StringComparison.Ordinal);
+
+        var logText = logs.Read(0);
+        Assert.Contains("CheckIn:ManualCodeHmacKey", logText, StringComparison.Ordinal);   // the fail-closed error fired...
+        foreach (var secretValue in new[]
+                 {
+                     "dev-only",
+                     "integration-tests-manual-code-hmac-key-not-a-secret",
+                     "a-totally-different-key"
+                 })
+            Assert.DoesNotContain(secretValue, logText, StringComparison.OrdinalIgnoreCase); // ...naming the key, never a value
+    }
+
+    /// <summary>
+    /// Brute-force ceiling (spec 7A.9): from one client, <c>CustomerIpPermitLimit</c> + 1 rapid resolves
+    /// with distinct random 6-digit codes — the last one is 429. Mirrors <c>LoginRateLimiterTests</c>:
+    /// the default 30/60 s budget is exercised, never bumped (only the window is widened for determinism).
+    /// </summary>
+    [Fact]
+    public async Task Resolve_is_rate_limited_per_ip()
+    {
+        await factory.ResetAsync();
+        using var isolated = factory.WithConfig("RateLimiting:CustomerWindowSeconds", "600");
+        const int ipPermitLimit = 30; // spec 7A.9 default: RateLimiting:CustomerIpPermitLimit
+
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i <= ipPermitLimit; i++) // limit + 1 rapid resolves
+        {
+            var guess = $"{100000 + i:D6}"; // distinct 6-digit codes: the identifier partition never trips first
+            using var resp = await isolated.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = guess });
+            statuses.Add(resp.StatusCode);
+        }
+
+        Assert.DoesNotContain(HttpStatusCode.TooManyRequests, statuses.Take(ipPermitLimit));
+        Assert.Equal(HttpStatusCode.TooManyRequests, statuses[ipPermitLimit]);
+    }
+
+    /// <summary>
+    /// §7A.5 exhaustion: a source that yields the live-colliding code five times spends all five attempts
+    /// on a resolvable collision → 503 <c>CHECK_IN_CODE_UNAVAILABLE</c>. The error body carries no 6-digit
+    /// run and the <c>CHECK_IN_TOKEN_ISSUE_FAILED</c> audit carries neither the code, nor any hash, nor the key.
+    /// </summary>
+    [Fact]
+    public async Task Exhausting_retries_returns_503_without_leaking_value_or_hash()
+    {
+        await factory.ResetAsync();
+
+        var live = await factory.SeedEligibleReservationAsync();
+        var liveIssue = await live.IssueAsync();               // a live, resolvable row to collide with
+
+        var target = await factory.SeedEligibleReservationAsync();
+        var lc = liveIssue.ManualCode;
+        var (status, body) = await target.IssueRawWithSourceAsync(
+            new ScriptedManualCodeSource(lc, lc, lc, lc, lc)); // all 5 attempts collide (the 6th, random, draw is never reached)
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Contains("CHECK_IN_CODE_UNAVAILABLE", body, StringComparison.Ordinal);
+        Assert.DoesNotMatch(new Regex(@"\d{6}"), body);        // no 6-digit run leaked in the error body
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IManualCheckInCodeHasher>();
+        Assert.True(ManualCheckInCode.TryParse(lc, out var code));
+
+        var failed = await db.AuditEntries.AsNoTracking()
+            .Where(x => x.TargetEntityId == target.ReservationId && x.Action == "CHECK_IN_TOKEN_ISSUE_FAILED")
+            .ToListAsync();
+        Assert.Equal("FAILED", Assert.Single(failed).Result);
+
+        var haystack = AuditHaystack(await db.AuditEntries.AsNoTracking().ToListAsync());
+        var testKey = factory.Configuration["CheckIn:ManualCodeHmacKey"]!;
+        Assert.DoesNotContain(lc, haystack, StringComparison.Ordinal);
+        Assert.DoesNotContain(testKey, haystack, StringComparison.Ordinal);
+        Assert.DoesNotContain(Convert.ToHexString(hasher.Hash(code)), haystack, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(Convert.ToBase64String(hasher.Hash(code)), haystack, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Spec 7A.10: an issue + resolve + confirm round leaves neither the 6-digit code, nor its keyed hash
+    /// (hex or base64), nor the HMAC secret anywhere in <c>AuditEntries</c> or in anything the server logged.
+    /// </summary>
+    [Fact]
+    public async Task Neither_the_code_nor_the_hash_nor_the_secret_appears_in_audit_or_logs()
+    {
+        await factory.ResetAsync();
+        var log = factory.CaptureLogs(); // anchor: everything the server logs from here on
+
+        var ctx = await factory.SeedEligibleReservationAsync();
+        var issue = await ctx.IssueAsync();
+        await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode });
+        await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = issue.ManualCode });
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IManualCheckInCodeHasher>();
+        Assert.True(ManualCheckInCode.TryParse(issue.ManualCode, out var code));
+
+        var audit = AuditHaystack(await db.AuditEntries.AsNoTracking().ToListAsync());
+        Assert.False(string.IsNullOrEmpty(audit), "resolve/confirm must have written audit rows to check against");
+        var testKey = factory.Configuration["CheckIn:ManualCodeHmacKey"]!;
+        Assert.Equal("integration-tests-manual-code-hmac-key-not-a-secret", testKey);
+
+        var hex = Convert.ToHexString(hasher.Hash(code));
+        var b64 = Convert.ToBase64String(hasher.Hash(code));
+        Assert.NotEqual("", log.Text); // the collector observed the same server factory.Client hit — the check is real
+        foreach (var haystack in new[] { audit, log.Text })
+        {
+            Assert.DoesNotContain(issue.ManualCode, haystack, StringComparison.Ordinal);
+            Assert.DoesNotContain(testKey, haystack, StringComparison.Ordinal);
+            Assert.DoesNotContain(hex, haystack, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(b64, haystack, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>Every column of every audit row, flattened — the search space for "no code / hash / secret leaked".</summary>
+    private static string AuditHaystack(IEnumerable<AuditEntry> entries) =>
+        string.Join("\n", entries.Select(a => string.Join("|",
+            a.Id, a.ActorUserId, a.TargetUserId, a.IpAddress, a.Action, a.Result,
+            a.OccurredAt.ToString("O"), a.CorrelationId, a.TargetEntityType, a.TargetEntityId, a.ChangedFields)));
 }
 
 /// <summary>
@@ -332,24 +535,37 @@ internal static class CheckInManualCodeFixtureExtensions
 internal sealed record StaleCheckInContext(string ManualCode, Guid ReservationId);
 
 /// <summary>
-/// Test double for the <see cref="IManualCodeSource"/> seam (spec 7A.9). The first <see cref="Next"/>
-/// returns the scripted 6-digit combination; later calls either fall back to a random draw or throw,
-/// per <paramref name="thenFallbackToRandom"/>.
+/// Test double for the <see cref="IManualCodeSource"/> seam (spec 7A.9). <see cref="Next"/> yields the
+/// scripted combinations in order (<c>codes[0]</c>, <c>codes[1]</c>, …); once the script is exhausted it
+/// falls back to <see cref="ManualCheckInCode.Generate"/>. Task 16 RULING 4: the exhaustion suite passes
+/// the same live-colliding code five times so all five <c>IssueToken</c> attempts collide → 503.
 /// </summary>
-internal sealed class ScriptedManualCodeSource(string scriptedCode, bool thenFallbackToRandom) : IManualCodeSource
+internal sealed class ScriptedManualCodeSource : IManualCodeSource
 {
+    private readonly string[] _codes;
+    private readonly bool _throwWhenScriptExhausted;
     private int _calls;
+
+    public ScriptedManualCodeSource(params string[] codes) => _codes = codes;
+
+    /// <summary>Task 15 call-site shape: one scripted code, then either random draws or a hard stop.</summary>
+    public ScriptedManualCodeSource(string scriptedCode, bool thenFallbackToRandom)
+    {
+        _codes = [scriptedCode];
+        _throwWhenScriptExhausted = !thenFallbackToRandom;
+    }
 
     public ManualCheckInCode Next()
     {
-        if (_calls++ == 0)
+        if (_calls < _codes.Length)
         {
-            Assert.True(ManualCheckInCode.TryParse(scriptedCode, out var code), "scripted code must be 6 digits");
+            Assert.True(ManualCheckInCode.TryParse(_codes[_calls++], out var code), "scripted code must be 6 digits");
             return code;
         }
 
-        if (!thenFallbackToRandom)
-            throw new InvalidOperationException("ScriptedManualCodeSource was asked for a second code but fallback is disabled.");
+        _calls++;
+        if (_throwWhenScriptExhausted)
+            throw new InvalidOperationException("ScriptedManualCodeSource was asked past its script but fallback is disabled.");
 
         return ManualCheckInCode.Generate();
     }
@@ -372,14 +588,29 @@ internal sealed class CheckInReservationContext(ModulesApiFactory factory, strin
     /// Issues the credential once with a scripted <see cref="IManualCodeSource"/> swapped into DI
     /// for this call only (RULING 3). Uses a throw-away <see cref="WebApplicationFactory{T}"/> layered
     /// over the shared config (same Postgres schema, same clock); later resolve/confirm run on the
-    /// normal <see cref="ModulesApiFactory.Client"/>.
+    /// normal <see cref="ModulesApiFactory.Client"/>. Asserts a 200 and returns the issued pair.
     /// </summary>
     public async Task<CheckInManualCodeTests.Issue> IssueWithScriptedCodeAsync(string code, bool thenFallbackToRandom = false)
+    {
+        var (status, body) = await IssueViaScriptedHostAsync(new ScriptedManualCodeSource(code, thenFallbackToRandom));
+        Assert.Equal(HttpStatusCode.OK, status);
+        return JsonSerializer.Deserialize<CheckInManualCodeTests.Issue>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    }
+
+    /// <summary>
+    /// Issues once through a scripted host, returning the raw status + body without asserting success —
+    /// for the §7A.5 exhaustion path where every attempt collides and the endpoint answers 503
+    /// (Task 16 RULING 4).
+    /// </summary>
+    public Task<(HttpStatusCode Status, string Body)> IssueRawWithSourceAsync(IManualCodeSource source) =>
+        IssueViaScriptedHostAsync(source);
+
+    private async Task<(HttpStatusCode Status, string Body)> IssueViaScriptedHostAsync(IManualCodeSource source)
     {
         using var scriptedFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IManualCodeSource>();
-            services.AddSingleton<IManualCodeSource>(new ScriptedManualCodeSource(code, thenFallbackToRandom));
+            services.AddSingleton(source);
         }));
         using var scriptedClient = scriptedFactory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -402,8 +633,7 @@ internal sealed class CheckInReservationContext(ModulesApiFactory factory, strin
         };
         issueRequest.Headers.Add("X-CSRF-TOKEN", await CsrfAsync(scriptedClient));
         using var issueResponse = await scriptedClient.SendAsync(issueRequest);
-        Assert.Equal(HttpStatusCode.OK, issueResponse.StatusCode);
-        return (await issueResponse.Content.ReadFromJsonAsync<CheckInManualCodeTests.Issue>())!;
+        return (issueResponse.StatusCode, await issueResponse.Content.ReadAsStringAsync());
     }
 
     /// <summary>Cancels the reservation as its customer (frees the credential via <c>Revoke</c>).</summary>
