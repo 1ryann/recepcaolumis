@@ -1447,3 +1447,177 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 @media (max-width: 620px) {
   .totem-entry-options { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   Totem professional carousel — the /totem/profissionais strip (Task 8)
+   Real horizontal swipe / mouse-drag on a scroll-snapped strip: a larger
+   centred active card with its neighbours partly visible, big prev/next
+   arrows, dots, and a per-card status chip (dot + word, never colour alone).
+   Standalone token set so it does not depend on .totem-kiosk being present.
+   Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
+   ========================================================================== */
+.totem-carousel {
+  --tc-bg: #181818;
+  --tc-card: #222222;
+  --tc-card-active: #272727;
+  --tc-ink: #f2f2f2;
+  --tc-muted: #888888;
+  --tc-line: rgba(255, 255, 255, .08);
+  --tc-line-strong: rgba(255, 255, 255, .22);
+  --tk-bg: #181818;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  color: var(--tc-ink);
+}
+
+.totem-carousel-viewport {
+  display: flex;
+  gap: clamp(14px, 2.4vw, 28px);
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-block: clamp(16px, 3vh, 40px);
+  /* Edge padding so the first / last card can still settle dead-centre. */
+  padding-inline: max(12px, calc(50% - (clamp(200px, 22vw, 264px) / 2)));
+  outline: none;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+}
+.totem-carousel-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.totem-carousel-viewport:active { cursor: grabbing; }
+.totem-carousel-viewport:focus-visible { box-shadow: 0 0 0 2px #f2f2f2; border-radius: 22px; }
+
+.totem-carousel-card {
+  position: relative;
+  flex: 0 0 clamp(200px, 22vw, 264px);
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: clamp(20px, 2.4vw, 30px);
+  color: var(--tc-ink);
+  text-align: center;
+  border: 1px solid var(--tc-line);
+  border-radius: 20px;
+  background: var(--tc-card);
+  cursor: pointer;
+  opacity: .58;
+  transform: scale(.92);
+  transition: transform .22s ease, opacity .22s ease, border-color .22s ease, background-color .22s ease;
+}
+.totem-carousel-card:hover { border-color: var(--tc-line-strong); }
+.totem-carousel-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-carousel-card.is-active {
+  opacity: 1;
+  transform: scale(1.06);
+  border-color: var(--tc-line-strong);
+  background: var(--tc-card-active);
+}
+
+.totem-carousel-photo {
+  width: clamp(84px, 9vw, 120px);
+  height: clamp(84px, 9vw, 120px);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--tc-line-strong);
+  background: #1c1c1c;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.totem-carousel-initials {
+  display: grid;
+  place-items: center;
+  color: var(--tc-ink);
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 650;
+  letter-spacing: .02em;
+}
+
+.totem-carousel-name { font-size: clamp(16px, 1.9vw, 20px); font-weight: 700; letter-spacing: -.01em; }
+.totem-carousel-profession { color: var(--tc-muted); font-size: clamp(12px, 1.4vw, 14px); }
+
+.totem-carousel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  font-size: clamp(12px, 1.4vw, 14px);
+  font-weight: 650;
+}
+.totem-carousel-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* Status colour is carried by a class AND spelled out in words on the chip. */
+.totem-status-ok { color: #3E9B6B; }
+.totem-status-busy { color: #C98A2B; }
+.totem-status-muted { color: #888888; }
+
+.totem-carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: clamp(56px, 6vw, 68px);
+  height: clamp(56px, 6vw, 68px);
+  display: grid;
+  place-items: center;
+  color: var(--tc-ink);
+  border: 1px solid var(--tc-line-strong);
+  border-radius: 50%;
+  background: rgba(28, 28, 28, .82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease, border-color .16s ease;
+}
+.totem-carousel-arrow.is-prev { left: clamp(4px, 1vw, 16px); }
+.totem-carousel-arrow.is-next { right: clamp(4px, 1vw, 16px); }
+.totem-carousel-arrow:hover { background: #272727; border-color: #f2f2f2; transform: translateY(-50%) scale(1.05); }
+.totem-carousel-arrow:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-carousel-arrow svg { width: 46%; height: 46%; }
+
+.totem-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding-top: clamp(8px, 1.6vh, 16px);
+}
+.totem-carousel-dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tc-line-strong);
+  cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease;
+}
+.totem-carousel-dot:hover { background: #bdbdbd; }
+.totem-carousel-dot:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-carousel-dot.is-active { background: #f2f2f2; transform: scale(1.35); }
+
+@media (max-width: 560px) {
+  .totem-carousel-card { flex-basis: clamp(180px, 74vw, 240px); }
+  .totem-carousel-viewport { padding-inline: max(12px, calc(50% - (clamp(180px, 74vw, 240px) / 2))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .totem-carousel-viewport { scroll-behavior: auto; }
+  .totem-carousel-card,
+  .totem-carousel-arrow,
+  .totem-carousel-dot { transition: none; }
+  .totem-carousel-card { transform: none; }
+  .totem-carousel-card.is-active { transform: none; }
+}
