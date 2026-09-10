@@ -1372,7 +1372,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 @media (prefers-reduced-motion: reduce) {
   .totem-magic-rays { animation: none; }
-  .totem-magic-fade { transition: none; transform: none; filter: none; }
+  .totem-magic-fade { transition: none; transform: none; filter: none; will-change: auto; }
   .totem-magic-card { transition: none; }
   .totem-magic-card::before { transition: none; }
   .totem-magic-beam.is-active { animation: none; }
