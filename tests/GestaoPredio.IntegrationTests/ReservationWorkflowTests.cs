@@ -150,7 +150,7 @@ public sealed class ReservationWorkflowTests(ModulesApiFactory factory)
         {
             var tokenDb = tokenScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             tokenDb.CheckInTokens.Add(CheckInToken.Create(seed.ReservationId,
-                SHA256.HashData(RandomNumberGenerator.GetBytes(32)), DateTimeOffset.UtcNow, seed.StartAt.AddHours(1)));
+                SHA256.HashData(RandomNumberGenerator.GetBytes(32)), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow, seed.StartAt.AddHours(1)));
             await tokenDb.SaveChangesAsync();
         }
         await LoginAsync(seed.Manager);

@@ -11,4 +11,8 @@
 <Compile Remove="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
 <None Include="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
 </ItemGroup>
+<ItemGroup>
+<InternalsVisibleTo Include="recepcaototem" />
+<InternalsVisibleTo Include="GestaoPredio.UnitTests" />
+</ItemGroup>
 </Project>

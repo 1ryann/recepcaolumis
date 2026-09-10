@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
 using GestaoPredio.Application.Availability;
+using GestaoPredio.Application.Customers;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
@@ -135,7 +136,7 @@ public static class CustomerSchedulingEndpoints
     }
 
     private static async Task<IResult> IssueToken(Guid id, ClaimsPrincipal principal, HttpContext context,
-        ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+        ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customer.Id, ct);
@@ -145,9 +146,11 @@ public static class CustomerSchedulingEndpoints
             return Results.BadRequest(new ApiError("CHECK_IN_NOT_ELIGIBLE", "O check-in não está disponível para esta reserva."));
         var raw = RandomNumberGenerator.GetBytes(32);
         var hash = SHA256.HashData(raw);
+        // Task 14: replace with the 7A.5 collision loop + reclaim + the 7A.7 enriched { token, manualCode, expiresAt } response.
+        var manualCodeHash = hasher.Hash(ManualCheckInCode.Generate());
         var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
-        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, now, reservation.EndAt));
-        else token.Rotate(hash, now, reservation.EndAt);
+        if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, hash, manualCodeHash, now, reservation.EndAt));
+        else token.Rotate(hash, manualCodeHash, now, reservation.EndAt);
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "CHECK_IN_TOKEN_ISSUED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = id, TargetUserId = customer.ApplicationUserId, OccurredAt = now, CorrelationId = context.TraceIdentifier });
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), expiresAt = reservation.EndAt });

@@ -13,6 +13,8 @@ using GestaoPredio.Infrastructure.Finance;
 using GestaoPredio.Infrastructure.Dashboard;
 using GestaoPredio.Infrastructure.Notifications;
 using GestaoPredio.Infrastructure.AccessControl;
+using GestaoPredio.Infrastructure.Customers;
+using GestaoPredio.Application.Customers;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.OperationalAlerts;
@@ -68,6 +70,9 @@ builder.Services.AddSingleton<RescheduleTokenRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
+builder.Services.Configure<ManualCheckInCodeHashingOptions>(
+    builder.Configuration.GetSection(ManualCheckInCodeHashingOptions.SectionName));
+builder.Services.AddSingleton<IManualCheckInCodeHasher, HmacManualCheckInCodeHasher>();
 var operationalTimeZoneId = builder.Configuration["Scheduling:TimeZoneId"];
 if (string.IsNullOrWhiteSpace(operationalTimeZoneId))
     throw new InvalidOperationException("Scheduling:TimeZoneId must be configured.");
