@@ -163,6 +163,43 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
             (await factory.Client.GetAsync($"/api/totem/professionals/{Guid.NewGuid()}/photo")).StatusCode);
     }
 
+    [Fact]
+    public async Task Public_photo_endpoint_returns_404_when_the_metadata_pointer_has_a_non_photo_purpose()
+    {
+        await factory.ResetAsync();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var now = DateTimeOffset.UtcNow;
+        var professional = Professional.Create("Ativo Foto Rotulo Errado", "X", "+5569999994101", now);
+        var photoId = await SeedPhotoFileAsync(db);
+        professional.SetPhoto(photoId, now);
+        db.Professionals.Add(professional);
+        await db.SaveChangesAsync();
+
+        // PrivateFile.Create and the CK_PrivateFiles_Purpose check constraint both forbid any purpose
+        // other than PROFESSIONAL_PHOTO, so drop the constraint, mislabel the persisted row, then
+        // restore every row to a valid purpose and re-add the constraint in a finally.
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"PrivateFiles\" DROP CONSTRAINT \"CK_PrivateFiles_Purpose\"");
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'SOME_OTHER_PURPOSE' WHERE \"Id\" = {0}", photoId);
+
+            var response = await factory.Client.GetAsync(
+                $"/api/totem/professionals/{professional.Id}/photo");
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'PROFESSIONAL_PHOTO'");
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE \"PrivateFiles\" ADD CONSTRAINT \"CK_PrivateFiles_Purpose\" CHECK (\"Purpose\" = 'PROFESSIONAL_PHOTO')");
+        }
+    }
+
     // Stage a real PROFESSIONAL_PHOTO file through IPrivateFileStorage (mirrors ProfessionalPhotoFailureTests)
     // and return its PrivateFile id. The metadata row is added to the supplied context and persisted by the caller.
     private async Task<Guid> SeedPhotoFileAsync(ApplicationDbContext db)

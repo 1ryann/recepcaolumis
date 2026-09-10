@@ -1,5 +1,4 @@
 using GestaoPredio.Application.Abstractions;
-using GestaoPredio.Application.Files;
 using GestaoPredio.Domain.Files;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Infrastructure.Persistence;
@@ -11,18 +10,23 @@ namespace recepcaototem.Features.Professionals;
 internal static class ProfessionalPhotoStreaming
 {
     // Streams the professional's photo bytes. Caller has already decided the professional
-    // is allowed to be seen. 404 when there is no usable photo; 503 on storage I/O failure
-    // (identical to the admin endpoint's historical behaviour).
+    // is allowed to be seen. 404 when there is no photo pointer. A dangling/wrong-purpose
+    // metadata pointer yields 404 when notFoundWhenMetadataUnusable is true (Totem route,
+    // spec §7.4) and 503 when false (admin route, historical behaviour). A genuine storage
+    // I/O failure always yields 503 for both callers.
     public static async Task<IResult> StreamAsync(
         Professional professional, ApplicationDbContext db, IPrivateFileStorage storage,
-        ILoggerFactory loggerFactory, HttpContext context, string cacheControl, CancellationToken ct)
+        ILoggerFactory loggerFactory, HttpContext context, string cacheControl,
+        bool notFoundWhenMetadataUnusable, CancellationToken ct)
     {
         if (professional.PhotoFileId is null) return Results.NotFound();
 
         var metadata = await db.PrivateFiles.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == professional.PhotoFileId, ct);
         if (metadata is null || !string.Equals(metadata.Purpose, PrivateFilePurposes.ProfessionalPhoto, StringComparison.Ordinal))
-            return PhotoUnavailable(loggerFactory, context, professional.Id, professional.PhotoFileId.Value);
+            return notFoundWhenMetadataUnusable
+                ? Results.NotFound()
+                : PhotoUnavailable(loggerFactory, context, professional.Id, professional.PhotoFileId.Value);
 
         Stream? stream;
         try

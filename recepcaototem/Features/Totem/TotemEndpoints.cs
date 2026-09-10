@@ -201,7 +201,8 @@ public static class TotemEndpoints
             .SingleOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
         return await recepcaototem.Features.Professionals.ProfessionalPhotoStreaming.StreamAsync(
-            professional, db, storage, loggerFactory, context, "public, max-age=300", ct);
+            professional, db, storage, loggerFactory, context, "public, max-age=300",
+            notFoundWhenMetadataUnusable: true, ct);
     }
 
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,

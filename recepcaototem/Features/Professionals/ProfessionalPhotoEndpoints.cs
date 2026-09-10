@@ -42,7 +42,8 @@ public static class ProfessionalPhotoEndpoints
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
         return await ProfessionalPhotoStreaming.StreamAsync(
-            professional, db, storage, loggerFactory, context, "private, no-store", cancellationToken);
+            professional, db, storage, loggerFactory, context, "private, no-store",
+            notFoundWhenMetadataUnusable: false, cancellationToken);
     }
 
     private static async Task<IResult> Put(
