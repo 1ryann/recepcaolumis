@@ -304,7 +304,7 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
         var ctx = await factory.SeedEligibleReservationAsync();
         var issue = await ctx.IssueAsync();
 
-        using var withOtherKey = factory.WithConfig("CheckIn:ManualCodeHmacKey", "a-totally-different-key");
+        using var withOtherKey = factory.WithConfig(("CheckIn:ManualCodeHmacKey", "a-totally-different-key"));
 
         Assert.Equal(HttpStatusCode.BadRequest,
             (await withOtherKey.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode })).StatusCode);
@@ -364,14 +364,16 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
 
     /// <summary>
     /// Brute-force ceiling (spec 7A.9): from one client, <c>CustomerIpPermitLimit</c> + 1 rapid resolves
-    /// with distinct random 6-digit codes — the last one is 429. Mirrors <c>LoginRateLimiterTests</c>:
-    /// the default 30/60 s budget is exercised, never bumped (only the window is widened for determinism).
+    /// with distinct random 6-digit codes — the last one is 429. The shared factory raises
+    /// <c>CustomerIpPermitLimit</c> to keep unrelated check-in tests from tripping 429; this test's
+    /// isolated host restores the spec §7A.9 default of 30 (and widens the window to 600 s for
+    /// determinism) to exercise the brute-force ceiling.
     /// </summary>
     [Fact]
     public async Task Resolve_is_rate_limited_per_ip()
     {
         await factory.ResetAsync();
-        using var isolated = factory.WithConfig("RateLimiting:CustomerWindowSeconds", "600");
+        using var isolated = factory.WithConfig(("RateLimiting:CustomerWindowSeconds", "600"), ("RateLimiting:CustomerIpPermitLimit", "30"));
         const int ipPermitLimit = 30; // spec 7A.9 default: RateLimiting:CustomerIpPermitLimit
 
         var statuses = new List<HttpStatusCode>();

@@ -58,13 +58,16 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
     public LogCapture CaptureLogs() => new(_logSink, _logSink.Length);
 
     /// <summary>
-    /// A throw-away derived host with one configuration value overridden, plus a ready client
+    /// A throw-away derived host with one or more configuration values overridden, plus a ready client
     /// (Task 16 RULING 3). Same Postgres schema and clock as the parent (config inherited). Dispose
     /// disposes both the derived factory and its client.
     /// </summary>
-    public ConfiguredFactory WithConfig(string key, string value)
+    public ConfiguredFactory WithConfig(params (string Key, string Value)[] settings)
     {
-        var derived = WithWebHostBuilder(builder => builder.UseSetting(key, value));
+        var derived = WithWebHostBuilder(builder =>
+        {
+            foreach (var (key, value) in settings) builder.UseSetting(key, value);
+        });
         var client = derived.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
@@ -113,6 +116,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("RateLimiting:LoginPermitLimit", "10000");
         builder.UseSetting("RateLimiting:LoginIdentifierPermitLimit", "10000");
         builder.UseSetting("RateLimiting:PermitLimit", "10000");
+        builder.UseSetting("RateLimiting:CustomerIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:CustomerIdentifierPermitLimit", "10000");
         builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
         builder.UseSetting("CheckIn:ManualCodeHmacKey", "integration-tests-manual-code-hmac-key-not-a-secret");
         builder.ConfigureServices(services =>
