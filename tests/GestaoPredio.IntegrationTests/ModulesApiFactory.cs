@@ -118,6 +118,12 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("RateLimiting:PermitLimit", "10000");
         builder.UseSetting("RateLimiting:CustomerIpPermitLimit", "10000");
         builder.UseSetting("RateLimiting:CustomerIdentifierPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffCreateIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffStatusPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffCancelIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffClaimIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffResolveIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:HandoffWindowSeconds", "60");
         builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
         builder.UseSetting("CheckIn:ManualCodeHmacKey", "integration-tests-manual-code-hmac-key-not-a-secret");
         builder.ConfigureServices(services =>

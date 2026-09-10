@@ -66,6 +66,7 @@ builder.Services.AddSingleton<LoginRateLimiter>();
 builder.Services.AddSingleton<CustomerPublicRateLimiter>();
 builder.Services.AddSingleton<ProfessionalRegistrationRateLimiter>();
 builder.Services.AddSingleton<ProfessionalPresenceRateLimiter>();
+builder.Services.AddSingleton<recepcaototem.Features.Totem.TotemHandoffRateLimiter>();
 builder.Services.AddSingleton<RescheduleTokenRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
