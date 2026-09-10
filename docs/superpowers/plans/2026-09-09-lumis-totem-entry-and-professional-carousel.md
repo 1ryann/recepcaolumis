@@ -10,9 +10,11 @@
 
 ## Global Constraints
 
-- Branch `codex/reception-backend`, worktree `.worktrees/reception-backend`. **No push, no `main`, no Railway, no DB migration, no manual DB.**
+- Branch `codex/reception-backend`, worktree `.worktrees/reception-backend`. **No push, no `main`, no Railway, no manual DB.**
 - Commit trailer on every commit: `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
+- **Migration:** Task 13 *generates* `CheckInManualCode` via `dotnet ef migrations add` (source-controlled) but **does not apply it** to staging/production — applying it is a separate, separately-approved step. The integration test DB recreates the schema from the model/migrations, so tests still cover it.
 - **Do not edit `recepcaototem/Program.cs`.** The CSP `font-src`/`worker-src` fix is a separate prerequisite (spec §20). The camera/QR scan path is not "done" until it ships elsewhere.
+- **Credential invariant:** the QR strong token and the 6-digit manual code are two representations of the **same** `CheckInToken` row. Consuming or revoking one invalidates the other; `Rotate` replaces both. The 6-digit plaintext is returned only in the issue response — never persisted, logged, or audited. `resolve`/`confirm` keep **one** eligibility rule for both.
 - **Do not touch** `/api/totem/immediate`, `TotemProfessionalResponse`, `src/pages/Reception.tsx`, `src/dev/DevelopmentAppStore.tsx`, `AppStore`, `atrium_*`. No mock data, no hardcoded professionals/photos.
 - Timezone is `America/Porto_Velho`. Reuse `src/features/totem/KioskClock.tsx` — **no new `setInterval`/timer**.
 - Preserve every existing test. Preserve the `ProtectedRoute` non‑remount latch (`validatedOnce`) from commit `d03f312`.
@@ -27,16 +29,23 @@
 **Backend (create)**
 - `recepcaototem/Features/Totem/TotemProfessionalStatus.cs` — pure status mapper.
 - `recepcaototem/Features/Professionals/ProfessionalPhotoStreaming.cs` — shared photo‑streaming helper.
-- `tests/GestaoPredio.UnitTests/TotemProfessionalStatusTests.cs`
-- `tests/GestaoPredio.IntegrationTests/TotemProfessionalsCarouselTests.cs`
+- `src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs` — 6-digit value object.
+- `src/GestaoPredio.Infrastructure/Persistence/Migrations/PostgreSql/<ts>_CheckInManualCode.cs` — via `dotnet ef migrations add` (Task 13; not applied).
+- `tests/GestaoPredio.UnitTests/{TotemProfessionalStatusTests,ManualCheckInCodeTests}.cs`
+- `tests/GestaoPredio.IntegrationTests/{TotemProfessionalsCarouselTests,CheckInManualCodeTests}.cs`
 
 **Backend (modify)**
-- `recepcaototem/Features/Totem/TotemEndpoints.cs` — new `record TotemProfessionalCard`; replace `Professionals` handler body; add `ProfessionalPhoto` handler + route.
-- `recepcaototem/Features/Professionals/ProfessionalPhotoEndpoints.cs` — `Get` delegates to the shared helper (behaviour unchanged: `private, no-store`, 503 on storage failure).
+- `recepcaototem/Features/Totem/TotemEndpoints.cs` — new `record TotemProfessionalCard`; replace `Professionals` handler body; add `ProfessionalPhoto` handler + route; `FindCheckIn`/`ResolveCheckIn`/`ConfirmCheckIn` dispatch by string shape (6 digits → `ManualCodeHash`).
+- `recepcaototem/Features/Professionals/ProfessionalPhotoEndpoints.cs` — `Get` delegates to the shared helper (behaviour unchanged: `private, no-store`, **503 on real storage I/O failure**, 404 only for the guards).
+- `src/GestaoPredio.Domain/Customers/CheckInToken.cs` — `ManualCodeHash: byte[]?`; `Create`/`Rotate` take both hashes.
+- `src/GestaoPredio.Infrastructure/Persistence/Configurations/CheckInTokenConfiguration.cs` — map `ManualCodeHash` + partial unique index `UX_CheckInTokens_ManualCodeHash`.
+- `recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs` — `IssueToken`: generate `ManualCheckInCode` + bounded collision loop; response `{ token, manualCode, expiresAt }`.
+- `tests/GestaoPredio.UnitTests/CheckInTokenTests.cs` — adapt to the new `Create`/`Rotate` arity.
 
 **Frontend (create)** — under `recepcaototem/ClientApp/src/`
 - `auth/returnUrl.ts` + `auth/returnUrl.test.ts` — `safeCustomerReturnUrl`.
 - `features/totem/professionalInitials.ts` + `.test.ts`.
+- `features/totem/sixDigitCode.ts` + `.test.ts` — `onlyDigits6` / `isComplete6`.
 - `features/totem/magic/LightRays.tsx`, `BlurFade.tsx`, `MagicCard.tsx`, `BorderBeam.tsx`, `ProgressiveBlur.tsx`, `RippleButton.tsx`
 - `features/totem/magic/magic.test.tsx`
 - `features/totem/TotemProfessionalCarousel.tsx` + `.test.tsx`
@@ -44,15 +53,16 @@
 - `pages/TotemProfessionals.tsx` + `.test.tsx`
 
 **Frontend (modify)**
-- `api/modules.ts` — `TotemProfessionalCardDto` + `totemApi.professionals()`.
+- `api/modules.ts` — `TotemProfessionalCardDto` + `totemApi.professionals()`; `issueCheckInToken` return type `{ token; manualCode; expiresAt }`.
 - `App.tsx`, `dev/DevelopmentApp.tsx` — three Totem routes.
 - `frontend-portals.test.ts` — updated Totem route assertions.
-- `pages/TotemCheckIn.tsx` + `.test.tsx` — `← Voltar` + auto‑return to `/totem` + trimmed aside copy + `LightRays`.
+- `pages/TotemCheckIn.tsx` + `.test.tsx` — `← Voltar` + auto‑return to `/totem` + trimmed aside copy + `LightRays` + **6-digit manual input**.
+- `pages/customer/CustomerReservationDetail.tsx` + `.test.tsx` — show the 6-digit code next to the QR (no storage).
 - `components/ProtectedRoute.tsx` + `.test.tsx` — `returnUrl` on the customer redirect.
 - `pages/Login.tsx` + `.test.tsx` — honour + propagate `returnUrl` (customer only).
 - `pages/customer/CustomerRegister.tsx` + `.test.tsx` — propagate `returnUrl`.
 - `pages/customer/CustomerBooking.tsx` + `.test.tsx` — preselect from `?professionalId`.
-- `styles.css` — append `.totem-entry-*`, `.totem-carousel-*`, `.totem-status-*`, `.totem-magic-*` blocks (no existing rule changed).
+- `styles.css` — append `.totem-entry-*`, `.totem-carousel-*`, `.totem-status-*`, `.totem-magic-*`, `.customer-checkin-code` blocks (no existing rule changed).
 
 ---
 
@@ -73,6 +83,13 @@
 - **Task 7 → routes:** `<TotemEntry />` at `/totem`.
 - **Task 8 → 9:** `<TotemProfessionalCarousel professionals: TotemProfessionalCardDto[]; onActiveChange: (p: TotemProfessionalCardDto) => void />`.
 - **Task 9 → routes:** `<TotemProfessionals />` at `/totem/profissionais`.
+- **Task 12 → 14/15/16:** `readonly struct ManualCheckInCode` — `static Generate() : ManualCheckInCode`, `static TryParse(string?, out ManualCheckInCode) : bool`, `Hash() : byte[]` (32), `Value : string` (6 digits), `ToString()`.
+- **Task 13 → 14/15:** `CheckInToken.ManualCodeHash : byte[]?`; `CheckInToken.Create(Guid reservationId, byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)`; `CheckInToken.Rotate(byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)`; index `UX_CheckInTokens_ManualCodeHash` (partial unique).
+- **Task 14 → 15/16/17:** `POST /api/customer/reservations/{id}/check-in-token` → `200 { token: string, manualCode: string /* ^\d{6}$ */, expiresAt: string }`; `503 CHECK_IN_CODE_UNAVAILABLE` on retry exhaustion.
+- **Task 15 → 18:** `POST /api/totem/check-in/resolve` and `/confirm` accept a 6-digit `token`; same `CheckInPreviewDto` / visit result as the QR path; invalid → `400 { code: "INVALID_CHECK_IN", message: "Não foi possível validar este código." }`.
+- **Task 14 → 16:** `internal interface IManualCodeSource { ManualCheckInCode Next(); }` with default impl `DefaultManualCodeSource : IManualCodeSource` (wraps `ManualCheckInCode.Generate`), registered in DI and injected into `IssueToken` from the start. Task 16's tests script a fake source.
+- **Task 17 → :** `customerApi.issueCheckInToken(id) : Promise<{ token: string; manualCode: string; expiresAt: string }>`.
+- **Task 18 → :** `onlyDigits6(v: string) : string`, `isComplete6(v: string) : boolean`.
 
 ---
 
@@ -1443,14 +1460,696 @@ git commit -m "feat(customer): carry professionalId through login/register via s
 
 ---
 
-## Task 12: Full gates + accessibility sweep
+## Task 12: Domain — `ManualCheckInCode` value object
+
+**Files:**
+- Create: `src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs`
+- Test: `tests/GestaoPredio.UnitTests/ManualCheckInCodeTests.cs`
+
+**Interfaces:**
+- Consumes: `System.Security.Cryptography.RandomNumberGenerator`, `SHA256`.
+- Produces: `readonly struct ManualCheckInCode` with `string Value`, `static ManualCheckInCode Generate()`, `static bool TryParse(string?, out ManualCheckInCode)`, `byte[] Hash()`, `override string ToString()`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/GestaoPredio.UnitTests/ManualCheckInCodeTests.cs`:
+```csharp
+using System.Security.Cryptography;
+using GestaoPredio.Domain.Customers;
+using Xunit;
+
+namespace GestaoPredio.UnitTests;
+
+public sealed class ManualCheckInCodeTests
+{
+    [Fact]
+    public void Generate_yields_exactly_six_digits()
+    {
+        for (var i = 0; i < 10_000; i++)
+        {
+            var code = ManualCheckInCode.Generate().Value;
+            Assert.Equal(6, code.Length);
+            Assert.All(code, c => Assert.InRange(c, '0', '9'));
+        }
+    }
+
+    [Fact]
+    public void Generate_preserves_leading_zeros_and_has_reasonable_spread()
+    {
+        var values = new HashSet<string>();
+        var anyLeadingZero = false;
+        for (var i = 0; i < 10_000; i++)
+        {
+            var v = ManualCheckInCode.Generate().Value;
+            values.Add(v);
+            anyLeadingZero |= v[0] == '0';
+        }
+        Assert.True(anyLeadingZero, "expected at least one code starting with 0 in 10k draws");
+        Assert.True(values.Count > 9_000, "RNG spread sanity");
+    }
+
+    [Theory]
+    [InlineData("482731", true, "482731")]
+    [InlineData("004821", true, "004821")]
+    [InlineData(" 482731 ", true, "482731")]
+    [InlineData("48273", false, null)]
+    [InlineData("4827311", false, null)]
+    [InlineData("48a731", false, null)]
+    [InlineData("", false, null)]
+    [InlineData(null, false, null)]
+    public void TryParse_accepts_only_six_ascii_digits(string? raw, bool ok, string? expected)
+    {
+        var parsed = ManualCheckInCode.TryParse(raw, out var code);
+        Assert.Equal(ok, parsed);
+        if (ok) Assert.Equal(expected, code.Value);
+    }
+
+    [Fact]
+    public void Hash_is_deterministic_sha256_and_distinguishes_leading_zeros()
+    {
+        ManualCheckInCode.TryParse("004821", out var a);
+        ManualCheckInCode.TryParse("004821", out var a2);
+        ManualCheckInCode.TryParse("4821", out _); // invalid length -> not comparable; use a 6-digit near-value
+        ManualCheckInCode.TryParse("048210", out var b);
+        Assert.Equal(32, a.Hash().Length);
+        Assert.Equal(a.Hash(), a2.Hash());
+        Assert.NotEqual(a.Hash(), b.Hash());
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `dotnet test tests/GestaoPredio.UnitTests --filter ManualCheckInCodeTests`
+Expected: FAIL — type missing.
+
+- [ ] **Step 3: Implement** (spec §7A.3)
+
+`src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs`:
+```csharp
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace GestaoPredio.Domain.Customers;
+
+/// <summary>
+/// The 6-digit manual check-in code. A string (leading zeros matter), never an int.
+/// The plaintext lives only in the issue response; only <see cref="Hash"/> is persisted.
+/// </summary>
+public readonly struct ManualCheckInCode
+{
+    public string Value { get; }
+    private ManualCheckInCode(string value) => Value = value;
+
+    public static ManualCheckInCode Generate() =>
+        new(RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", CultureInfo.InvariantCulture));
+
+    public static bool TryParse(string? raw, out ManualCheckInCode code)
+    {
+        code = default;
+        var t = raw?.Trim() ?? string.Empty;
+        if (t.Length != 6) return false;
+        foreach (var c in t) if (c is < '0' or > '9') return false;
+        code = new ManualCheckInCode(t);
+        return true;
+    }
+
+    public byte[] Hash() => SHA256.HashData(Encoding.ASCII.GetBytes(Value));
+
+    public override string ToString() => Value;
+}
+```
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `dotnet test tests/GestaoPredio.UnitTests --filter ManualCheckInCodeTests`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/GestaoPredio.Domain/Customers/ManualCheckInCode.cs tests/GestaoPredio.UnitTests/ManualCheckInCodeTests.cs
+git commit -m "feat(checkin): ManualCheckInCode value object (6-digit, CSPRNG, SHA-256)"
+```
+
+---
+
+## Task 13: Persistence — extend `CheckInToken` with `ManualCodeHash` + migration
+
+**Files:**
+- Modify: `src/GestaoPredio.Domain/Customers/CheckInToken.cs`
+- Modify: `src/GestaoPredio.Infrastructure/Persistence/Configurations/CheckInTokenConfiguration.cs`
+- Create: `src/GestaoPredio.Infrastructure/Persistence/Migrations/PostgreSql/<timestamp>_CheckInManualCode.cs` (via `dotnet ef migrations add`)
+- Modify: `tests/GestaoPredio.UnitTests/CheckInTokenTests.cs` (adapt to the new signatures)
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `CheckInToken.ManualCodeHash: byte[]?`; `CheckInToken.Create(Guid reservationId, byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)`; `CheckInToken.Rotate(byte[] tokenHash, byte[] manualCodeHash, DateTimeOffset issuedAt, DateTimeOffset expiresAt)`.
+
+- [ ] **Step 1: Adapt the failing test**
+
+Rewrite `tests/GestaoPredio.UnitTests/CheckInTokenTests.cs` to the new signatures and add a `Rotate` assertion:
+```csharp
+using System.Security.Cryptography;
+using GestaoPredio.Domain.Customers;
+using Xunit;
+
+namespace GestaoPredio.UnitTests;
+
+public sealed class CheckInTokenTests
+{
+    private static byte[] H() => RandomNumberGenerator.GetBytes(32);
+
+    [Fact]
+    public void Create_requires_32_byte_hashes_and_tracks_revoke_use()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var token = CheckInToken.Create(Guid.NewGuid(), H(), H(), now, now.AddHours(1));
+        Assert.Equal(32, token.TokenHash.Length);
+        Assert.Equal(32, token.ManualCodeHash!.Length);
+        token.Revoke(now.AddMinutes(1));
+        token.MarkUsed(now.AddMinutes(2));
+        Assert.NotNull(token.RevokedAt);
+        Assert.NotNull(token.UsedAt);
+    }
+
+    [Fact]
+    public void Rotate_replaces_both_hashes_and_clears_state()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var token = CheckInToken.Create(Guid.NewGuid(), H(), H(), now, now.AddHours(1));
+        token.MarkUsed(now); token.Revoke(now);
+        var t2 = H(); var m2 = H();
+        token.Rotate(t2, m2, now.AddMinutes(5), now.AddHours(2));
+        Assert.Equal(t2, token.TokenHash);
+        Assert.Equal(m2, token.ManualCodeHash);
+        Assert.Null(token.UsedAt);
+        Assert.Null(token.RevokedAt);
+    }
+
+    [Fact]
+    public void Create_rejects_invalid_hash_lengths()
+    {
+        var now = DateTimeOffset.UtcNow;
+        Assert.Throws<ArgumentException>(() => CheckInToken.Create(Guid.NewGuid(), new byte[31], H(), now, now.AddHours(1)));
+        Assert.Throws<ArgumentException>(() => CheckInToken.Create(Guid.NewGuid(), H(), new byte[10], now, now.AddHours(1)));
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `dotnet test tests/GestaoPredio.UnitTests --filter CheckInTokenTests`
+Expected: FAIL — `Create`/`Rotate` arity, `ManualCodeHash` missing.
+
+- [ ] **Step 3: Implement**
+
+`CheckInToken.cs`: add `public byte[]? ManualCodeHash { get; private set; }`. Extend `Create` and `Rotate` to take `byte[] manualCodeHash` (validate `length == 32`, same as `tokenHash`); `Rotate` sets both and nulls `RevokedAt`/`UsedAt` (already does the latter).
+
+`CheckInTokenConfiguration.cs`: add
+```csharp
+entity.Property(x => x.ManualCodeHash).HasColumnType("bytea");
+entity.HasIndex(x => x.ManualCodeHash)
+    .IsUnique()
+    .HasFilter("\"ManualCodeHash\" IS NOT NULL")
+    .HasDatabaseName("UX_CheckInTokens_ManualCodeHash");
+```
+
+Generate the migration (do **not** apply to any real DB):
+```bash
+dotnet ef migrations add CheckInManualCode -p src/GestaoPredio.Infrastructure -s recepcaototem
+```
+Verify the generated `Up()` adds the nullable `bytea` column + the partial unique index, and `Down()` drops both (spec §26). `dotnet build` must succeed and the model snapshot must update.
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `dotnet test tests/GestaoPredio.UnitTests --filter CheckInTokenTests` then `dotnet build`
+Expected: PASS + build clean. (Integration suite runs in Task 15/16 once the issue/resolve code exists.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/GestaoPredio.Domain/Customers/CheckInToken.cs src/GestaoPredio.Infrastructure/Persistence/Configurations/CheckInTokenConfiguration.cs "src/GestaoPredio.Infrastructure/Persistence/Migrations/PostgreSql/" tests/GestaoPredio.UnitTests/CheckInTokenTests.cs
+git commit -m "feat(checkin): CheckInToken.ManualCodeHash + partial unique index (migration, not applied)"
+```
+
+---
+
+## Task 14: Issue — enrich `IssueToken` with the manual code + collision loop
+
+**Files:**
+- Modify: `recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs` (`IssueToken`)
+- Test: `tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` (new — issue cases)
+
+**Interfaces:**
+- Consumes: `ManualCheckInCode` (Task 12); `CheckInToken.Create/Rotate` new arity (Task 13).
+- Produces: `POST /api/customer/reservations/{id}/check-in-token` → `{ token: string, manualCode: string, expiresAt: string }`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` (issue block):
+```csharp
+using System.Net;
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using GestaoPredio.Domain.Customers;
+using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace GestaoPredio.IntegrationTests;
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
+{
+    private sealed record Issue(string Token, string ManualCode, DateTimeOffset ExpiresAt);
+
+    [Fact]
+    public async Task Issue_returns_token_manualCode_and_expiry_and_persists_only_hashes()
+    {
+        var ctx = await factory.SeedEligibleReservationAsync();     // helper: customer + approved reservation inside the check-in window
+        var issue = await ctx.IssueAsync();
+        Assert.Matches(new Regex("^\\d{6}$"), issue.ManualCode);
+        Assert.NotEqual(issue.ManualCode, issue.Token);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var row = await db.CheckInTokens.SingleAsync(x => x.ReservationId == ctx.ReservationId);
+        Assert.Equal(SHA256.HashData(Encoding.ASCII.GetBytes(issue.ManualCode)), row.ManualCodeHash);
+        // plaintext nowhere:
+        var raw = await db.CheckInTokens.Select(x => x.Id.ToString()).ToListAsync();
+        Assert.DoesNotContain(issue.ManualCode, string.Join('|', raw));
+    }
+
+    [Fact]
+    public async Task Reissue_rotates_both_representations()
+    {
+        var ctx = await factory.SeedEligibleReservationAsync();
+        var first = await ctx.IssueAsync();
+        var second = await ctx.IssueAsync();
+        Assert.NotEqual(first.ManualCode, second.ManualCode);
+        Assert.NotEqual(first.Token, second.Token);
+    }
+}
+```
+> `SeedEligibleReservationAsync` / `IssueAsync` are small helpers on `ModulesApiFactory` (or a local fixture) that create a customer, log them in, create an approved reservation whose window is open "now", and POST the issue endpoint. Model on `CustomerApiTests.cs`.
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter CheckInManualCodeTests`
+Expected: FAIL — response has no `manualCode`; `ManualCodeHash` null.
+
+- [ ] **Step 3: Implement** (spec §7A.5, §7A.7)
+
+First add the RNG seam (so Task 16 can script it): `internal interface IManualCodeSource { ManualCheckInCode Next(); }` + `internal sealed class DefaultManualCodeSource : IManualCodeSource { public ManualCheckInCode Next() => ManualCheckInCode.Generate(); }`, registered `services.AddSingleton<IManualCodeSource, DefaultManualCodeSource>()` where the other feature services are registered. `IssueToken` takes `IManualCodeSource codes` as a parameter.
+
+In `IssueToken`, after computing the strong token, generate the manual code with the bounded collision loop, then `Create`/`Rotate` with both hashes:
+```csharp
+var raw = RandomNumberGenerator.GetBytes(32);
+var tokenHash = SHA256.HashData(raw);
+
+ManualCheckInCode code = default;
+byte[] manualHash = [];
+const int maxAttempts = 5;
+var attempt = 0;
+while (true)
+{
+    attempt++;
+    code = codes.Next();                 // IManualCodeSource (default: CSPRNG)
+    manualHash = code.Hash();
+    var clash = await db.CheckInTokens.AsNoTracking().AnyAsync(x =>
+        x.ReservationId != id && x.ManualCodeHash == manualHash &&
+        x.RevokedAt == null && x.UsedAt == null && x.ExpiresAt > now, ct);
+    if (!clash) break;
+    if (attempt >= maxAttempts)
+    {
+        db.AuditEntries.Add(/* CHECK_IN_TOKEN_ISSUE_FAILED, RESERVATION target, no value */);
+        await db.SaveChangesAsync(ct);
+        return Results.Json(new ApiError("CHECK_IN_CODE_UNAVAILABLE",
+            "Não foi possível gerar o código agora. Tente novamente."), statusCode: 503);
+    }
+}
+
+var token = await db.CheckInTokens.SingleOrDefaultAsync(x => x.ReservationId == id, ct);
+if (token is null) db.CheckInTokens.Add(token = CheckInToken.Create(id, tokenHash, manualHash, now, reservation.EndAt));
+else token.Rotate(tokenHash, manualHash, now, reservation.EndAt);
+
+// audit CHECK_IN_TOKEN_ISSUED unchanged (no value)
+try { await db.SaveChangesAsync(ct); }
+catch (DbUpdateException) when (attempt < maxAttempts)
+{
+    // extremely rare unique-violation race: retry the whole block once more
+    // (loop restructured to allow this — see note)
+}
+return Results.Ok(new { token = WebEncoders.Base64UrlEncode(raw), manualCode = code.Value, expiresAt = reservation.EndAt });
+```
+> Restructure so a `DbUpdateException` (unique violation on `UX_CheckInTokens_ManualCodeHash`) is caught and retried within `maxAttempts`; on exhaustion return the same `503`. Keep the existing eligibility gate and `CHECK_IN_TOKEN_ISSUED` audit exactly as they are.
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter CheckInManualCodeTests`
+Expected: PASS (issue cases).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs
+git commit -m "feat(checkin): issue endpoint returns a 6-digit manualCode (collision loop, bounded retry)"
+```
+
+---
+
+## Task 15: Resolve/Confirm — dispatch by shape, one eligibility rule
+
+**Files:**
+- Modify: `recepcaototem/Features/Totem/TotemEndpoints.cs` (`FindCheckIn`, `ResolveCheckIn`, `ConfirmCheckIn`)
+- Test: `tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` (resolve/confirm + QR↔manual + errors)
+
+**Interfaces:**
+- Consumes: `ManualCheckInCode.TryParse` (Task 12); `CheckInToken.ManualCodeHash` (Task 13); the issue endpoint (Task 14).
+- Produces: `POST /api/totem/check-in/resolve` and `/confirm` accept a 6-digit `token` and converge on the same preview/visit as the QR token.
+
+- [ ] **Step 1: Write the failing tests** (append)
+
+```csharp
+[Fact]
+public async Task Manual_code_resolves_and_confirms_like_the_qr_token()
+{
+    var ctx = await factory.SeedEligibleReservationAsync();
+    var issue = await ctx.IssueAsync();
+
+    var preview = await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode });
+    Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+
+    var confirm = await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = issue.ManualCode });
+    Assert.Equal(HttpStatusCode.OK, confirm.StatusCode);
+    // idempotent second confirm
+    Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = issue.ManualCode })).StatusCode);
+}
+
+[Fact]
+public async Task Consuming_via_manual_invalidates_the_qr_token_and_vice_versa()
+{
+    var a = await factory.SeedEligibleReservationAsync();
+    var ia = await a.IssueAsync();
+    await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = ia.ManualCode });
+    Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = ia.Token })).StatusCode);
+
+    var b = await factory.SeedEligibleReservationAsync();
+    var ib = await b.IssueAsync();
+    await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = ib.Token });
+    Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = ib.ManualCode })).StatusCode);
+}
+
+[Fact]
+public async Task Reissue_kills_the_previous_pair()
+{
+    var ctx = await factory.SeedEligibleReservationAsync();
+    var first = await ctx.IssueAsync();
+    var second = await ctx.IssueAsync();
+    foreach (var stale in new[] { first.ManualCode, first.Token })
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = stale })).StatusCode);
+    Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = second.ManualCode })).StatusCode);
+}
+
+[Theory]
+[InlineData("000000")]   // random miss
+[InlineData("123456")]
+public async Task Unknown_manual_code_fails_generically(string guess)
+{
+    var response = await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = guess });
+    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    var body = await response.Content.ReadAsStringAsync();
+    Assert.Contains("Não foi possível validar este código", body);
+    Assert.DoesNotContain("reservation", body, StringComparison.OrdinalIgnoreCase);
+}
+
+[Fact]
+public async Task Cancelling_the_reservation_invalidates_both_representations()
+{
+    var ctx = await factory.SeedEligibleReservationAsync();
+    var issue = await ctx.IssueAsync();
+    await ctx.CancelAsync();
+    foreach (var stale in new[] { issue.ManualCode, issue.Token })
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = stale })).StatusCode);
+}
+
+[Fact]
+public async Task Rescheduling_invalidates_the_old_credential_and_the_new_reservation_has_none()
+{
+    var ctx = await factory.SeedEligibleReservationAsync();
+    var issue = await ctx.IssueAsync();
+    var newReservationId = await ctx.RescheduleAsync();
+    Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode })).StatusCode);
+    await using var scope = factory.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    Assert.False(await db.CheckInTokens.AnyAsync(x => x.ReservationId == newReservationId));
+}
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter CheckInManualCodeTests`
+Expected: FAIL — a 6-digit `token` still hits the base64url path → `400` even for a valid code.
+
+- [ ] **Step 3: Implement** (spec §7A.6)
+
+In `TotemEndpoints`, add a shape dispatch used by both `ResolveCheckIn` and `ConfirmCheckIn`. Extend `FindCheckIn` to look up by either hash column:
+```csharp
+private static async Task<(...)?> FindCheckIn(string raw, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+{
+    var value = (raw ?? string.Empty).Trim();
+    byte[] hash;
+    if (ManualCheckInCode.TryParse(value, out var code))
+        hash = code.Hash();
+    else
+    {
+        byte[] bytes;
+        try { bytes = WebEncoders.Base64UrlDecode(value); } catch (FormatException) { return null; }
+        if (bytes.Length != 32) return null;
+        hash = SHA256.HashData(bytes);
+    }
+
+    var row = await (from token in db.CheckInTokens
+                     join reservation in db.Reservations on token.ReservationId equals reservation.Id
+                     join customer in db.Customers on reservation.CustomerId equals customer.Id
+                     join professional in db.Professionals on reservation.ProfessionalId equals professional.Id
+                     join room in db.Rooms on reservation.RoomId equals room.Id
+                     where token.TokenHash == hash || token.ManualCodeHash == hash   // ManualCodeHash null never equals `hash`
+                     select new { token, reservation, customer, Name = professional.Name, RoomName = room.Name })
+                    .SingleOrDefaultAsync(ct);
+    if (row is null) return null;
+    var now = time.GetUtcNow();
+    if (row.token.RevokedAt is not null || row.token.ExpiresAt <= now
+        || row.reservation.Status != ReservationStatus.Approved || !row.customer.IsActive
+        || now < row.reservation.StartAt.Subtract(TimeSpan.FromHours(1)) || now >= row.reservation.EndAt)
+        return null;
+    return (row.token, row.reservation, row.customer, new TotemCheckInPreview(row.Name, row.RoomName, row.reservation.StartAt, row.reservation.EndAt, true));
+}
+```
+> `where token.TokenHash == hash || token.ManualCodeHash == hash` is safe: `hash` is 32 bytes; a strong token never parses as 6 digits, and a manual hash only matches `ManualCodeHash`. Keep the eligibility gate character-for-character identical. `InvalidCheckIn()` message becomes `"Não foi possível validar este código."` (generic for both paths — or keep the current phrasing; the spec text is the contract).
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter "CheckInManualCodeTests|TotemPresenceApiTests|ReservationWorkflowTests|CustomerApiTests"`
+Expected: PASS — manual + QR converge; **no regression** in the strong-token flow.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add recepcaototem/Features/Totem/TotemEndpoints.cs tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs
+git commit -m "feat(totem): resolve/confirm accept a 6-digit code, converging on the same eligibility rule"
+```
+
+---
+
+## Task 16: Security — brute force, collision retry, no-leak
+
+**Files:**
+- Test only: `tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs` (append); a test seam for the RNG if needed.
+
+**Interfaces:**
+- Consumes: Tasks 12–15.
+- Produces: no new production code unless a test reveals a gap (then a minimal fix in `IssueToken`/`TotemEndpoints`).
+
+- [ ] **Step 1: Write the failing/《characterisation》tests**
+
+```csharp
+[Fact]
+public async Task Resolve_is_rate_limited_per_ip()
+{
+    // mirror an existing rate-limit test: fire CustomerIpPermitLimit+1 rapid resolves with
+    // random 6-digit codes from the same client; expect a 429 at the limit.
+}
+
+[Fact]
+public async Task Colliding_generation_retries_and_succeeds_with_a_different_code()
+{
+    // Arrange a live CheckInToken whose ManualCodeHash is known, then make the generator
+    // produce that value once via an injected IManualCodeSource test double (see Step 3),
+    // and assert the issued code differs and the endpoint returns 200.
+}
+
+[Fact]
+public async Task Exhausting_retries_returns_503_without_leaking()
+{
+    // Force the generator to always collide -> 503 CHECK_IN_CODE_UNAVAILABLE; body has no digits;
+    // AuditEntries has CHECK_IN_TOKEN_ISSUE_FAILED and no 6-digit string anywhere.
+}
+
+[Fact]
+public async Task The_six_digit_plaintext_never_appears_in_audit()
+{
+    var ctx = await factory.SeedEligibleReservationAsync();
+    var issue = await ctx.IssueAsync();
+    await factory.Client.PostAsJsonAsync("/api/totem/check-in/resolve", new { token = issue.ManualCode });
+    await factory.Client.PostAsJsonAsync("/api/totem/check-in/confirm", new { token = issue.ManualCode });
+    await using var scope = factory.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var audit = await db.AuditEntries.Select(a => a.Action + "|" + a.Result + "|" + (a.CorrelationId ?? "")).ToListAsync();
+    Assert.DoesNotContain(issue.ManualCode, string.Join("\n", audit));
+}
+```
+
+- [ ] **Step 2: Run to verify failure/《gaps》**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter CheckInManualCodeTests`
+Expected: the collision/exhaustion tests fail until a test seam exists; the rate-limit + no-leak tests should pass if Tasks 14–15 were done right (characterisation).
+
+- [ ] **Step 3: Script the seam + fix any gap**
+
+`IManualCodeSource` already exists (Task 14). In these tests register a fake — `services.AddSingleton<IManualCodeSource>(new ScriptedManualCodeSource("482731", "482731", "195028"))` via `factory.WithWebHostBuilder(...)` / test-scoped DI — to drive the collision and exhaustion paths deterministically. Fix any real gap the no-leak / rate-limit tests expose (e.g. an accidental `LogInformation` carrying the code — there must be none; the generator logs only `attempt` counts).
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `dotnet test tests/GestaoPredio.IntegrationTests --filter CheckInManualCodeTests`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add recepcaototem/Features/Customers/CustomerSchedulingEndpoints.cs tests/GestaoPredio.IntegrationTests/CheckInManualCodeTests.cs "recepcaototem/Features/**"
+git commit -m "test(checkin): brute-force rate limit, collision retry, and no-leak guarantees for the manual code"
+```
+
+---
+
+## Task 17: Frontend — API type + CUSTOMER code display
+
+**Files:**
+- Modify: `recepcaototem/ClientApp/src/api/modules.ts` (`issueCheckInToken` return type)
+- Modify: `recepcaototem/ClientApp/src/pages/customer/CustomerReservationDetail.tsx` (+ `.test.tsx`)
+
+**Interfaces:**
+- Consumes: Task 14 response shape.
+- Produces: `customerApi.issueCheckInToken(id): Promise<{ token: string; manualCode: string; expiresAt: string }>`.
+
+- [ ] **Step 1: Write the failing test** (add to `CustomerReservationDetail.test.tsx`, create if absent)
+
+```tsx
+test('shows the 6-digit code next to the QR after "Gerar QR Code"', async () => {
+  vi.mocked(customerApi.issueCheckInToken).mockResolvedValue({ token: 'strong-token', manualCode: '004821', expiresAt: '2026-09-15T14:00:00Z' })
+  // render at /cliente/agendamentos/:id with an APPROVED reservation mock
+  fireEvent.click(await screen.findByRole('button', { name: /gerar qr code/i }))
+  expect(await screen.findByAltText('QR Code de check-in')).toBeInTheDocument()
+  expect(screen.getByText('004821')).toBeInTheDocument()               // leading zero preserved
+  expect(screen.getByText('Use este código no Totem.')).toBeInTheDocument()
+})
+test('the manual code is never written to web storage', async () => {
+  const setItem = vi.spyOn(Storage.prototype, 'setItem')
+  // ... issue as above ...
+  expect(setItem).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('004821'))
+})
+```
+
+- [ ] **Step 2: Run to verify failure** — `npx vitest run src/pages/customer/CustomerReservationDetail.test.tsx` → FAIL.
+
+- [ ] **Step 3: Implement**
+
+`modules.ts`: `issueCheckInToken(id): Promise<{ token: string; manualCode: string; expiresAt: string }>`.
+`CustomerReservationDetail.tsx`: add `const [manualCode, setManualCode] = useState('')`; in `issueToken()` set it from `result.manualCode`; render, when `qrDataUrl` is present, a small block:
+```tsx
+<div className="customer-checkin-code">
+  <small>Código</small>
+  <strong aria-label={`Código ${manualCode.split('').join(' ')}`}>{manualCode}</strong>
+  <span>Use este código no Totem.</span>
+</div>
+```
+No storage. Append `.customer-checkin-code` CSS.
+
+- [ ] **Step 4: Run to verify pass** — `npx vitest run src/pages/customer/CustomerReservationDetail.test.tsx` → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/api/modules.ts src/pages/customer/CustomerReservationDetail.tsx src/pages/customer/CustomerReservationDetail.test.tsx src/styles.css
+git commit -m "feat(customer): show the 6-digit check-in code next to the QR"
+```
+
+---
+
+## Task 18: Frontend — Totem 6-digit input
+
+**Files:**
+- Create: `recepcaototem/ClientApp/src/features/totem/sixDigitCode.ts` + `.test.ts`
+- Modify: `recepcaototem/ClientApp/src/pages/TotemCheckIn.tsx` + `.test.tsx`
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces: `onlyDigits6(v: string): string`, `isComplete6(v: string): boolean`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`src/features/totem/sixDigitCode.test.ts`:
+```ts
+import { expect, test } from 'vitest'
+import { isComplete6, onlyDigits6 } from './sixDigitCode'
+test('keeps only digits, max 6, leading zeros', () => {
+  expect(onlyDigits6('a1b2c3d4')).toBe('1234')
+  expect(onlyDigits6('123456789')).toBe('123456')
+  expect(onlyDigits6('00 12 34')).toBe('001234')
+})
+test('isComplete6', () => {
+  expect(isComplete6('001234')).toBe(true)
+  expect(isComplete6('1234')).toBe(false)
+})
+```
+Add to `TotemCheckIn.test.tsx` (manual segment): renders 6-digit input with `inputMode="numeric"`; typing letters is ignored; paste `"004821"` fills it; "Validar agendamento" disabled at < 6, enabled at 6; `Enter` at 6 calls `totemApi.resolveCheckIn('004821')`; a backend `400` shows the generic message. Keep all existing scan/QR tests green.
+
+- [ ] **Step 2: Run to verify failure** — `npx vitest run src/features/totem/sixDigitCode.test.ts src/pages/TotemCheckIn.test.tsx` → FAIL.
+
+- [ ] **Step 3: Implement**
+
+`sixDigitCode.ts`:
+```ts
+export const onlyDigits6 = (v: string) => v.replace(/\D/g, '').slice(0, 6)
+export const isComplete6 = (v: string) => onlyDigits6(v).length === 6
+```
+`TotemCheckIn.tsx` manual segment: replace the free-text `<input placeholder="Cole ou digite o código">` with a 6-digit entry — a single `<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={token} onChange={e => setToken(onlyDigits6(e.target.value))}>` (or a 6-box group backed by the same `token` string). Submit button `disabled={!isComplete6(token) || loading}`. `submitManual` unchanged (still calls `resolveToken(token, 'manual')`). `Enter` submits the form when `isComplete6`. "Escanear QR" path and `normalizeToken` untouched.
+
+- [ ] **Step 4: Run to verify pass** — `npx vitest run src/features/totem/sixDigitCode.test.ts src/pages/TotemCheckIn.test.tsx` → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/features/totem/sixDigitCode.ts src/features/totem/sixDigitCode.test.ts src/pages/TotemCheckIn.tsx src/pages/TotemCheckIn.test.tsx src/styles.css
+git commit -m "feat(totem): 6-digit manual code entry on /totem/check-in (QR scan preserved)"
+```
+
+---
+
+## Task 19: Full gates + accessibility sweep
 
 **Files:** none new; fixes only where a gate fails.
 
 - [ ] **Step 1: Backend suite**
 
 Run: `dotnet test`
-Expected: PASS. (Note the 2 pre‑existing `ReservationWorkflowTests` wall‑clock flakes are known — do not fix here; confirm they fail identically on a clean tree if they appear.)
+Expected: PASS — including `ManualCheckInCodeTests`, `CheckInTokenTests`, `CheckInManualCodeTests`, `TotemProfessionalStatusTests`, `TotemProfessionalsCarouselTests`, and **no regression** in `TotemPresenceApiTests` / `CustomerApiTests` / `ReservationWorkflowTests`. (The 2 pre‑existing `ReservationWorkflowTests` wall‑clock flakes are known — do not fix here; confirm they fail identically on a clean tree if they appear.)
 
 - [ ] **Step 2: Frontend suite + type + build + verifier + whitespace** (from `recepcaototem/ClientApp`)
 
@@ -1469,13 +2168,15 @@ Expected: all green. `verify:production-bundle` confirms no `src/dev/` / `AppSto
 - Status shown as **dot + text** (never colour alone).
 - `prefers-reduced-motion`: `LightRays`, `BlurFade`, `BorderBeam`, `ProgressiveBlur` shimmer, `RippleButton`, and carousel scrolling all degrade to static/instant (grep the media query + the `usePrefersReducedMotion` branches).
 - Photo fallback: no broken image possible (`onError` → initials).
-- Camera fallback to manual code preserved in `TotemCheckIn`.
+- Camera fallback to manual entry preserved in `TotemCheckIn`.
+- **6-digit input:** `inputMode="numeric"` (no alphanumeric keyboard), a real submit `<button>` that is `disabled` under 6 digits, `Enter` submits at 6, leading zeros preserved, visible focus on every position/box.
+- **CUSTOMER code block:** the 6 digits carry an `aria-label` with the spaced value; the surrounding copy is present as text, not colour.
 
 - [ ] **Step 4: Commit any fixes**
 
 ```bash
 git add -A
-git commit -m "chore(totem): green gates + a11y sweep for the 3-screen Totem"
+git commit -m "chore(totem): green gates + a11y sweep for the Totem + manual check-in code"
 ```
 
 ---
@@ -1484,12 +2185,19 @@ git commit -m "chore(totem): green gates + a11y sweep for the 3-screen Totem"
 
 **1. Spec coverage** — every spec section maps to a task:
 - §4 `/totem` → Task 7. §5 + §12 carousel → Task 8; §5.3 status chip → Task 8; §5.4 Continuar → Task 9.
-- §6 `/totem/check-in` → Task 10. §7 endpoint+DTO → Task 2; §7.3 mapper → Task 1; §7.4 photo → Task 3. §8 status rule → Tasks 1–2.
+- §6 `/totem/check-in` → Task 10 (nav/copy) + Task 18 (6-digit input). §7 endpoint+DTO → Task 2; §7.3 mapper → Task 1; §7.4 photo (503 for I/O, 404 for guards — **approved**) → Task 3. §7A credential model → Tasks 12–18; §7A.3 value object → Task 12; §7A.4 persistence + §26 migration → Task 13; §7A.5/§7A.7 issue + collision → Task 14; §7A.6 resolve/confirm dispatch + §7A.2 QR↔manual + cancel/reschedule → Task 15; §7A.9/§7A.10 rate-limit + no-leak → Task 16; §7A.7 CUSTOMER display + §7A.8 re-issue → Task 17. §8 status rule → Tasks 1–2.
 - §9 photos (initials + endpoint) → Tasks 3, 4, 8. §10 returnUrl → Tasks 5, 11. §11 nav/activeProfessional → Tasks 8–10.
-- §13 Magic UI → Task 6. §14 palette / §15 copy → Tasks 6–10 (CSS + literal strings in tests). §16 loading/empty/error → Task 9. §17 KioskClock reuse → Tasks 7, 9, 10. §18 security → Tasks 2, 3. §19 a11y → Task 12 sweep + per‑component tests. §20 CSP → untouched by design (noted in Global Constraints). §21 file map → File Structure. §22 tests → each task's tests + Task 12. §23 out‑of‑scope → Global Constraints.
+- §13 Magic UI → Task 6. §14 palette / §15 copy → Tasks 6–10, 17, 18 (CSS + literal strings in tests). §16 loading/empty/error → Task 9. §17 KioskClock reuse → Tasks 7, 9, 10. §18 security → Tasks 2, 3, 14, 16. §19 a11y → Task 19 sweep + per‑component tests. §20 CSP → untouched by design (noted in Global Constraints). §21 file map → File Structure. §22 tests → each task's tests + Task 19. §23 out‑of‑scope → Global Constraints. §24 decisions / §25 risks / §26 migration → Tasks 3, 12–17.
 
-**2. Placeholder scan** — the only intentionally‑deferred detail is `SeedPhotoFileAsync` in Task 3 (explicitly "mirror `ProfessionalPhotoTests.cs`") and the Task 11 test bodies (sketched with exact assertions, mocking pattern named). All implementation steps carry real code.
+**2. Placeholder scan** — intentionally‑deferred details, all with named patterns to mirror: `SeedPhotoFileAsync` (Task 3 → `ProfessionalPhotoTests.cs`); Task 11 test bodies (assertions + mocking pattern named); `SeedEligibleReservationAsync` / `IssueAsync` / `CancelAsync` / `RescheduleAsync` fixture helpers (Tasks 14–16 → `CustomerApiTests.cs`); the RNG seam `IManualCodeSource` (introduced in Task 14, default = `ManualCheckInCode.Generate`; scripted by Task 16 tests). No `TBD`/`TODO`. All production steps carry real code.
 
-**3. Type consistency** — `TotemProfessionalCard` (backend) ↔ `TotemProfessionalCardDto` (frontend) share the 5 field names/casing (`photoUrl` camelCase in JSON via default serializer). `TotemProfessionalStatus.Resolve(bool,bool)` signature identical in Tasks 1 and 2. `safeCustomerReturnUrl` signature identical in Tasks 5 and 11. Component prop names in Task 6 match their consumers in Tasks 7–10. `onActiveChange(p: TotemProfessionalCardDto)` identical in Tasks 8 and 9.
+**3. Type consistency** —
+- `TotemProfessionalCard` (backend) ↔ `TotemProfessionalCardDto` (frontend): same 5 field names, `photoUrl` camelCase in JSON.
+- `TotemProfessionalStatus.Resolve(bool,bool)` — Tasks 1, 2.
+- `safeCustomerReturnUrl(string|null|undefined): string|null` — Tasks 5, 11.
+- `ManualCheckInCode` — `Generate() : ManualCheckInCode`, `TryParse(string?, out ManualCheckInCode) : bool`, `Hash() : byte[]`, `.Value : string` — identical in Tasks 12, 14, 15, 16.
+- `CheckInToken.Create(Guid, byte[], byte[], DateTimeOffset, DateTimeOffset)` / `Rotate(byte[], byte[], DateTimeOffset, DateTimeOffset)` — Tasks 13, 14. `ManualCodeHash : byte[]?` — Tasks 13, 15.
+- Issue response `{ token: string, manualCode: string, expiresAt: string }` — Tasks 14 (produces), 15 (tests), 17 (`customerApi.issueCheckInToken` type + `CustomerReservationDetail`).
+- `onlyDigits6` / `isComplete6` — Task 18.
 
-**Discovered scope note:** the existing admin photo handler returns **503** (not 404) on storage I/O failure via `PhotoUnavailable`. The shared helper keeps that behaviour for both callers; the Totem endpoint returns **404** only for the not‑found/inactive/no‑photo/wrong‑purpose guards. Spec §7.4 said "404 on I/O failure" — the plan intentionally preserves the existing 503 to avoid changing admin behaviour. Flag for approval.
+**Photo status codes — RESOLVED (approved):** `503` for real storage/I·O failure (helper preserves the historical admin behaviour for both callers); `404` **only** for professional inexistente / inativo / sem foto / `Purpose` errado. Reflected in spec §7.4, §24.11 and Task 3.
