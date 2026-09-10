@@ -14,6 +14,21 @@
   --mint: #5b5b5b;
   --line: #dedede;
   --surface: #ffffff;
+  /* LUMIS identity — single source of truth. Legacy --tk/--tc/--tp/--te aliases map to these. */
+  --lumis-bg: #181818;
+  --lumis-surface: #1c1c1c;
+  --lumis-surface-2: #222222;
+  --lumis-surface-3: #272727;
+  --lumis-border: #3d3d3d;
+  --lumis-border-soft: rgba(255, 255, 255, .08);
+  --lumis-border-strong: rgba(255, 255, 255, .22);
+  --lumis-text: #ffffff;
+  --lumis-text-dim: #f2f2f2;
+  --lumis-muted: #888888;
+  --lumis-success: #3fb98c;
+  --lumis-warning: #e0a93b;
+  --lumis-danger: #e27878;
+  --lumis-info: #5b9bd5;
 }
 
 * { box-sizing: border-box; }
@@ -1123,14 +1138,14 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 /* --- public Totem kiosk (/totem and /totem/check-in) --- shares the Lumis premium dark identity with the Home --- */
 .totem-kiosk {
-  --tk-bg: #181818;
-  --tk-bg-2: #1c1c1c;
-  --tk-card: #222222;
-  --tk-card-hover: #272727;
-  --tk-ink: #f2f2f2;
-  --tk-muted: #888888;
-  --tk-line: rgba(255, 255, 255, .08);
-  --tk-line-strong: rgba(255, 255, 255, .22);
+  --tk-bg: var(--lumis-bg);
+  --tk-bg-2: var(--lumis-surface);
+  --tk-card: var(--lumis-surface-2);
+  --tk-card-hover: var(--lumis-surface-3);
+  --tk-ink: var(--lumis-text-dim);
+  --tk-muted: var(--lumis-muted);
+  --tk-line: var(--lumis-border-soft);
+  --tk-line-strong: var(--lumis-border-strong);
   position: relative;
   overflow: hidden;
   min-height: 100vh;
@@ -1370,19 +1385,19 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
    Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
    ========================================================================== */
 .totem-entry {
-  --te-bg: #181818;
-  --te-bg-2: #1c1c1c;
-  --te-card: #222222;
-  --te-card-hover: #272727;
-  --te-ink: #f2f2f2;
-  --te-muted: #888888;
-  --te-line: #3d3d3d;
+  --te-bg: var(--lumis-bg);
+  --te-bg-2: var(--lumis-surface);
+  --te-card: var(--lumis-surface-2);
+  --te-card-hover: var(--lumis-surface-3);
+  --te-ink: var(--lumis-text-dim);
+  --te-muted: var(--lumis-muted);
+  --te-line: var(--lumis-border);
   --tk-ink: var(--te-ink);
   --tk-muted: var(--te-muted);
   --tk-card: var(--te-card);
   --tk-card-hover: var(--te-card-hover);
-  --tk-line: rgba(255, 255, 255, .08);
-  --tk-line-strong: rgba(255, 255, 255, .22);
+  --tk-line: var(--lumis-border-soft);
+  --tk-line-strong: var(--lumis-border-strong);
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -1457,14 +1472,14 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
    Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
    ========================================================================== */
 .totem-carousel {
-  --tc-bg: #181818;
-  --tc-card: #222222;
-  --tc-card-active: #272727;
-  --tc-ink: #f2f2f2;
-  --tc-muted: #888888;
-  --tc-line: rgba(255, 255, 255, .08);
-  --tc-line-strong: rgba(255, 255, 255, .22);
-  --tk-bg: #181818;
+  --tc-bg: var(--lumis-bg);
+  --tc-card: var(--lumis-surface-2);
+  --tc-card-active: var(--lumis-surface-3);
+  --tc-ink: var(--lumis-text-dim);
+  --tc-muted: var(--lumis-muted);
+  --tc-line: var(--lumis-border-soft);
+  --tc-line-strong: var(--lumis-border-strong);
+  --tk-bg: var(--lumis-bg);
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -1635,15 +1650,15 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
    Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
    ========================================================================== */
 .totem-professionals {
-  --tp-bg: #181818;
-  --tp-bg-2: #1c1c1c;
-  --tp-card: #222222;
-  --tp-card-2: #2b2b2b;
-  --tp-ink: #f2f2f2;
-  --tp-muted: #888888;
-  --tp-line: #3d3d3d;
-  --tk-line: rgba(255, 255, 255, .08);
-  --tk-line-strong: rgba(255, 255, 255, .22);
+  --tp-bg: var(--lumis-bg);
+  --tp-bg-2: var(--lumis-surface);
+  --tp-card: var(--lumis-surface-2);
+  --tp-card-2: var(--lumis-surface-3);
+  --tp-ink: var(--lumis-text-dim);
+  --tp-muted: var(--lumis-muted);
+  --tp-line: var(--lumis-border);
+  --tk-line: var(--lumis-border-soft);
+  --tk-line-strong: var(--lumis-border-strong);
   position: relative;
   isolation: isolate;
   overflow: hidden;
