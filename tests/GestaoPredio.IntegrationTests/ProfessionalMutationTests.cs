@@ -66,7 +66,7 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task Description_is_exposed_consistently_by_reception_totem_and_customer_projections()
+    public async Task Description_is_exposed_by_reception_and_customer_but_not_totem_carousel()
     {
         await factory.ResetAsync();
         await LoginAsAsync(SystemRoles.Administrador, $"admin-description-{Guid.NewGuid():N}@lumis.test");
@@ -81,7 +81,8 @@ public sealed class ProfessionalMutationTests(ModulesApiFactory factory)
         var reception = await factory.Client.GetAsync("/api/reception/professionals");
         Assert.Contains("Atendimento especializado", await reception.Content.ReadAsStringAsync());
         var totem = await factory.Client.GetAsync("/api/totem/professionals");
-        Assert.Contains("Atendimento especializado", await totem.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, totem.StatusCode);
+        Assert.DoesNotContain("Atendimento especializado", await totem.Content.ReadAsStringAsync());
 
         var email = $"customer-description-{Guid.NewGuid():N}@lumis.test";
         var register = await factory.PostWithCsrfAsync("/api/customer/register", new
