@@ -131,7 +131,7 @@ export function TotemCheckIn() {
             </span>
           </button>
           <button type="button" role="tab" aria-selected={segment === 'manual'}
-            aria-label="Digitar código: insira manualmente o código da reserva"
+            aria-label="Digitar código: informe os 6 dígitos da sua reserva"
             className={`totem-option ${segment === 'manual' ? 'is-active' : ''}`}
             onClick={() => selectSegment('manual')}>
             <span className="totem-option-icon" aria-hidden="true"><Keyboard size={26} /></span>
