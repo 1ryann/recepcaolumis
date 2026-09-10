@@ -25,6 +25,7 @@ public sealed record TotemReservationRequest(string Name, string Phone, Guid Pro
 public sealed record TotemCheckInRequest(string Token) : IStrictModuleRequest;
 public sealed record TotemPresenceRequest(string Token) : IStrictModuleRequest;
 public sealed record TotemProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
+public sealed record TotemProfessionalCard(Guid Id, string Name, string Profession, string? PhotoUrl, string Status);
 public sealed record TotemCheckInPreview(string Professional, string Room, DateTimeOffset StartAt, DateTimeOffset EndAt, bool Eligible);
 
 public static class TotemEndpoints
@@ -148,9 +149,47 @@ public static class TotemEndpoints
         return Results.Ok(result);
     }
 
-    private static async Task<IResult> Professionals(ApplicationDbContext db, CancellationToken ct) =>
-        Results.Ok(await db.Professionals.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.NormalizedName)
-            .Select(x => new TotemProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
+    private static async Task<IResult> Professionals(
+        HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db,
+        TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
+    {
+        using var lease = await limiter.AcquireAsync(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown", "totem-professionals", ct);
+        if (!lease.IsAcquired)
+            return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+
+        var professionals = await db.Professionals.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.NormalizedName)
+            .Select(x => new { x.Id, x.Name, x.Profession, x.PhotoFileId })
+            .ToListAsync(ct);
+        if (professionals.Count == 0) return Results.Ok(Array.Empty<TotemProfessionalCard>());
+
+        var ids = professionals.Select(x => x.Id).ToList();
+        var inService = (await db.Visits.AsNoTracking()
+            .Where(v => ids.Contains(v.ProfessionalId) && v.Status == VisitStatus.InService)
+            .Select(v => v.ProfessionalId).Distinct().ToListAsync(ct)).ToHashSet();
+        var operatingHours = await db.OperatingHourIntervals.AsNoTracking().ToListAsync(ct);
+        var presenceByProfessional = (await db.ProfessionalPresences.AsNoTracking()
+                .Where(x => ids.Contains(x.ProfessionalId) && x.EndedAt == null).ToListAsync(ct))
+            .GroupBy(x => x.ProfessionalId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.StartedAt).First());
+
+        var now = time.GetUtcNow();
+        var cards = professionals.Select(p =>
+        {
+            presenceByProfessional.TryGetValue(p.Id, out var presence);
+            var status = TotemProfessionalStatus.Resolve(
+                inService.Contains(p.Id),
+                PresenceEvaluator.IsEffective(presence, operatingHours, now, timeZone));
+            return new TotemProfessionalCard(
+                p.Id, p.Name, p.Profession,
+                p.PhotoFileId is null ? null : $"/api/totem/professionals/{p.Id}/photo",
+                status);
+        }).ToArray();
+
+        return Results.Ok(cards);
+    }
 
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,
         ApplicationDbContext db, IAppointmentAvailabilityService availability, CancellationToken ct)
