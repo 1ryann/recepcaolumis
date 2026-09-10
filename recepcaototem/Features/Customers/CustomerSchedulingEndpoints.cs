@@ -15,6 +15,7 @@ using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Reservations;
 using recepcaototem.Features.Availability;
+using recepcaototem.Features.Totem;
 
 namespace recepcaototem.Features.Customers;
 
@@ -25,6 +26,8 @@ public sealed record CustomerReservationConcurrencyRequest(string? ConcurrencyTo
 public sealed record CustomerReservationPageResponse(ReservationResponse[] Items, int Page, int PageSize, int TotalCount);
 public sealed record CustomerProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
 public sealed record AvailabilitySlotResponse(DateTimeOffset StartAt, DateTimeOffset EndAt);
+public sealed record CustomerBookingHandoffResolveRequest(string HandoffToken) : IStrictModuleRequest;
+public sealed record CustomerBookingHandoffResolveResponse(Guid HandoffId, Guid ProfessionalId, string ProfessionalName, string Profession, DateTimeOffset ExpiresAt);
 
 /// <summary>
 /// RNG seam for the 6-digit manual check-in code (spec 7A.5). Kept next to the endpoint so a
@@ -53,6 +56,7 @@ public static class CustomerSchedulingEndpoints
         group.MapPost("/reservations/{id:guid}/cancel", CancelReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/reschedule", RescheduleReservation).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/reservations/{id:guid}/check-in-token", IssueToken).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/booking-handoffs/resolve", ResolveHandoff).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -251,6 +255,40 @@ public static class CustomerSchedulingEndpoints
         }
         catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); return Modified(); }
         catch (InvalidOperationException) { return Results.Json(new ApiError("INVALID_RESERVATION_STATE", "A reserva não pode ser reagendada."), statusCode: 409); }
+    }
+
+    /// <summary>
+    /// Read-only professional context for a handoff so the phone's booking screen can pre-select the
+    /// professional. NO state mutation — <c>claim</c> (Task 12) already started the clock; this must not.
+    /// Every failure collapses to the two generic shapes and the body carries no customer or
+    /// reservation data and never the token.
+    /// </summary>
+    private static async Task<IResult> ResolveHandoff(CustomerBookingHandoffResolveRequest request, HttpContext context,
+        TotemHandoffRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        using var lease = await limiter.AcquireAsync(ip, "resolve", ct);
+        if (!lease.IsAcquired)
+            return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
+
+        if (!TotemBookingHandoffEndpoints.TryDecodeHash(request.HandoffToken, out var hash))
+            return Results.Json(new ApiError("INVALID_HANDOFF", "Não foi possível validar este código."), statusCode: 400);
+
+        var now = time.GetUtcNow();
+        var handoff = await db.TotemBookingHandoffs.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.HandoffTokenHash == hash, ct);
+        if (handoff is null || !handoff.IsUsable(now))
+            return Results.Json(new ApiError("HANDOFF_EXPIRED", "Este convite expirou."), statusCode: 410);
+
+        var professional = await db.Professionals.AsNoTracking()
+            .Where(x => x.Id == handoff.ProfessionalId)
+            .Select(x => new { x.Name, x.Profession })
+            .SingleOrDefaultAsync(ct);
+        if (professional is null)
+            return Results.Json(new ApiError("HANDOFF_EXPIRED", "Este convite expirou."), statusCode: 410);
+
+        return Results.Ok(new CustomerBookingHandoffResolveResponse(
+            handoff.Id, handoff.ProfessionalId, professional.Name, professional.Profession, handoff.ExpiresAt));
     }
 
     private static IResult InvalidToken() => Results.BadRequest(new ApiError("INVALID_CONCURRENCY_TOKEN", "O token de concorrência informado é inválido."));
