@@ -1798,3 +1798,25 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
    ========================================================================== */
 .totem-code-input { text-align: center; letter-spacing: 0.4em; text-indent: 0.4em; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .totem-code-input::placeholder { letter-spacing: 0.4em; color: #3d3d3d; }
+
+/* --- LUMIS animated backdrop (LumisBackground / LumisPageShell) --- */
+.lumis-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.lumis-bg-ray {
+  position: absolute; top: -20%; left: -30%; width: 42vw; height: 140%;
+  background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, .045) 50%, transparent 100%);
+  transform: translate3d(-40vw, -10vh, 0) rotate(9deg);
+  opacity: 0; will-change: transform, opacity;
+  animation: lumis-ray-drift 26s linear infinite;
+}
+.lumis-bg-ray:nth-child(2) { top: 10%; width: 30vw; animation-duration: 34s; animation-delay: -9s; }
+.lumis-bg-ray:nth-child(3) { top: -30%; width: 52vw; animation-duration: 19s; animation-delay: -15s; }
+.lumis-bg[data-intensity="muted"] { opacity: .55; }
+@keyframes lumis-ray-drift {
+  0%   { transform: translate3d(-40vw, -10vh, 0) rotate(9deg); opacity: 0; }
+  12%  { opacity: .5; }
+  88%  { opacity: .5; }
+  100% { transform: translate3d(120vw, 34vh, 0) rotate(9deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lumis-bg-ray { animation: none; opacity: .16; transform: translate3d(30vw, 10vh, 0) rotate(9deg); }
+}
