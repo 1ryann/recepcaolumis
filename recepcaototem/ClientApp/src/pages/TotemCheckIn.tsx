@@ -137,7 +137,7 @@ export function TotemCheckIn() {
             <span className="totem-option-icon" aria-hidden="true"><Keyboard size={26} /></span>
             <span className="totem-option-text">
               <strong>Digitar código</strong>
-              <small>Insira manualmente o código da reserva</small>
+              <small>Digite o código de 6 dígitos da sua reserva</small>
             </span>
           </button>
         </div>

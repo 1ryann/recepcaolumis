@@ -62,7 +62,7 @@ test('the discrete Voltar control returns to /totem', async () => {
 test('each check-in option is a large target that explains what it does', () => {
   renderPage()
   expect(screen.getByText('Use a câmera para ler seu código')).toBeInTheDocument()
-  expect(screen.getByText('Insira manualmente o código da reserva')).toBeInTheDocument()
+  expect(screen.getByText('Digite o código de 6 dígitos da sua reserva')).toBeInTheDocument()
 })
 
 test('after a successful check-in the auto-return lands on /totem', async () => {

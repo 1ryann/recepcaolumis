@@ -200,6 +200,32 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         }
     }
 
+    /// <summary>
+    /// §22.1 list rate limit: from one client, <c>CustomerIpPermitLimit</c> + 1 rapid list reads —
+    /// the last one is 429 (mirrors <c>CheckInManualCodeTests.Resolve_is_rate_limited_per_ip</c>).
+    /// The shared factory raises <c>CustomerIpPermitLimit</c> to 10000, so this test's isolated host
+    /// restores the spec §7A.9 / §22.1 default of 30 (and widens the window to 600 s for determinism).
+    /// </summary>
+    [Fact]
+    public async Task List_is_rate_limited_per_ip()
+    {
+        await factory.ResetAsync();
+        using var isolated = factory.WithConfig(
+            ("RateLimiting:CustomerWindowSeconds", "600"),
+            ("RateLimiting:CustomerIpPermitLimit", "30"));
+        const int ipPermitLimit = 30; // spec §7A.9 / §22.1 default: RateLimiting:CustomerIpPermitLimit
+
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i <= ipPermitLimit; i++)
+        {
+            using var resp = await isolated.Client.GetAsync("/api/totem/professionals");
+            statuses.Add(resp.StatusCode);
+        }
+
+        Assert.DoesNotContain(HttpStatusCode.TooManyRequests, statuses.Take(ipPermitLimit));
+        Assert.Equal(HttpStatusCode.TooManyRequests, statuses[ipPermitLimit]);
+    }
+
     // Stage a real PROFESSIONAL_PHOTO file through IPrivateFileStorage (mirrors ProfessionalPhotoFailureTests)
     // and return its PrivateFile id. The metadata row is added to the supplied context and persisted by the caller.
     private async Task<Guid> SeedPhotoFileAsync(ApplicationDbContext db)
