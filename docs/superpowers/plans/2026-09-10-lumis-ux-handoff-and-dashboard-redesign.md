@@ -469,16 +469,25 @@ test('customer returnUrl is preserved into the create-account link', () => {
   expect(screen.getByRole('link', { name: /criar conta/i }).getAttribute('href'))
     .toContain('returnUrl=')
 })
+
+test('sober look: no decorative icons, textual show/hide password control', () => {
+  const { container } = renderLogin('customer')
+  // the only <svg> allowed anywhere is none — no envelope / lock / shield / eye / arrow icons
+  expect(container.querySelectorAll('svg')).toHaveLength(0)
+  const toggle = screen.getByRole('button', { name: /mostrar/i })
+  fireEvent.click(toggle)
+  expect(screen.getByRole('button', { name: /ocultar/i })).toBeInTheDocument()
+  expect(screen.getByLabelText(/senha/i)).toHaveAttribute('type', 'text')
+})
 ```
 
 - [ ] **Step 2: Run it, verify it fails** — `npx vitest run src/pages/Login.test.tsx` → FAIL.
 
 - [ ] **Step 3: Rewrite `Login.tsx`**
 
-Replace the two-panel `login-page` markup with a single centred card inside `LumisPageShell`. Keep: `submit`, `session.status` guards, the `session.user` "sessão ativa" branch, the password show/hide toggle, `returnUrl` (customer only). Per-audience config drives eyebrow / title (`Bem-vindo de volta` for all) / helper text / secondary action.
+Replace the two-panel `login-page` markup with a single centred card inside `LumisPageShell`. Keep: `submit`, `session.status` guards, the `session.user` "sessão ativa" branch, `returnUrl` (customer only). **No decorative icons anywhere** — no envelope/lock/shield/eye/arrow, no illustrations, no social buttons. E-mail and Senha are plain `<input>`s. The show/hide password control is a **textual** button reading `Mostrar` / `Ocultar` (not an eye icon). The submit button is plain text `Entrar`. Per-audience config drives eyebrow / title (`Bem-vindo de volta` for all) / helper text / secondary action.
 
 ```tsx
-import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
@@ -548,17 +557,17 @@ export function Login({ audience = 'admin' }: { audience?: Audience }) {
                 onChange={(e) => { setEmail(e.target.value); setError('') }} />
             </label>
             <label className="field-label">Senha
-              <span className="password-field">
+              <span className="lumis-password-field">
                 <input className="field-input" type={showPassword ? 'text' : 'password'} autoComplete="current-password"
                   value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} />
-                <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                <button type="button" className="lumis-password-toggle" onClick={() => setShowPassword((v) => !v)}>
+                  {showPassword ? 'Ocultar' : 'Mostrar'}
                 </button>
               </span>
             </label>
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="primary-button lumis-login-submit" type="submit" disabled={loading}>
-              {loading ? <span className="spinner" /> : <>Entrar <ArrowRight size={18} /></>}
+              {loading ? <span className="spinner" /> : 'Entrar'}
             </button>
           </form>
         )}
@@ -577,7 +586,7 @@ export function Login({ audience = 'admin' }: { audience?: Audience }) {
 }
 ```
 
-- [ ] **Step 4: Append card CSS** — `.lumis-login-card { max-width: 400px; margin: auto; padding: clamp(24px,5vw,40px); background: var(--lumis-surface-2); border: 1px solid var(--lumis-border); border-radius: 16px; display: flex; flex-direction: column; gap: 14px; }` plus `.lumis-login` flex-centering (`display:flex; align-items:center; justify-content:center; padding: clamp(16px,5vh,64px) 16px;`), `.lumis-login-eyebrow` (12px, `.13em`, `--lumis-muted`), `.lumis-login-title`, `.lumis-login-submit { min-height: 48px; width: 100%; }`, `.field-input { min-height: 44px; }` scoped, `.lumis-login-secondary a { color: var(--lumis-text-dim); }`.
+- [ ] **Step 4: Append card CSS** — `.lumis-login-card { max-width: 400px; margin: auto; padding: clamp(24px,5vw,40px); background: var(--lumis-surface-2); border: 1px solid var(--lumis-border); border-radius: 16px; display: flex; flex-direction: column; gap: 14px; }` plus `.lumis-login` flex-centering (`display:flex; align-items:center; justify-content:center; padding: clamp(16px,5vh,64px) 16px;`), `.lumis-login-eyebrow` (12px, `.13em`, `--lumis-muted`), `.lumis-login-title`, `.lumis-login-submit { min-height: 48px; width: 100%; }`, `.field-input { min-height: 44px; }` scoped, `.lumis-login-secondary a { color: var(--lumis-text-dim); }`, `.lumis-password-field { position: relative; display: block; }` with `.lumis-password-field .field-input { padding-right: 84px; }`, `.lumis-password-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); min-height: 32px; padding: 0 8px; background: none; border: 0; color: var(--lumis-muted); font-size: 13px; cursor: pointer; }` `.lumis-password-toggle:hover { color: var(--lumis-text-dim); text-decoration: underline; }`. No `.password-field` eye-button styling is carried over.
 
 - [ ] **Step 5: Run tests + tsc + commit**
 
@@ -1250,6 +1259,30 @@ public async Task Cancel_expires_a_pending_handoff_and_is_idempotent()
 }
 
 [Fact]
+public async Task Cancel_requires_the_matching_status_token_and_never_reveals_existence()
+{
+    await factory.ResetAsync();
+    var prof = await SeedActiveProfessionalAsync();
+    var a = await CreateHandoffAsync(prof);
+    var other = await CreateHandoffAsync(prof);
+
+    // handoff A's id + handoff B's statusToken → generic 400, A is NOT cancelled
+    var cross = await factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{a.Id}/cancel", new { statusToken = other.StatusToken });
+    Assert.Equal(HttpStatusCode.BadRequest, cross.StatusCode);
+    Assert.Equal("INVALID_HANDOFF", (await cross.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+
+    // garbage token for a real id, and any token for a random id → same generic 400 (no oracle)
+    var garbage = await factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{a.Id}/cancel", new { statusToken = "not-a-token" });
+    Assert.Equal(HttpStatusCode.BadRequest, garbage.StatusCode);
+    var unknown = await factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{Guid.NewGuid()}/cancel", new { statusToken = a.StatusToken });
+    Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+
+    // A is still PENDING (no mutation happened on any failed attempt)
+    var still = await factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{a.Id}/status", new { statusToken = a.StatusToken });
+    Assert.Equal("PENDING", (await still.Content.ReadFromJsonAsync<StatusBody>())!.Status);
+}
+
+[Fact]
 public async Task Create_rejects_an_inactive_or_unknown_professional_generically()
 {
     await factory.ResetAsync();
@@ -1369,6 +1402,10 @@ public static class TotemBookingHandoffEndpoints
         return new { status = "COMPLETED", professionalName = row?.Name, startAt = row?.StartAt, roomName = row?.RoomName };
     }
 
+    // AUTHORIZATION: {id} alone NEVER authorizes cancellation. The row is fetched ONLY when
+    // SHA-256(base64url-decode(statusToken)) == StatusTokenHash for that same id, and no
+    // mutation happens before that check passes. A bad / missing / wrong-handoff token yields
+    // the same generic INVALID_HANDOFF as an unknown id — no existence oracle.
     private static async Task<IResult> Cancel(Guid id, HandoffStatusRequest request, HttpContext ctx,
         TotemHandoffRateLimiter limiter, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
     {
@@ -1377,7 +1414,7 @@ public static class TotemBookingHandoffEndpoints
         if (!lease.IsAcquired) return TooMany();
         if (!TryDecodeHash(request.StatusToken, out var hash)) return Invalid();
         var handoff = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.Id == id && x.StatusTokenHash == hash, ct);
-        if (handoff is null) return Invalid();
+        if (handoff is null) return Invalid();   // wrong token OR unknown id — indistinguishable
         if (handoff.Status == TotemBookingHandoffStatus.Pending)
         {
             handoff.MarkExpired(time.GetUtcNow());
@@ -1631,9 +1668,15 @@ public async Task Concurrent_duplicate_creates_exactly_one_reservation()
     var results = await Task.WhenAll(t1, t2);
     var codes = results.Select(r => (int)r.StatusCode).OrderBy(x => x).ToArray();
     Assert.Contains(201, codes);
-    Assert.All(codes, c => Assert.True(c is 200 or 201));                  // loser replays idempotently
+    Assert.All(codes, c => Assert.True(c is 200 or 201));                  // loser replays idempotently, never 409
+    var ids = new List<Guid>();
+    foreach (var r in results) ids.Add((await r.Content.ReadFromJsonAsync<ReservationPayload>())!.Id);
+    Assert.Single(ids.Distinct());                                        // both responses name the SAME reservation
     await using var scope = factory.Services.CreateAsyncScope();
-    Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Reservations.CountAsync());
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    Assert.Equal(1, await db.Reservations.CountAsync());                   // exactly one row
+    Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "RESERVATION_CREATED"));
+    Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "TOTEM_HANDOFF_COMPLETED"));
 }
 
 [Fact]
@@ -1675,7 +1718,7 @@ if (handoff.ProfessionalId != request.ProfessionalId)
 
 In the CASE 1 path, inside the existing transaction, right before `await db.SaveChangesAsync(ct)`:
 ```csharp
-if (handoff is not null)   // (the tracked instance loaded above; re-attach if needed)
+if (handoff is not null)   // the tracked instance loaded above
 {
     handoff.Complete(reservation.Id, nowHandoff);
     db.AuditEntries.Add(new AuditEntry { Id = Guid.NewGuid(), Action = "TOTEM_HANDOFF_COMPLETED", Result = "SUCCEEDED",
@@ -1683,9 +1726,37 @@ if (handoff is not null)   // (the tracked instance loaded above; re-attach if n
         OccurredAt = nowHandoff, CorrelationId = context.TraceIdentifier });
 }
 ```
-Wrap the `SaveChangesAsync`/`CommitAsync` in `catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); db.ChangeTracker.Clear(); var fresh = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.HandoffTokenHash == handoffHash, ct); return fresh?.Status == TotemBookingHandoffStatus.Completed ? await ReplayHandoffAsync(db, fresh, customer, request.ProfessionalId, ct) : Results.Json(new ApiError("HANDOFF_ALREADY_USED", "..."), statusCode: 409); }`. The `201 Created` on success is unchanged.
 
-> Implementation note: `CreateReservation` currently does not take `TimeProvider time` in a form usable this early — it does (`TimeProvider time` is already a parameter). Keep `handoff` as a tracked entity so `Complete` persists in the same `SaveChanges`.
+**Concurrency-loser flow (explicit — do NOT keep using the losing transaction/context blindly).** Wrap the `SaveChangesAsync`/`CommitAsync`:
+
+```csharp
+try
+{
+    await db.SaveChangesAsync(ct);
+    await transaction.CommitAsync(ct);
+    return Results.Created($"/api/customer/reservations/{reservation.Id}", reservation.ToResponse(roomName, professional.Name)); // 201 — unchanged
+}
+catch (DbUpdateConcurrencyException)
+{
+    // 1. end the losing transaction
+    await transaction.RollbackAsync(ct);
+    // 2. drop every entity this request tracked (its would-be Reservation included) so nothing stale leaks forward
+    db.ChangeTracker.Clear();
+    // 3. re-read the handoff in a consistent state
+    var fresh = await db.TotemBookingHandoffs.AsNoTracking().SingleOrDefaultAsync(x => x.HandoffTokenHash == handoffHash, ct);
+    // 4. if the winner already completed it, replay idempotently after re-checking ALL ownership invariants
+    if (fresh is { Status: TotemBookingHandoffStatus.Completed })
+        return await ReplayHandoffAsync(db, fresh, customer, request.ProfessionalId, ct);
+    // 5. cannot prove the invariants → appropriate generic error; 6. never create a second Reservation
+    return Results.Json(new ApiError("HANDOFF_ALREADY_USED", "Este convite já foi utilizado."), statusCode: 409);
+}
+```
+
+`ReplayHandoffAsync` re-runs the full CASE 2/3 check on the freshly-read handoff: `fresh.ReservationId` present → load that `Reservation`; require `reservation is not null && reservation.CustomerId == customer.Id && reservation.ProfessionalId == fresh.ProfessionalId && reservation.Status == ReservationStatus.Approved` → `200 OK` with `reservation.ToResponse(...)`; otherwise `409 HANDOFF_ALREADY_USED` with **no** reservation data. It opens no write transaction and issues no `SaveChanges` (pure read). Because both branches converge on the *winner's* row, the losing request never inserts — `Reservations.Count == 1`.
+
+> Implementation note: `CreateReservation` already takes `TimeProvider time`, so `nowHandoff` is available before the write transaction. `handoff` stays a tracked entity so `Complete` persists in the same `SaveChanges`. `ReplayHandoffAsync` must not reuse a `handoff` instance from a cleared/aborted context — it takes the `fresh` (re-read) instance and re-queries the reservation itself.
+
+The concurrent test `Concurrent_duplicate_creates_exactly_one_reservation` (Step 1) asserts `Reservations.CountAsync() == 1`, that the loser's status is `200` or `201` (never `409` when it *is* the same customer), and that exactly one `RESERVATION_CREATED` audit exists.
 
 - [ ] **Step 4: Run the whole customer + handoff suite**
 
