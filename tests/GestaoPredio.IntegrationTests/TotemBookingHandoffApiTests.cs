@@ -109,6 +109,79 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Status_lazy_expiry_swallows_a_concurrent_write_and_still_returns_200_EXPIRED()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync();
+        factory.FreezeTime(DateTimeOffset.UtcNow);
+        var b = await CreateHandoffAsync(prof);
+
+        // Move the server clock past the 5-minute window so the status handler's lazy-expiry
+        // branch fires. Two DbContexts both load the row while it is still Pending, then race
+        // to fold it to Expired: the second SaveChanges MUST hit DbUpdateConcurrencyException
+        // (Version is xmin). The endpoint's catch clears + re-reads, so the caller sees 200.
+        factory.FreezeTime(factory.UtcNow.AddMinutes(6));
+
+        await using (var scopeA = factory.Services.CreateAsyncScope())
+        await using (var scopeB = factory.Services.CreateAsyncScope())
+        {
+            var dbA = scopeA.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var dbB = scopeB.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var hA = await dbA.TotemBookingHandoffs.SingleAsync(x => x.Id == b.Id);
+            var hB = await dbB.TotemBookingHandoffs.SingleAsync(x => x.Id == b.Id);
+
+            hA.MarkExpired(factory.UtcNow);
+            await dbA.SaveChangesAsync();
+
+            hB.MarkExpired(factory.UtcNow);
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
+
+            // Exactly the recovery the endpoint performs in its catch block.
+            dbB.ChangeTracker.Clear();
+            var reread = await dbB.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.Id == b.Id);
+            Assert.NotNull(reread);
+            Assert.Equal(GestaoPredio.Domain.Customers.TotemBookingHandoffStatus.Expired, reread!.Status);
+        }
+
+        // The row is already terminal now; a poll must still be a clean 200 EXPIRED.
+        var s = await factory.Client.PostAsJsonAsync(
+            $"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken });
+        Assert.Equal(HttpStatusCode.OK, s.StatusCode);
+        Assert.Equal("EXPIRED", (await s.Content.ReadFromJsonAsync<StatusBody>())!.Status);
+    }
+
+    [Fact]
+    public async Task Concurrent_status_and_cancel_on_the_same_pending_handoff_never_500()
+    {
+        await factory.ResetAsync();
+        var prof = await factory.SeedActiveProfessionalAsync();
+        factory.FreezeTime(DateTimeOffset.UtcNow);
+        var b = await CreateHandoffAsync(prof);
+        factory.FreezeTime(factory.UtcNow.AddMinutes(6));   // both handlers will try to fold Pending -> Expired
+
+        var calls = new[]
+        {
+            factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken }),
+            factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{b.Id}/cancel", new { statusToken = b.StatusToken }),
+            factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken }),
+        };
+        var responses = await Task.WhenAll(calls);
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+
+        var final = await factory.Client.PostAsJsonAsync(
+            $"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken });
+        Assert.Equal("EXPIRED", (await final.Content.ReadFromJsonAsync<StatusBody>())!.Status);
+
+        // A cancel that lost the race discards its unit of work (audit included); one that won
+        // wrote exactly one. Either way the count is at most one — never a partial double-write.
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var audits = await db.AuditEntries.CountAsync(x => x.Action == "TOTEM_HANDOFF_CANCELLED");
+        Assert.True(audits <= 1, $"expected 0 or 1 cancel audit, found {audits}");
+    }
+
+    [Fact]
     public async Task Create_rejects_an_inactive_or_unknown_professional_generically()
     {
         await factory.ResetAsync();

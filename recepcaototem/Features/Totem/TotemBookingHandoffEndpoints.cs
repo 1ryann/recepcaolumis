@@ -119,7 +119,20 @@ public static class TotemBookingHandoffEndpoints
         if (handoff.Status == TotemBookingHandoffStatus.Pending && handoff.ExpiresAt <= now)
         {
             handoff.MarkExpired(now);
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // An overlapping request (a racing status poll, or a cancel) folded this same
+                // Pending row to a terminal state first. `Version` is xmin, so our UPDATE lost.
+                // Re-read the committed row and answer from it — the loser must still return 200.
+                db.ChangeTracker.Clear();
+                handoff = await db.TotemBookingHandoffs
+                    .SingleOrDefaultAsync(x => x.Id == id && x.StatusTokenHash == hash, ct);
+                if (handoff is null) return Invalid();
+            }
         }
 
         return handoff.Status switch
@@ -169,7 +182,21 @@ public static class TotemBookingHandoffEndpoints
                 OccurredAt = now,
                 CorrelationId = ctx.TraceIdentifier
             });
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // A concurrent status poll or cancel already folded this Pending row to a
+                // terminal state (`Version` is xmin, so our UPDATE — audit entry included —
+                // lost). Cancel is idempotent: drop the losing unit of work, re-read, and
+                // still return 200. The request that won recorded its own audit.
+                db.ChangeTracker.Clear();
+                handoff = await db.TotemBookingHandoffs
+                    .SingleOrDefaultAsync(x => x.Id == id && x.StatusTokenHash == hash, ct);
+                if (handoff is null) return Invalid();
+            }
         }
 
         return Results.Ok(new { status = "EXPIRED" });
