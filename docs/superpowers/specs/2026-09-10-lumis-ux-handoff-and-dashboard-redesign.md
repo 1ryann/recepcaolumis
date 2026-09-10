@@ -3,6 +3,8 @@
 > Rodada **arquitetural**. As decisões de produto/design já foram aprovadas pelo cliente. Esta SPEC apenas as reconcilia com o código real do branch, fecha ambiguidades técnicas e define contratos antes de qualquer implementação. **Nada foi implementado nesta etapa.** Após aprovação desta SPEC: `superpowers:writing-plans` → plano TDD → nova parada antes de implementar.
 >
 > **Revisão 2** (após aprovação conceitual): 5 ajustes obrigatórios incorporados — (1) atomicidade handoff+reserva na mesma transação, `/complete` removido; (2) etapa pública `claim` para `StartedAt` antes do login; (3) rate limits concretos e dedicados; (4) KPIs exatos server-side (sem contagem truncada no cliente); (5) design das 3 telas de login. Mais reforços: refresh do `/totem/handoff`, threat model dos tokens, confirmação fundo/BlurFade/carrossel.
+>
+> **Revisão 3** (ajuste bounded final): retry do handoff é **idempotente** — reenvio de `POST /api/customer/reservations` com o mesmo `handoffToken` pelo mesmo CUSTOMER, após um `COMPLETED` cujo replay confere, devolve a **mesma `Reservation`** (`200 OK`, sem duplicar, sem novo audit); só quando o replay **não** confere (outro cliente / ownership não confirmável) responde `409` sem revelar a reserva. §9.6 + testes §22.1.
 
 - **Branch:** `codex/reception-backend` (worktree `.worktrees/reception-backend`)
 - **HEAD local:** `9ccc95c56a41176e7dbdc407fb24ecd17c082c52` (`docs: spec for LUMIS UX round...`) sobre `165f2f1` (`fix(totem): touch swipe...`)
@@ -279,12 +281,14 @@ Celular  (scan abre o navegador do visitante em /cliente/agendar?handoff=<handof
         professionalId pré-selecionado; usuário escolhe data/horário.
   5. POST /api/customer/reservations { professionalId, startAt, endAt, handoffToken }
         Dentro da MESMA transação de criação (§9.6):
-          - valida handoff (PENDING, não expirado em `now`, professionalId == request.professionalId, hash confere)
-          - cria Reservation (fluxo atual, intocado)
-          - handoff.Complete(reservation.Id, now)  +  audit TOTEM_HANDOFF_COMPLETED
-          - UM SaveChangesAsync + CommitAsync    → tudo, ou nada
-        → 201 reservation
-  6. celular navega para /cliente/agendamentos/{reservation.id}
+          - handoff PENDING válido → cria Reservation (fluxo atual, intocado) +
+            handoff.Complete(reservation.Id, now) + audit TOTEM_HANDOFF_COMPLETED +
+            UM SaveChangesAsync + CommitAsync (tudo, ou nada)   → 201 Created
+          - handoff já COMPLETED e o replay confere (mesma customer/reservation/profissional,
+            reservation.Status == Approved) → NÃO cria nada, retorna a Reservation existente → 200 OK
+          - handoff COMPLETED e replay NÃO confere / outro customer → 409 (não revela a reserva)
+          - handoff EXPIRED → 410
+  6. celular navega para /cliente/agendamentos/{reservation.id}  (201 ou 200 — mesmo shape)
 
 Totem (próximo poll)
   - status == COMPLETED → tela ✓ ("Agendamento concluído!", profissional, data, hora,
@@ -397,21 +401,33 @@ Endpoints do Totem: `AllowAnonymous`, **sem** `AntiforgeryFilter` (coerente com 
 - **Read-only** (não muta estado — o `claim` já marcou `StartedAt`). `!IsUsable(now)` → `410 HANDOFF_EXPIRED`.
 - `200` → `{ handoffId, professionalId, professionalName, profession, expiresAt }` para pré-seleção.
 
-### 9.6 `POST /api/customer/reservations`  (extensão backward-compatible — conclusão atômica)
+### 9.6 `POST /api/customer/reservations`  (extensão backward-compatible — conclusão atômica + retry idempotente)
 
 - Request estendido: `CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? HandoffToken)`.
-- **`HandoffToken` ausente/null → comportamento atual idêntico** (old clients continuam funcionando; `IStrictModuleRequest` aceita o campo novo opcional).
+- **`HandoffToken` ausente/null → comportamento atual idêntico** (old clients continuam funcionando; `IStrictModuleRequest` aceita o campo novo opcional). Sempre `201 Created`, como hoje.
 - **`HandoffToken` presente → dentro da MESMA unidade transacional da criação:**
   1. `handoff = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.HandoffTokenHash == SHA256(decode(HandoffToken)), ct)` — **tracked** (sem `AsNoTracking`).
-  2. Se `handoff is null || handoff.Status != Pending || handoff.ExpiresAt <= now || handoff.ProfessionalId != request.ProfessionalId` → `400 INVALID_HANDOFF` genérico **antes** de adicionar a reserva (transação descarta → rollback, nada persistido).
-  3. Se `handoff.Status == Completed` (retry de rede após sucesso) → `409 HANDOFF_ALREADY_USED` genérico (o cliente deve recarregar seus agendamentos; **não** cria segunda reserva).
-  4. Cria `Reservation` exatamente como hoje (`Reservation.CreateApproved(...)`, `db.Reservations.Add`, audit `RESERVATION_CREATED`).
-  5. `handoff.Complete(reservation.Id, now)` + `db.AuditEntries.Add("TOTEM_HANDOFF_COMPLETED")` (sem token/PII).
-  6. **UM** `await db.SaveChangesAsync(ct)` (reserva + conclusão do handoff + audits juntos) + `await transaction.CommitAsync(ct)`.
-  7. Concorrência: duas chamadas simultâneas com o mesmo token → a 2ª `SaveChangesAsync` lança `DbUpdateConcurrencyException` no `handoff.Version` → catch → `409` genérico, **e a reserva perdedora sofre rollback junto**.
+  2. **Token inexistente / não decodifica / tamanho ≠ 32** → `400 INVALID_HANDOFF` genérico, **antes** de qualquer insert (transação descarta → rollback).
+  3. **CASO 1 — `handoff.Status == Pending`** (fluxo normal):
+     a. Se `handoff.ExpiresAt <= now || handoff.ProfessionalId != request.ProfessionalId` → `400 INVALID_HANDOFF` genérico (rollback, nada persistido).
+     b. Cria `Reservation` exatamente como hoje (`Reservation.CreateApproved(...)`, `db.Reservations.Add`, audit `RESERVATION_CREATED`).
+     c. `handoff.Complete(reservation.Id, now)` + `db.AuditEntries.Add("TOTEM_HANDOFF_COMPLETED")` (sem token/PII).
+     d. **UM** `await db.SaveChangesAsync(ct)` (reserva + conclusão do handoff + audits juntos) + `await transaction.CommitAsync(ct)`.
+     e. → **`201 Created`** + `reservation.ToResponse(...)` (contrato atual de criação real).
+  4. **CASO 2 — `handoff.Status == Completed` e o replay confere** (retry legítimo de rede):
+     - Condições, **todas** verdadeiras: `handoff.ReservationId is not null`; a `Reservation` com esse id existe; `reservation.CustomerId == customer.Id` (o CUSTOMER autenticado atual, resolvido por `GetCustomer(principal)`); `reservation.ProfessionalId == handoff.ProfessionalId`; `reservation.Status == Approved`.
+     - → **não cria nada**, faz `transaction.RollbackAsync` (ou nem abre transação de escrita), e retorna **`200 OK`** + `reservation.ToResponse(...)` — **a mesma `Reservation` já criada**, no mesmo DTO de sucesso. **Nenhum** novo audit `RESERVATION_CREATED`, nenhum novo `TOTEM_HANDOFF_COMPLETED`.
+     - `200` (replay idempotente) vs `201` (criação real) é a única diferença de contrato; ambos carregam o mesmo shape `ReservationResponse`. Documentado aqui e testado (§22.1).
+  5. **CASO 3 — `handoff.Status == Completed` mas o replay NÃO confere** (outro CUSTOMER, `ReservationId` nulo/ausente, profissional divergente, ownership não confirmável):
+     - → **nunca** revela a reserva. `409 HANDOFF_ALREADY_USED` genérico (ou `400 INVALID_HANDOFF` se o profissional do request diverge — padrão atual de erro). Nenhum dado de outro cliente no corpo.
+  6. **CASO 4 — `handoff.Status == Expired`** → `410 HANDOFF_EXPIRED` genérico.
+- **Concorrência:** duas chamadas simultâneas com o mesmo token, ambas em CASO 1 → ambas criam a `Reservation` em memória, mas o **`handoff.Version` (xmin)** faz a 2ª `SaveChangesAsync` lançar `DbUpdateConcurrencyException` → `catch` → a perdedora faz `transaction.RollbackAsync` (descartando a sua `Reservation`), **recarrega o handoff** (`db.ChangeTracker.Clear()` + `SingleOrDefaultAsync`) e re-avalia:
+  - agora `Completed` e o replay confere (mesma `customer`/`reservation`/profissional) → retorna a `Reservation` vencedora como **`200` replay idempotente** (CASO 2);
+  - não confere → `409` (CASO 3).
+  - **Resultado: exatamente uma `Reservation`.**
 - **Ou tudo acontece, ou nada acontece.** Sem regra de booking duplicada (a criação continua sendo a única do `CreateReservation`).
 - **`POST /api/customer/booking-handoffs/{id}/complete` é REMOVIDO** — deixou de ser necessário.
-- **Segurança (checklist do ajuste 1):** mesmo profissional (passo 2); handoff válido (passo 2); não concluído antes (passos 2–3); token correto (hash, passo 1); Reservation criada **pelo fluxo correspondente** — não há mais input `reservationId`, o cliente **não** pode informar um id antigo/arbitrário; a reserva é criada para `customer.Id` do principal autenticado. Idempotência via `409 HANDOFF_ALREADY_USED`.
+- **Segurança (checklist do ajuste 1 + 6):** mesmo profissional (3a/2); handoff válido (3a); não concluído antes por outrem (CASO 3 nega); token correto (hash, passo 1); Reservation criada **pelo fluxo correspondente** — não há input `reservationId`, o cliente **não** informa id arbitrário; a reserva é sempre de `customer.Id` do principal autenticado; o replay idempotente (CASO 2) só devolve uma reserva **cujo `CustomerId` é o do chamador** — nunca dados de outro cliente.
 
 ### 9.7 Rate limiting — `TotemHandoffRateLimiter` (novo, dedicado)
 
@@ -610,13 +626,23 @@ Hoje `/admin` index = `ModuleUnavailable`. Esta rodada **constrói** o dashboard
 - `POST /api/totem/booking-handoffs`: `handoffToken` ≠ `statusToken`; DB guarda só hashes; audit sem token/PII.
 - `status` com `statusToken` correto: `PENDING`→`COMPLETED`→`EXPIRED`; token errado → `INVALID_HANDOFF` genérico.
 - **`claim` (público)**: marca `StartedAt` **sem autenticação**; aplica carência 10 min; 2ª chamada não re-estende; teto de 20 min desde `CreatedAt`; token inválido/expirado → `410`/`INVALID_HANDOFF`; **não retorna PII**.
-- **Atomicidade `CreateReservation` + handoff:**
-  - com `handoffToken` válido → reserva criada **e** handoff `COMPLETED` com `ReservationId`/`CompletedAt`, num único commit.
-  - handoff inválido/expirado/profissional divergente → `400 INVALID_HANDOFF` **e nenhuma reserva persistida**.
-  - retry com handoff já `COMPLETED` → `409 HANDOFF_ALREADY_USED` **e nenhuma segunda reserva**.
-  - duas chamadas concorrentes com o mesmo token → uma vence, a outra `409` com rollback da reserva.
-  - **sem** `handoffToken` → comportamento atual idêntico (regressão dos testes existentes de `CreateReservation`).
+- **Atomicidade `CreateReservation` + handoff (CASO 1):**
+  - com `handoffToken` `Pending` válido → **primeira chamada cria uma `Reservation`** **e** handoff `COMPLETED` com `ReservationId`/`CompletedAt`, num único commit → `201 Created`.
+  - handoff inválido/expirado/profissional divergente → `400 INVALID_HANDOFF` / `410 HANDOFF_EXPIRED` **e nenhuma reserva persistida**.
+  - **sem** `handoffToken` → comportamento atual idêntico (regressão dos testes existentes de `CreateReservation`), sempre `201`.
   - **não é possível** um CUSTOMER concluir handoff com `reservationId` arbitrário (não há mais esse input).
+- **Retry idempotente (CASO 2) — onde o teste de retry entra:**
+  - **primeira chamada cria uma `Reservation`** (`201`).
+  - **retry do mesmo CUSTOMER + mesmo `handoffToken`** (handoff já `COMPLETED`) → **`200 OK`** com **a mesma `Reservation`** (mesmo `id` no corpo, mesmo `ReservationResponse`).
+  - **`db.Reservations.Count()` permanece 1** após o retry.
+  - **`ReservationId` retornado é o mesmo** da primeira chamada.
+  - o retry **não cria** novo `AuditEntry` `RESERVATION_CREATED` nem novo `TOTEM_HANDOFF_COMPLETED` (contagem de audits inalterada).
+  - **outro CUSTOMER** (autenticado como cliente diferente) chamando com o mesmo `handoffToken` → `409 HANDOFF_ALREADY_USED`, **corpo sem nenhum dado da reserva** (nem `id`, nem profissional, nem horário) — CASO 3.
+  - `handoff.ReservationId` nulo / reserva ausente / profissional divergente com handoff `COMPLETED` → `409`/`400` genérico, sem revelar reserva (CASO 3).
+- **Concorrência (CASO 2 via corrida):**
+  - duas chamadas concorrentes com o mesmo token, ambas em CASO 1 → **exatamente uma `Reservation`**; a perdedora detecta `DbUpdateConcurrencyException`, recarrega o handoff, confirma ownership e retorna a `Reservation` vencedora como **`200` replay idempotente** (não `409`, não segunda reserva).
+  - perdedora que **não** confirma ownership → `409`.
+  - "response perdido / retry conceitual" (primeira chamada commitou, cliente não recebeu, repete) → coberto pelo teste de retry acima: seguro, sem duplicação, mesma `Reservation`.
 - `cancel` → `EXPIRED`; idempotente.
 - **Rate limit dedicado:** `status` a ~2 s por toda a vida do handoff (até 20 min) **nunca** retorna 429; `create`/`claim`/`cancel` respeitam seus limites; o orçamento **não** é compartilhado com check-in/register.
 - `Counts.TodayCheckIns`: contagem exata server-side (visitas com `ArrivedAt` no dia civil), incl. cenário > 50 visitas.
@@ -720,7 +746,7 @@ Reforço: `/totem/*` **nunca** navega para `/login`, `/cliente/login` ou `/profi
 
 ## Auto-revisão da SPEC (revisão 2)
 
-- **Atomicidade handoff/reserva:** `CreateReservation` já usa `BeginTransactionAsync`→`SaveChangesAsync`→`CommitAsync`; a extensão valida + conclui o handoff **na mesma transação**, com concorrência otimista via `handoff.Version`. `/complete` removido. Sem input `reservationId` → ataque de "reservationId arbitrário" eliminado por construção. Idempotência via `409 HANDOFF_ALREADY_USED`.
+- **Atomicidade handoff/reserva + retry idempotente:** `CreateReservation` já usa `BeginTransactionAsync`→`SaveChangesAsync`→`CommitAsync`; a extensão valida + conclui o handoff **na mesma transação**, com concorrência otimista via `handoff.Version`. `/complete` removido, sem input `reservationId`. **CASO 1** (`Pending`) → cria + conclui, `201`. **CASO 2** (`Completed`, replay confere mesma `customer`/`reservation`/profissional) → devolve a **mesma `Reservation`**, `200`, sem novo audit, `Count` continua 1. **CASO 3** (`Completed`, outro cliente / não confere) → `409`, **nunca** revela a reserva. Corrida: a perdedora recarrega o handoff e vira CASO 2 ou CASO 3 → exatamente uma `Reservation`.
 - **Expiry antes do login:** `claim` **público** marca `StartedAt` + carência de 10 min sem `CustomerPolicy`; teto 20 min; chamado por `Login.tsx` (desvio anônimo) e `CustomerBooking.tsx` (fallback). Sem sessão eterna.
 - **Rate limits:** `TotemHandoffRateLimiter` dedicado, orçamento separado; STATUS 50/60 s por `{ip}:{id}` > 30/min de polling real → **nunca 429** no polling normal por toda a vida do handoff; CREATE 10, CANCEL 15, CLAIM 20, RESOLVE 20; config keys + defaults + bump em `Testing` documentados.
 - **KPIs exatos:** Admin ganha `Counts.TodayCheckIns` (CountAsync server-side no dia civil); Profissional usa `/api/professional/visits` `from`/`to` + `totalCount` exato e a extensão obrigatória `from`/`to` em `/api/professional/reservations` (gap # incluído no plano). **Nenhum KPI computa contagem de lista paginada truncada.**
