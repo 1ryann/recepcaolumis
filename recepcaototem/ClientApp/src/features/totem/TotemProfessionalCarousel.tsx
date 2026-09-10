@@ -5,16 +5,18 @@ import { BorderBeam } from './magic/BorderBeam'
 import { ProgressiveBlur } from './magic/ProgressiveBlur'
 import { usePrefersReducedMotion } from './magic/usePrefersReducedMotion'
 
-// The public Totem professional carousel: a horizontal, scroll-snapped strip of cards with a
-// larger centred active card and its neighbours partly visible. It is driven purely by
-// `activeIndex` state, so the big prev/next arrows, the dots, and keyboard navigation
-// (ArrowLeft/ArrowRight/Home/End on the listbox) all work even where there is no layout
-// (jsdom). Touch swipe rides the browser's native scroll-snap; a mouse-drag fallback moves
-// `scrollLeft` directly and, past a small threshold, suppresses the click that would
-// otherwise select the card under the pointer. `onScroll` only *reads* the nearest-centre
-// card to keep `activeIndex` in sync — it never scrolls back, so there is no feedback loop.
-// Status is conveyed as a dot *and* a word (never colour alone); the active card alone wears
-// the BorderBeam, and ProgressiveBlur softens both edges.
+// The public Totem professional carousel: a horizontal strip of cards with a larger centred
+// active card and its neighbours partly visible. It is driven purely by `activeIndex` state,
+// so the big prev/next arrows, the dots, and keyboard navigation (ArrowLeft/ArrowRight/
+// Home/End on the listbox) all work even where there is no layout (jsdom). One pointer-drag
+// path serves touch, pen and mouse: the pointer is captured, `scrollLeft` follows the finger
+// for live feedback, and on release a net-displacement past a threshold commits to the
+// next/previous card (`setActive`, which smooth-centres and emits). Past a small travel
+// threshold the gesture also suppresses the click that would otherwise select the card under
+// the pointer. `onScroll` only *reads* the nearest-centre card to keep `activeIndex` in sync
+// — it never scrolls back, so there is no feedback loop. Status is conveyed as a dot *and* a
+// word (never colour alone); the active card alone wears the BorderBeam, and ProgressiveBlur
+// softens both edges.
 
 type ProfessionalStatus = TotemProfessionalCardDto['status']
 
@@ -30,7 +32,12 @@ const STATUS_CLASS: Record<ProfessionalStatus, string> = {
   UNAVAILABLE: 'totem-status-muted',
 }
 
+// Past this much travel a pointer gesture is a drag, not a tap (suppresses the click-select).
 const DRAG_THRESHOLD_PX = 6
+// Net horizontal displacement, in px, that commits a released drag to the next/previous card.
+const SWIPE_COMMIT_PX = 40
+// Rough card + gap width; only used to let a long fling jump more than one card.
+const SWIPE_CARD_PX = 220
 
 interface TotemProfessionalCarouselProps {
   professionals: TotemProfessionalCardDto[]
@@ -49,7 +56,8 @@ export function TotemProfessionalCarousel({
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([])
   const didDragRef = useRef(false)
   const pointerActiveRef = useRef(false)
-  const dragStartXRef = useRef(0)
+  const dragOriginXRef = useRef(0)
+  const dragLastXRef = useRef(0)
   const dragTravelRef = useRef(0)
   const rafRef = useRef<number | null>(null)
 
@@ -121,27 +129,56 @@ export function TotemProfessionalCarousel({
     }
   }
 
+  // One drag path for every pointer type. Touch cannot rely on native overflow scrolling
+  // here: the screen wraps the carousel in a `filter`ed BlurFade layer, and a non-`none`
+  // `filter` on an ancestor disables touch-driven scroll of a nested scroller on mobile
+  // WebKit/Blink (programmatic `scrollTo` still works, which is why arrows/dots/taps do).
+  // So we capture the pointer and drive `scrollLeft` + the snap ourselves.
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType !== 'mouse') return
     pointerActiveRef.current = true
-    dragStartXRef.current = event.clientX
+    dragOriginXRef.current = event.clientX
+    dragLastXRef.current = event.clientX
     dragTravelRef.current = 0
     didDragRef.current = false
+    const viewport = viewportRef.current
+    if (viewport && typeof viewport.setPointerCapture === 'function') {
+      try {
+        viewport.setPointerCapture(event.pointerId)
+      } catch {
+        /* jsdom / unsupported — the drag still works without capture */
+      }
+    }
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType !== 'mouse' || !pointerActiveRef.current) return
-    const delta = event.clientX - dragStartXRef.current
-    dragStartXRef.current = event.clientX
-    dragTravelRef.current += Math.abs(delta)
+    if (!pointerActiveRef.current) return
+    const step = event.clientX - dragLastXRef.current
+    dragLastXRef.current = event.clientX
+    dragTravelRef.current += Math.abs(step)
     const viewport = viewportRef.current
-    if (viewport) viewport.scrollLeft -= delta
+    if (viewport) viewport.scrollLeft -= step
     if (dragTravelRef.current > DRAG_THRESHOLD_PX) didDragRef.current = true
   }
 
   function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType !== 'mouse') return
+    if (!pointerActiveRef.current) return
     pointerActiveRef.current = false
+    const viewport = viewportRef.current
+    if (viewport && typeof viewport.releasePointerCapture === 'function') {
+      try {
+        viewport.releasePointerCapture(event.pointerId)
+      } catch {
+        /* nothing to release */
+      }
+    }
+    if (!didDragRef.current) return
+    const net = event.clientX - dragOriginXRef.current
+    if (Math.abs(net) < SWIPE_COMMIT_PX) {
+      centre(activeIndexRef.current)
+      return
+    }
+    const steps = Math.max(1, Math.round(Math.abs(net) / SWIPE_CARD_PX))
+    setActive(activeIndexRef.current + (net < 0 ? steps : -steps))
   }
 
   // Derive the active card from whichever card centre sits nearest the viewport centre.

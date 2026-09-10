@@ -1485,7 +1485,11 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   /* Edge padding so the first / last card can still settle dead-centre. */
   padding-inline: max(12px, calc(50% - (clamp(200px, 22vw, 264px) / 2)));
   outline: none;
-  touch-action: pan-x;
+  /* The component captures the pointer and drives the drag + snap in JS (a `filter`ed
+     BlurFade ancestor breaks native touch-scroll of a nested scroller on mobile), so the
+     browser must not also try to pan this element. The screen is `overflow: hidden`, so
+     no page scroll is lost. */
+  touch-action: none;
   overscroll-behavior-x: contain;
   cursor: grab;
 }
