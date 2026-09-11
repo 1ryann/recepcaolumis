@@ -1912,6 +1912,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .lumis-login-card .field-input { min-height: 44px; color: var(--lumis-text); border-color: var(--lumis-border); background: var(--lumis-surface); }
 .lumis-login-card .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px var(--lumis-border-soft); }
 .lumis-login-submit { min-height: 48px; width: 100%; margin-top: 2px; }
+.lumis-login-submit { background: var(--lumis-text-dim); border-color: var(--lumis-text-dim); color: var(--lumis-bg); box-shadow: none; }
+.lumis-login-submit:hover:not(:disabled) { background: #fff; }
 .lumis-login-active { display: flex; flex-direction: column; gap: 10px; }
 .lumis-password-field { position: relative; display: block; }
 .lumis-password-field .field-input { padding-right: 84px; }
