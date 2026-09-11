@@ -1,8 +1,8 @@
-import { QrCode, UserRound } from 'lucide-react'
+import { ArrowRight, QrCode, UserRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { BlurFade } from '../features/totem/magic/BlurFade'
-import { LightRays } from '../features/totem/magic/LightRays'
 import { MagicCard } from '../features/totem/magic/MagicCard'
 
 // The `/totem` decision screen. It asks one question — "Como deseja continuar?" — and
@@ -14,7 +14,7 @@ export function TotemEntry() {
 
   return (
     <main className="totem-entry">
-      <LightRays />
+      <LumisBackground />
       <div className="totem-entry-inner">
         <BlurFade>
           <img
@@ -38,8 +38,9 @@ export function TotemEntry() {
               className="totem-entry-card"
               onClick={() => navigate('/totem/check-in')}
             >
-              <QrCode className="totem-entry-card-icon" aria-hidden="true" />
+              <span className="totem-entry-card-icon" aria-hidden="true"><QrCode size={22} /></span>
               <span className="totem-entry-card-label">Tenho código</span>
+              <ArrowRight className="totem-entry-card-arrow" size={20} aria-hidden="true" />
             </MagicCard>
 
             <MagicCard
@@ -47,8 +48,9 @@ export function TotemEntry() {
               className="totem-entry-card"
               onClick={() => navigate('/totem/profissionais')}
             >
-              <UserRound className="totem-entry-card-icon" aria-hidden="true" />
+              <span className="totem-entry-card-icon" aria-hidden="true"><UserRound size={22} /></span>
               <span className="totem-entry-card-label">Não tenho código</span>
+              <ArrowRight className="totem-entry-card-arrow" size={20} aria-hidden="true" />
             </MagicCard>
           </div>
         </BlurFade>

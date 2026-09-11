@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { LightRays } from './LightRays'
 import { BlurFade } from './BlurFade'
 import { MagicCard } from './MagicCard'
 import { BorderBeam } from './BorderBeam'
@@ -15,13 +14,6 @@ function mockReducedMotion(reduced: boolean) {
   }))
 }
 beforeEach(() => mockReducedMotion(false))
-
-test('LightRays is decorative and non-interactive', () => {
-  const { container } = render(<LightRays />)
-  const el = container.firstChild as HTMLElement
-  expect(el).toHaveAttribute('aria-hidden', 'true')
-  expect(getComputedStyle(el).pointerEvents).toBe('none')
-})
 
 test('BlurFade renders its children', () => {
   render(<BlurFade><span>oi</span></BlurFade>)

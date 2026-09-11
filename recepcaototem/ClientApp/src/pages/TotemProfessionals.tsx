@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { totemApi, type TotemProfessionalCardDto } from '../api/modules'
+import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { TotemProfessionalCarousel } from '../features/totem/TotemProfessionalCarousel'
 import { BlurFade } from '../features/totem/magic/BlurFade'
-import { LightRays } from '../features/totem/magic/LightRays'
 import { RippleButton } from '../features/totem/magic/RippleButton'
 
 // The `/totem/profissionais` screen. A visitor without a check-in code lands here from
@@ -13,7 +13,7 @@ import { RippleButton } from '../features/totem/magic/RippleButton'
 // `/totem/handoff` via navigation `state` — the Totem NEVER navigates to any `/cliente/*`
 // route (the customer finishes the booking on their own phone via the QR). A create
 // failure surfaces an inline `role="alert"` next to the button and the visitor stays on
-// the carousel. Four phases share the kiosk shell (top bar + LightRays
+// the carousel. Four phases share the kiosk shell (top bar + LumisBackground
 // + a centred BlurFade column):
 //   loading -> three shimmer skeleton cards
 //   ready   -> carousel + Continuar + Voltar
@@ -84,7 +84,7 @@ export function TotemProfessionals() {
 
   return (
     <main className="totem-professionals">
-      <LightRays />
+      <LumisBackground />
 
       <header className="totem-professionals-bar">
         <img

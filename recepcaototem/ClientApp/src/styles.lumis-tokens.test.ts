@@ -18,9 +18,12 @@ test(':root declares the full LUMIS token set with the approved values', () => {
   expect(root).toMatch(/--lumis-danger:/)
 })
 
-test('legacy per-page aliases resolve through --lumis-* (single source of truth)', () => {
-  // every --tk-bg / --tc-bg / --tp-bg / --te-* base colour now references a --lumis-* var
-  expect(css).toMatch(/--tk-bg:\s*var\(--lumis-bg\)/)
-  expect(css).toMatch(/--tc-bg:\s*var\(--lumis-bg\)/)
-  expect(css).toMatch(/--tp-bg:\s*var\(--lumis-bg\)/)
+test('page shells reference --lumis-* tokens directly (no redundant per-page alias layer)', () => {
+  // The Home portal and every /totem/* shell used to redeclare their own --home-*/--tk-*/
+  // --te-*/--tp-*/--tc-* aliases that only ever pointed back at --lumis-*. That indirection
+  // layer is gone: .home-portal, .totem-kiosk, .totem-entry, .totem-professionals and
+  // .totem-carousel consume var(--lumis-*) directly, so there is exactly one place — :root —
+  // that defines the LUMIS palette.
+  expect(css).not.toMatch(/--(?:tk|te|tp|tc|home)-[a-z-]+:\s*var\(--lumis-/)
+  expect(css).toMatch(/\.totem-kiosk\s*\{[^}]*background:\s*var\(--lumis-bg\)/)
 })

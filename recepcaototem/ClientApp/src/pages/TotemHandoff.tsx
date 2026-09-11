@@ -176,11 +176,13 @@ function TotemHandoffScreen({ nav }: { nav: HandoffNavState }) {
             </p>
 
             {qrDataUrl && (
-              <img
-                className="totem-handoff-qr"
-                src={qrDataUrl}
-                alt="QR Code para continuar o agendamento no seu celular"
-              />
+              <div className="totem-handoff-qr-card">
+                <img
+                  className="totem-handoff-qr"
+                  src={qrDataUrl}
+                  alt="QR Code para continuar o agendamento no seu celular"
+                />
+              </div>
             )}
 
             <p className="totem-handoff-hint">Escaneie para continuar seu agendamento</p>
