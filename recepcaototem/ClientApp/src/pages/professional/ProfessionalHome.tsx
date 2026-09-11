@@ -1,9 +1,10 @@
 import { apiClient, ApiError } from '../../api/client'
-import { Activity, CalendarClock, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, UserRound, UsersRound } from 'lucide-react'
+import { Activity, CalendarClock, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, Menu, UserRound, UsersRound } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
 import { professionalReservationsApi, professionalVisitsApi, type PagedResponse, type ReservationDto, type VisitDto } from '../../api/modules'
+import { LumisPageShell } from '../../features/lumis/LumisPageShell'
 
 type ProfessionalContext = { reservations: ReservationDto[], visits: VisitDto[], loading: boolean, error: string }
 const nav = [
@@ -18,6 +19,7 @@ const nav = [
 ]
 
 export function ProfessionalShell() {
+  const [open, setOpen] = useState(false)
   const session = useSession()
   const navigate = useNavigate()
   const [profile, setProfile] = useState<{ name: string; profession: string; description: string | null; photoUrl: string | null } | null>(null)
@@ -36,8 +38,51 @@ export function ProfessionalShell() {
   }, [])
   const logout = async () => { await session.logout(); navigate('/login', { replace: true }) }
   const name = profile?.name || session.user?.displayName || 'Profissional'
+  const firstName = name.split(/\s+/)[0]
   const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-  return <div className="professional-shell"><aside className="professional-sidebar"><Link className="professional-brand" to="/profissional"><img src="/lumis-logo-transparent.png" alt="LUMIS" /></Link><div className="professional-intro"><span>Área do profissional</span><strong>{name}</strong><small>{profile?.profession}</small>{profile?.description && <p>{profile.description}</p>}{profile?.photoUrl && <img src={profile.photoUrl} alt="Sua foto" width="72" height="72" />}</div><nav className="professional-nav" aria-label="Navegação do profissional">{nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end}><Icon size={18} />{label}</NavLink>)}</nav><div className="professional-sidebar-footer"><span>{initials}</span><div><strong>{name}</strong><small>Profissional</small></div><button type="button" onClick={logout} aria-label="Sair"><LogOut size={17} /></button></div></aside><main className="professional-main"><header className="professional-topbar"><div><span className="eyebrow">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span><h1>{locationTitle(useLocation().pathname)}</h1></div><div className="professional-topbar-avatar">{initials}</div></header><div className="professional-content"><Outlet context={{ reservations, visits, loading, error }} /></div></main></div>
+  const todayLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+  const closeMenu = () => setOpen(false)
+  return (
+    <LumisPageShell intensity="muted" className="professional-shell-page">
+      <div className="professional-shell">
+        <aside className={`professional-sidebar ${open ? 'is-open' : ''}`}>
+          <div className="professional-sidebar-brand">
+            <Link to="/profissional" onClick={closeMenu}><img className="professional-sidebar-logo" src="/lumis-logo-transparent.png" alt="LUMIS" /></Link>
+          </div>
+          <div className="professional-intro">
+            <span>Área do profissional</span>
+            <strong>{name}</strong>
+            {profile?.profession && <small>{profile.profession}</small>}
+            {profile?.description && <p>{profile.description}</p>}
+            {profile?.photoUrl && <img className="professional-intro-photo" src={profile.photoUrl} alt="Sua foto" width="56" height="56" />}
+          </div>
+          <nav className="professional-nav" aria-label="Navegação do profissional">
+            {nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>)}
+          </nav>
+          <div className="professional-sidebar-footer">
+            <button className="professional-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
+          </div>
+        </aside>
+        {open && <button className="professional-sidebar-overlay" type="button" onClick={closeMenu} aria-label="Fechar menu" />}
+        <div className="professional-main">
+          <header className="professional-topbar">
+            <button className="menu-trigger icon-button" type="button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={20} /></button>
+            <div className="professional-topbar-heading">
+              <span className="eyebrow">PROFISSIONAL</span>
+              <h1>Olá, {firstName}!</h1>
+              <p>Seu espaço, sua agenda, mais possibilidades.</p>
+            </div>
+            <div className="professional-topbar-meta">
+              <span className="professional-topbar-date">{todayLabel}</span>
+              <div className="professional-topbar-profile"><span className="professional-avatar">{initials}</span><strong>{name}</strong></div>
+            </div>
+          </header>
+          {error && <div className="customer-inline-error" role="alert">{error}</div>}
+          <div className="professional-content"><Outlet context={{ reservations, visits, loading, error }} /></div>
+        </div>
+      </div>
+    </LumisPageShell>
+  )
 }
 
 export function ProfessionalDashboard() {
@@ -60,4 +105,3 @@ export function ProfessionalPlaceholder({ title }: { title: string }) { return <
 
 function Metric({ icon, label, value, tone }: { icon: ReactNode, label: string, value: number, tone: string }) { return <article className={`professional-metric tone-${tone}`}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></article> }
 function useProfessionalContext() { return useOutletContext<ProfessionalContext>() }
-function locationTitle(path: string) { return nav.find((item) => item.end ? path === item.to : path.startsWith(item.to))?.label ?? 'Área do profissional' }
