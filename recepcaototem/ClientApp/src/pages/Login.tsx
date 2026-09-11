@@ -1,7 +1,7 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
-import { ApiError } from '../api/client'
+import { apiClient, ApiError } from '../api/client'
 import { homeForRoles } from '../auth/roleRoutes'
 import { safeCustomerReturnUrl } from '../auth/returnUrl'
 import { LumisPageShell } from '../features/lumis/LumisPageShell'
@@ -23,6 +23,15 @@ export function Login({ audience = 'admin' }: { audience?: Audience }) {
   const [params] = useSearchParams()
   const session = useSession()
   const returnUrl = audience === 'customer' ? safeCustomerReturnUrl(params.get('returnUrl')) : null
+
+  useEffect(() => {
+    if (audience !== 'customer' || !returnUrl) return
+    const query = returnUrl.split('?')[1] ?? ''
+    const handoffToken = new URLSearchParams(query).get('handoff')
+    if (!handoffToken) return
+    void apiClient.post('/api/totem/booking-handoffs/claim', { handoffToken }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()

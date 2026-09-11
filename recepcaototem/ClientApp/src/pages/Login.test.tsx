@@ -184,6 +184,33 @@ test('customer returnUrl is preserved into the create-account link', async () =>
     .toContain('returnUrl=')
 })
 
+test('customer login claims the handoff on mount when the returnUrl carries one', async () => {
+  vi.mocked(apiClient.post).mockResolvedValue(undefined)
+  await renderLogin('customer', '/cliente/login?returnUrl=%2Fcliente%2Fagendar%3Fhandoff%3DAbc-1')
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/api/totem/booking-handoffs/claim', { handoffToken: 'Abc-1' }))
+})
+
+test('professional login never claims a handoff, even with a handoff-shaped returnUrl', async () => {
+  vi.mocked(apiClient.post).mockResolvedValue(undefined)
+  await renderLogin('professional', '/profissional/login?returnUrl=%2Fcliente%2Fagendar%3Fhandoff%3DAbc-1')
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  expect(apiClient.post).not.toHaveBeenCalledWith('/api/totem/booking-handoffs/claim', expect.anything())
+})
+
+test('admin login never claims a handoff, even with a handoff-shaped returnUrl', async () => {
+  vi.mocked(apiClient.post).mockResolvedValue(undefined)
+  await renderLogin('admin', '/login?returnUrl=%2Fcliente%2Fagendar%3Fhandoff%3DAbc-1')
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  expect(apiClient.post).not.toHaveBeenCalledWith('/api/totem/booking-handoffs/claim', expect.anything())
+})
+
+test('customer login does not claim when the returnUrl has no handoff', async () => {
+  vi.mocked(apiClient.post).mockResolvedValue(undefined)
+  await renderLogin('customer', '/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx')
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  expect(apiClient.post).not.toHaveBeenCalledWith('/api/totem/booking-handoffs/claim', expect.anything())
+})
+
 test('sober look: no decorative icons, textual show/hide password control', async () => {
   const { container } = await renderLogin('customer')
   // the only <svg> allowed anywhere is none — no envelope / lock / shield / eye / arrow icons

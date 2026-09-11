@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, Clock3, UserRound } from 'lucide-r
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
-import { customerApi, type AvailabilitySlotDto, type CustomerProfessionalDto } from '../../api/modules'
+import { customerApi, totemApi, type AvailabilitySlotDto, type CustomerProfessionalDto } from '../../api/modules'
 
 function todayInputValue() {
   const now = new Date()
@@ -27,13 +27,48 @@ export function CustomerBooking() {
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
+  const [handoffToken, setHandoffToken] = useState<string | null>(null)
+  const [, setHandoffId] = useState<string | null>(null)
+  const [handoffError, setHandoffError] = useState('')
 
   useEffect(() => {
-    customerApi.professionals().then((items) => {
-      setProfessionals(items)
-      const preselect = params.get('professionalId')
-      setProfessionalId(items.some((i) => i.id === preselect) ? preselect! : (items[0]?.id ?? ''))
-    }).catch(() => setError('Não foi possível carregar os profissionais.')).finally(() => setLoading(false))
+    let cancelled = false
+    const token = params.get('handoff')
+
+    const loadProfessionals = (forcedProfessionalId: string | null) =>
+      customerApi.professionals().then((items) => {
+        if (cancelled) return
+        setProfessionals(items)
+        if (forcedProfessionalId) {
+          setProfessionalId(forcedProfessionalId)
+        } else {
+          const preselect = params.get('professionalId')
+          setProfessionalId(items.some((i) => i.id === preselect) ? preselect! : (items[0]?.id ?? ''))
+        }
+      }).catch(() => { if (!cancelled) setError('Não foi possível carregar os profissionais.') })
+        .finally(() => { if (!cancelled) setLoading(false) })
+
+    if (!token) {
+      void loadProfessionals(null)
+      return () => { cancelled = true }
+    }
+
+    void totemApi.claimHandoff(token).catch(() => {})
+    customerApi.resolveHandoff(token)
+      .then((resolved) => {
+        if (cancelled) return
+        setHandoffToken(token)
+        setHandoffId(resolved.handoffId)
+        navigate('/cliente/agendar', { replace: true })
+        return loadProfessionals(resolved.professionalId)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setHandoffError('Este convite expirou. Você pode escolher o profissional normalmente.')
+        return loadProfessionals(null)
+      })
+
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -58,6 +93,7 @@ export function CustomerBooking() {
         professionalId,
         startAt: selectedSlot.startAt,
         endAt: selectedSlot.endAt,
+        ...(handoffToken ? { handoffToken } : {}),
       })
       navigate(`/cliente/agendamentos/${reservation.id}`)
     } catch (caught) {
@@ -69,6 +105,7 @@ export function CustomerBooking() {
     <Link className="customer-back-link" to="/cliente"><ArrowLeft size={16} /> Voltar para a minha área</Link>
     <div className="customer-section-heading customer-booking-heading"><div><span className="eyebrow">Novo agendamento</span><h1>Escolha seu horário.</h1><p>Selecione um profissional e encontre um momento tranquilo para o seu atendimento.</p></div></div>
     {error && <div className="form-error" role="alert">{error}</div>}
+    {handoffError && <div className="form-error" role="alert">{handoffError}</div>}
     {loading ? <div className="customer-loading" role="status">Carregando profissionais…</div> : <>
       <div className="customer-booking-controls panel">
         <label className="field-label"><span><UserRound size={15} /> Profissional</span><select className="field-input" value={professionalId} onChange={(event) => setProfessionalId(event.target.value)}>{professionals.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.profession}</option>)}</select></label>
