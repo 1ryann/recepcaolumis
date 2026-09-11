@@ -380,6 +380,113 @@ export interface ReceptionOverviewDto {
   criticalAlerts: number
 }
 
+export interface DashboardCountsDto {
+  activeProfessionals: number
+  activeRooms: number
+  occupiedRooms: number
+  reservedRooms: number
+  activeLeases: number
+  scheduledLeases: number
+  pendingReservations: number
+  todayReservations: number
+  waitingVisits: number
+  inServiceVisits: number
+  todayCheckIns: number
+}
+
+export interface DashboardFinancialSummaryDto {
+  pendingAmount: number
+  overdueAmount: number
+  paidAmount: number
+  pendingCount: number
+  overdueCount: number
+  paidCount: number
+}
+
+export interface DashboardAgendaItemDto {
+  reservationId: string
+  professionalId: string
+  professionalName: string
+  roomId: string
+  roomName: string
+  startAt: string
+  endAt: string
+}
+
+export interface DashboardCurrentVisitDto {
+  visitId: string
+  visitorName: string
+  status: string
+  professionalId: string
+  professionalName: string
+  roomId: string | null
+  roomName: string | null
+  arrivedAt: string
+  serviceStartedAt: string | null
+  durationMinutes: number
+}
+
+export interface DashboardAlertDto {
+  id: string
+  type: string
+  severity: string
+  title: string
+  message: string
+  conditionAt: string
+  roomId: string | null
+  professionalId: string | null
+  reservationId: string | null
+  visitId: string | null
+  leaseId: string | null
+}
+
+export interface DashboardAlertSummaryDto {
+  total: number
+  warning: number
+  critical: number
+  recent: DashboardAlertDto[]
+}
+
+export interface DashboardRoomStatusDto {
+  roomId: string
+  roomName: string
+  status: string
+  nextCommitmentAt: string | null
+}
+
+export interface DashboardSnapshotDto {
+  operationalDate: string
+  counts: DashboardCountsDto
+  financial: DashboardFinancialSummaryDto
+  alerts: DashboardAlertSummaryDto
+  agenda: DashboardAgendaItemDto[]
+  currentVisits: DashboardCurrentVisitDto[]
+  rooms: DashboardRoomStatusDto[]
+}
+
+export interface ReceptionProfessionalDto {
+  professionalId: string
+  name: string
+  profession: string
+  description: string | null
+  hasPhoto: boolean
+  photoUrl: string | null
+  operationalStatus: string
+  currentRoomId: string | null
+  currentVisitId: string | null
+  waitingVisitorsCount: number
+  nextReservationAt: string | null
+  canReceiveVisitor: boolean
+  presence: 'PRESENT' | 'ABSENT'
+  absentUntil: string | null
+}
+
+export const dashboardApi = {
+  get(signal?: AbortSignal) {
+    return apiClient.get<DashboardSnapshotDto>('/api/admin/dashboard', { signal })
+  },
+}
+
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
 const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
@@ -741,5 +848,8 @@ export const receptionApi = {
   },
   endVisit(id: string, concurrencyToken: string) {
     return apiClient.post<ReceptionVisitDto>(`/api/reception/visits/${encodeURIComponent(id)}/end`, { concurrencyToken })
+  },
+  professionals(signal?: AbortSignal) {
+    return apiClient.get<ReceptionProfessionalDto[]>('/api/reception/professionals', { signal })
   },
 }
