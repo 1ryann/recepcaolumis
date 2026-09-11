@@ -80,6 +80,22 @@ test('pending screen shows the prompt, professional, QR image and the cancel but
   ).toBeInTheDocument()
 })
 
+test('the countdown is announced via a coarse aria-live=polite region, not every second', async () => {
+  vi.mocked(totemApi.pollHandoff).mockResolvedValue({ status: 'PENDING', expiresAt: future() })
+  renderWithState(baseState())
+  await advance(0)
+  const live = screen.getByText(/Tempo restante aproximado/i)
+  expect(live).toHaveAttribute('aria-live', 'polite')
+  expect(live).toHaveTextContent('Tempo restante aproximado 05:00')
+  // 29s of 1s ticks stay within the same 30s bucket: the announced text must not change,
+  // even though the visual (aria-hidden) ticker below it updates every second.
+  await advance(29_000)
+  expect(live).toHaveTextContent('Tempo restante aproximado 05:00')
+  // Crossing the 30s boundary is the only time the announcement changes.
+  await advance(1_000)
+  expect(live).toHaveTextContent('Tempo restante aproximado 04:30')
+})
+
 test('polls, then on COMPLETED shows the done screen and auto-returns to /totem after 6s', async () => {
   vi.mocked(totemApi.pollHandoff)
     .mockResolvedValueOnce({ status: 'PENDING', expiresAt: future() })

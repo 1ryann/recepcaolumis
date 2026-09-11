@@ -1915,7 +1915,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .lumis-login-active { display: flex; flex-direction: column; gap: 10px; }
 .lumis-password-field { position: relative; display: block; }
 .lumis-password-field .field-input { padding-right: 84px; }
-.lumis-password-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); min-height: 32px; padding: 0 8px; background: none; border: 0; color: var(--lumis-muted); font-size: 13px; cursor: pointer; }
+.lumis-password-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); min-height: 44px; padding: 0 8px; background: none; border: 0; color: var(--lumis-muted); font-size: 13px; cursor: pointer; }
 .lumis-password-toggle:hover { color: var(--lumis-text-dim); text-decoration: underline; }
 .lumis-login-secondary { margin: 0; color: var(--lumis-muted); font-size: 13px; }
 .lumis-login-secondary a { color: var(--lumis-text-dim); }
@@ -2127,7 +2127,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .customer-qr-card-home .customer-qr-empty { padding: 14px 4px 4px; }
 .customer-qr-generated { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 12px; text-align: center; }
 .customer-qr-generated .customer-qr-image { width: min(170px, 100%); margin-bottom: 4px; border-radius: 10px; }
-.customer-qr-generated .secondary-button { margin-top: 10px; }
+.customer-qr-generated .secondary-button { margin-top: 10px; min-height: 44px; }
 .customer-dashboard-grid .secondary-button { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: transparent; }
 .customer-dashboard-grid .secondary-button:hover { border-color: var(--lumis-border-strong); background: rgba(255,255,255,.06); }
 .customer-dashboard-grid .customer-checkin-code { background: var(--lumis-surface-3); border-color: var(--lumis-border); }
@@ -2316,3 +2316,22 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .professional-dashboard-hero-mark { margin-top: 18px; }
   .professional-agenda-today-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* Task 27: responsive + a11y sweep.
+   Standardized KPI-grid stepping (4-up desktop -> 2-up tablet -> 1-up mobile) so
+   the admin and professional 4-card rows never cram 4-up on a phone; these rules
+   are additive on top of the existing 1100/1080 and 500/560 breakpoints above and
+   win the cascade for any width they both match, since they are declared last. */
+@media (max-width: 1024px) {
+  .metrics-grid, .professional-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .metrics-grid, .professional-kpi-grid { grid-template-columns: 1fr; }
+}
+
+/* Touch targets: the drawer/menu toggle introduced on the customer and
+   professional shells (and shared by the admin shell's) was inheriting the
+   38px .icon-button size; bump it to the 44px minimum without touching the
+   many pre-existing .icon-button instances elsewhere (row actions, availability
+   editor, etc.) that predate this round. */
+.menu-trigger { min-width: 44px; min-height: 44px; }
