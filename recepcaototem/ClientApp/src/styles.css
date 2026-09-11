@@ -2070,3 +2070,28 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 @media (prefers-reduced-motion: reduce) {
   .customer-sidebar { transition: none; }
 }
+
+/* ==========================================================================
+   Customer dashboard cards (Task 22) — next appointment, real QR, history
+   ========================================================================== */
+.customer-dashboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; margin: 24px 0 34px; }
+.customer-dashboard-grid .customer-home-card { max-width: none; margin-top: 0; padding: 21px; }
+.customer-next-details { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 14px; }
+.customer-next-details > strong { font-size: 15px; }
+.customer-next-details > span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.customer-next-details > span svg { color: var(--brand-2); flex: none; }
+.customer-next-details > .customer-status { margin-top: 2px; }
+.customer-next-details > .text-link { margin-top: 6px; }
+.customer-qr-card-home { display: flex; flex-direction: column; }
+.customer-qr-card-home .customer-qr-empty { padding: 14px 4px 4px; }
+.customer-qr-generated { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 12px; text-align: center; }
+.customer-qr-generated .customer-qr-image { width: min(170px, 100%); margin-bottom: 4px; border-radius: 10px; }
+.customer-qr-generated .secondary-button { margin-top: 10px; }
+.customer-dashboard-grid .primary-button { margin-top: 16px; }
+
+@media (max-width: 1080px) {
+  .customer-dashboard-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 620px) {
+  .customer-dashboard-grid { grid-template-columns: 1fr; }
+}
