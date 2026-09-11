@@ -1,9 +1,9 @@
 import { apiClient, ApiError } from '../../api/client'
-import { Activity, CalendarClock, CalendarDays, ChevronRight, Clock3, DoorOpen, LayoutDashboard, LogOut, Menu, UserRound, UsersRound } from 'lucide-react'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { Activity, AlertTriangle, CalendarClock, CalendarDays, Clock3, DoorOpen, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
-import { professionalReservationsApi, professionalVisitsApi, type PagedResponse, type ReservationDto, type VisitDto } from '../../api/modules'
+import { professionalAvailabilityApi, professionalReservationsApi, professionalVisitsApi, type AvailabilityIntervalDto, type ProfessionalAvailabilityDto, type ReservationDto, type VisitDto } from '../../api/modules'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
 
 type ProfessionalContext = { reservations: ReservationDto[], visits: VisitDto[], loading: boolean, error: string }
@@ -85,14 +85,166 @@ export function ProfessionalShell() {
   )
 }
 
+const WEEKDAY_CODES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+
+function todayWindow() {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+  return { from: start.toISOString(), to: end.toISOString() }
+}
+
+function toMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function intervalsForToday(availability: ProfessionalAvailabilityDto | null): AvailabilityIntervalDto[] {
+  if (!availability) return []
+  const code = WEEKDAY_CODES[new Date().getDay()]
+  return availability.effectiveDays.find((day) => day.dayOfWeek.toUpperCase() === code)?.intervals ?? []
+}
+
+function formatAvailabilityDuration(intervals: AvailabilityIntervalDto[]) {
+  const totalMinutes = intervals.reduce((sum, interval) => sum + (toMinutes(interval.endTime) - toMinutes(interval.startTime)), 0)
+  if (totalMinutes <= 0) return 'Sem expediente hoje'
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes ? `${hours}h${String(minutes).padStart(2, '0')}` : `${hours}h`
+}
+
+function deriveAgendaStatus(reservationItem: ReservationDto, visitsForToday: VisitDto[]) {
+  if (reservationItem.status === 'CANCELLED') return 'Cancelado'
+  const matched = visitsForToday.find((item) => item.reservationId === reservationItem.id)
+  if (!matched) return 'Agendado'
+  if (matched.status === 'ENDED') return 'Concluído'
+  if (matched.status === 'IN_SERVICE') return 'Em atendimento'
+  if (matched.status === 'WAITING') return 'Aguardando'
+  return 'Agendado'
+}
+
+function agendaStatusClass(label: string) {
+  if (label === 'Concluído') return 'status-approved'
+  if (label === 'Em atendimento') return 'status-approved'
+  if (label === 'Aguardando') return 'status-pending'
+  if (label === 'Cancelado') return 'status-cancelled'
+  return 'status-pending'
+}
+
+function timeLabel(value: string) { return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }
+function shortDateLabel(value: string) { return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) }
+
 export function ProfessionalDashboard() {
-  const { reservations, visits, loading, error } = useProfessionalContext()
-  const today = new Date(); const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime(); const dayEnd = dayStart + 86400000
-  const todayReservations = reservations.filter((item) => { const time = new Date(item.startAt).getTime(); return time >= dayStart && time < dayEnd })
-  const waiting = visits.filter((item) => item.status === 'WAITING')
-  const inService = visits.filter((item) => item.status === 'IN_SERVICE')
-  const next = useMemo(() => reservations.filter((item) => item.status === 'APPROVED' && new Date(item.endAt).getTime() >= Date.now()).sort((a, b) => a.startAt.localeCompare(b.startAt))[0], [reservations])
-  return <div className="professional-dashboard page-enter"><section className="professional-hero"><div><span className="eyebrow">Visão do dia</span><h2>Seu atendimento começa com uma boa leitura do tempo.</h2><p>Veja o que está acontecendo agora e prepare o próximo encontro.</p></div><div className="professional-hero-mark"><Clock3 size={27} /><span>America/Porto Velho</span></div></section>{error && <div className="form-error" role="alert">{error}</div>}<div className="professional-metrics"><Metric icon={<CalendarDays size={20} />} label="Reservas hoje" value={todayReservations.length} tone="blue" /><Metric icon={<UsersRound size={20} />} label="Aguardando" value={waiting.length} tone="mint" /><Metric icon={<Activity size={20} />} label="Em atendimento" value={inService.length} tone="amber" /></div><div className="professional-dashboard-grid"><section className="panel professional-next"><div className="panel-header"><div><h2>Próximo compromisso</h2><p>O que vem a seguir na sua agenda.</p></div><CalendarDays size={20} /></div>{loading ? <div className="professional-loading">Carregando agenda…</div> : next ? <div className="professional-next-card"><div className="professional-next-time"><strong>{new Date(next.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong><span>{new Date(next.startAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span></div><div><strong>{next.roomName}</strong><span>{next.endAt && `até ${new Date(next.endAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span></div><ChevronRight size={18} /></div> : <div className="professional-empty"><CalendarDays size={25} /><span>Nenhum compromisso próximo.</span></div>}</section><section className="panel professional-waiting"><div className="panel-header"><div><h2>Atendimentos atuais</h2><p>Visitas que pedem sua atenção.</p></div><Link to="/profissional/atendimentos" className="text-link">Ver todos <ChevronRight size={14} /></Link></div>{waiting.length + inService.length === 0 ? <div className="professional-empty"><UsersRound size={25} /><span>Nenhum atendimento em andamento.</span></div> : <div className="professional-visit-list">{[...waiting, ...inService].slice(0, 4).map((visit) => <div className="professional-visit-row" key={visit.id}><span className={`professional-status-dot ${visit.status === 'WAITING' ? 'is-waiting' : 'is-service'}`} /><div><strong>{visit.visitorName}</strong><small>{visit.status === 'WAITING' ? 'Aguardando atendimento' : 'Em atendimento'}</small></div><span>{new Date(visit.arrivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>)}</div>}</section></div></div>
+  const { reservations, error } = useProfessionalContext()
+  const [attendancesToday, setAttendancesToday] = useState(0)
+  const [checkinsToday, setCheckinsToday] = useState(0)
+  const [agendaToday, setAgendaToday] = useState<ReservationDto[]>([])
+  const [visitsToday, setVisitsToday] = useState<VisitDto[]>([])
+  const [availability, setAvailability] = useState<ProfessionalAvailabilityDto | null>(null)
+  const [pendingRequests, setPendingRequests] = useState<ReservationDto[]>([])
+  const [dashLoading, setDashLoading] = useState(true)
+  const [dashError, setDashError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const { from, to } = todayWindow()
+    Promise.all([
+      professionalVisitsApi.list({ status: 'IN_SERVICE', from, to, page: 1, pageSize: 1 }),
+      professionalVisitsApi.list({ status: 'ENDED', from, to, page: 1, pageSize: 1 }),
+      professionalVisitsApi.list({ status: 'all', from, to, page: 1, pageSize: 1 }),
+      professionalVisitsApi.list({ status: 'all', from, to, page: 1, pageSize: 100 }),
+      professionalReservationsApi.list({ status: 'all', from, to, page: 1, pageSize: 100 }),
+      professionalReservationsApi.list({ status: 'PENDING', page: 1, pageSize: 100 }),
+      professionalAvailabilityApi.get(),
+    ]).then(([inServiceCount, endedCount, checkinsCount, visitsPage, reservationsPage, pendingPage, availabilityDto]) => {
+      if (!active) return
+      setAttendancesToday(inServiceCount.totalCount + endedCount.totalCount)
+      setCheckinsToday(checkinsCount.totalCount)
+      setVisitsToday(visitsPage.items)
+      setAgendaToday(reservationsPage.items)
+      setPendingRequests(pendingPage.items)
+      setAvailability(availabilityDto)
+    }).catch(() => { if (active) setDashError('Não foi possível carregar os indicadores de hoje.') })
+      .finally(() => { if (active) setDashLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const upcomingApproved = useMemo(() => reservations
+    .filter((item) => item.status === 'APPROVED' && new Date(item.endAt).getTime() >= Date.now())
+    .sort((a, b) => a.startAt.localeCompare(b.startAt)), [reservations])
+  const next = upcomingApproved[0]
+  const todaysIntervals = useMemo(() => intervalsForToday(availability), [availability])
+  const availabilitySummary = formatAvailabilityDuration(todaysIntervals)
+  const pendingSummaryCount = pendingRequests.filter((item) => item.kind === 'RESCHEDULE' || item.kind === 'CANCELLATION').length
+  const sortedAgenda = useMemo(() => [...agendaToday].sort((a, b) => a.startAt.localeCompare(b.startAt)), [agendaToday])
+
+  return (
+    <div className="professional-dashboard page-enter">
+      <section className="professional-dashboard-hero">
+        <div>
+          <span className="eyebrow">Visão do dia</span>
+          <h2>Seu atendimento começa com uma boa leitura do tempo.</h2>
+          <p>Veja o que está acontecendo agora e prepare o próximo encontro.</p>
+        </div>
+        <div className="professional-dashboard-hero-mark"><Clock3 size={27} /><span>America/Porto Velho</span></div>
+      </section>
+      {(error || dashError) && <div className="form-error" role="alert">{error || dashError}</div>}
+      <div className="professional-kpi-grid">
+        <article className="professional-kpi-card">
+          <span className="professional-kpi-icon"><UsersRound size={20} /></span>
+          <div><small>Atendimentos hoje</small><strong>{dashLoading ? '—' : attendancesToday}</strong></div>
+        </article>
+        <article className="professional-kpi-card">
+          <span className="professional-kpi-icon"><UserRoundCheck size={20} /></span>
+          <div><small>Check-ins confirmados hoje</small><strong>{dashLoading ? '—' : checkinsToday}</strong></div>
+        </article>
+        <article className="professional-kpi-card" data-testid="professional-kpi-next">
+          <span className="professional-kpi-icon"><Clock3 size={20} /></span>
+          <div><small>Próximo horário</small><strong>{next ? timeLabel(next.startAt) : '—'}</strong>{next && <span>{next.roomName}</span>}</div>
+        </article>
+        <article className="professional-kpi-card">
+          <span className="professional-kpi-icon"><CalendarClock size={20} /></span>
+          <div><small>Disponibilidade</small><strong>{dashLoading ? '—' : availabilitySummary}</strong></div>
+        </article>
+      </div>
+      <div className="professional-dashboard-columns">
+        <section className="professional-agenda-today-panel">
+          <div className="panel-header"><div><h2>Agenda de hoje</h2><p>Seus compromissos de hoje, com o status mais recente.</p></div><CalendarDays size={20} /></div>
+          {dashLoading ? <div className="professional-loading">Carregando agenda de hoje…</div>
+            : sortedAgenda.length === 0 ? <div className="professional-empty"><CalendarDays size={25} /><span>Nenhum compromisso hoje.</span></div>
+            : <div className="professional-agenda-today" data-testid="professional-agenda-today">
+                {sortedAgenda.map((item) => {
+                  const label = deriveAgendaStatus(item, visitsToday)
+                  return (
+                    <div className="professional-agenda-today-row" key={item.id}>
+                      <div className="professional-agenda-today-time"><strong>{timeLabel(item.startAt)}</strong><span>até {timeLabel(item.endAt)}</span></div>
+                      <div><strong>{item.roomName}</strong><span>{item.professionalName}</span></div>
+                      <b className={`customer-status ${agendaStatusClass(label)}`}>{label}</b>
+                    </div>
+                  )
+                })}
+              </div>}
+        </section>
+        <div className="professional-side-column">
+          <section className="professional-side-panel">
+            <div className="panel-header"><div><h2>Disponibilidade de hoje</h2><p>Seus intervalos abertos para hoje.</p></div></div>
+            {dashLoading ? <div className="professional-loading">Carregando…</div>
+              : todaysIntervals.length === 0 ? <div className="professional-empty"><CalendarClock size={22} /><span>Sem expediente hoje.</span></div>
+              : <div className="professional-availability-bar">{todaysIntervals.map((interval) => <span className="professional-availability-interval" key={`${interval.startTime}-${interval.endTime}`}>{interval.startTime}–{interval.endTime}</span>)}</div>}
+          </section>
+          <section className="professional-side-panel">
+            <div className="panel-header"><div><h2>Próximas reservas</h2><p>Seus próximos compromissos aprovados.</p></div></div>
+            {upcomingApproved.length === 0 ? <div className="professional-empty"><CalendarDays size={22} /><span>Nenhuma reserva futura.</span></div>
+              : <div className="professional-upcoming-list">{upcomingApproved.slice(0, 4).map((item) => <div className="professional-upcoming-row" key={item.id}><strong>{shortDateLabel(item.startAt)} · {timeLabel(item.startAt)}</strong><span>{item.roomName}</span></div>)}</div>}
+          </section>
+          <section className="professional-side-panel professional-alert-summary">
+            <div className="panel-header"><div><h2>Resumo/avisos</h2><p>Solicitações aguardando sua atenção.</p></div><AlertTriangle size={20} /></div>
+            <div className="professional-alert-count"><strong>{dashLoading ? '—' : pendingSummaryCount}</strong><span>reagendamento(s)/cancelamento(s) pendente(s)</span></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function ProfessionalAgenda() {
@@ -103,5 +255,4 @@ export function ProfessionalAgenda() {
 
 export function ProfessionalPlaceholder({ title }: { title: string }) { return <section className="professional-section page-enter"><span className="page-eyebrow">Área do profissional</span><h1>{title}</h1><div className="professional-empty panel"><Activity size={25} /><strong>Estamos preparando esta área</strong><span>O dashboard e a agenda já estão disponíveis.</span><Link className="secondary-button" to="/profissional">Voltar ao dashboard</Link></div></section> }
 
-function Metric({ icon, label, value, tone }: { icon: ReactNode, label: string, value: number, tone: string }) { return <article className={`professional-metric tone-${tone}`}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></article> }
 function useProfessionalContext() { return useOutletContext<ProfessionalContext>() }
