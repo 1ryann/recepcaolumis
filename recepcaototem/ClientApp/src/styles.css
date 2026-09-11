@@ -2134,7 +2134,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .customer-dashboard-grid .customer-checkin-code strong { color: var(--lumis-text); }
 .customer-dashboard-grid .customer-checkin-code small,
 .customer-dashboard-grid .customer-checkin-code span { color: var(--lumis-muted); }
-.customer-dashboard-grid .primary-button { margin-top: 16px; }
+.customer-dashboard-grid .primary-button { margin-top: 16px; min-height: 44px; }
 
 /* Próximos agendamentos / Histórico recente list + empty states (below the grid) */
 .customer-home .customer-reservation-card,

@@ -68,3 +68,11 @@ test('login password show/hide toggle meets the 44px minimum touch target', () =
 test('customer "copiar" QR button meets the 44px minimum touch target', () => {
   expect(css).toMatch(/\.customer-qr-generated \.secondary-button\s*\{[^}]*min-height:\s*44px/)
 })
+
+test('customer dashboard "Gerar QR Code" / "Novo agendamento" buttons meet the 44px minimum touch target', () => {
+  // Scoped like the "copiar" fix above: .customer-dashboard-grid .primary-button only
+  // matches the two dashboard cards that actually render a .primary-button (the QR
+  // card's "Gerar QR Code" and the "Novo agendamento" card's link-button) — the
+  // "Próximo atendimento" card has no primary-button, so it is unaffected.
+  expect(css).toMatch(/\.customer-dashboard-grid \.primary-button\s*\{[^}]*min-height:\s*44px/)
+})
