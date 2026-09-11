@@ -1,24 +1,67 @@
-import { ArrowRight, CalendarPlus, CalendarRange, LogOut, UserRound } from 'lucide-react'
+import { ArrowRight, CalendarPlus, CalendarRange, LayoutDashboard, LogOut, Menu, UserRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
 import { customerApi, type CustomerProfileDto, type PagedResponse, type ReservationDto } from '../../api/modules'
 import { ApiError } from '../../api/client'
+import { LumisPageShell } from '../../features/lumis/LumisPageShell'
+
+const customerNavItems = [
+  { to: '/cliente', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/cliente/agendamentos', label: 'Agendamentos', icon: CalendarRange, end: false },
+  { to: '/cliente/agendar', label: 'Novo agendamento', icon: CalendarPlus, end: false },
+]
 
 function CustomerShell() {
+  const [open, setOpen] = useState(false)
   const session = useSession()
   const navigate = useNavigate()
-  const location = useLocation()
   const [profile, setProfile] = useState<CustomerProfileDto | null>(null)
   const [error, setError] = useState('')
   useEffect(() => { customerApi.me().then(setProfile).catch((caught) => { if (caught instanceof ApiError && caught.status === 401) navigate('/cliente/login', { replace: true }); else setError('Não foi possível carregar sua área.') }) }, [navigate])
   const logout = async () => { await session.logout(); navigate('/cliente/login', { replace: true }) }
-  const firstName = (profile?.name || session.user?.displayName || 'Cliente').split(/\s+/)[0]
-  return <div className="customer-shell">
-    <header className="customer-topbar"><Link className="customer-brand" to="/cliente"><img src="/lumis-logo-dark.png" alt="LUMIS" /></Link><nav className="customer-nav" aria-label="Área do cliente"><Link className={location.pathname === '/cliente' ? 'is-active' : ''} to="/cliente">Início</Link><Link className={location.pathname.startsWith('/cliente/agendamentos') ? 'is-active' : ''} to="/cliente/agendamentos">Meus agendamentos</Link></nav><button className="customer-logout" type="button" onClick={logout}><LogOut size={16} /> Sair</button></header>
-    {error && <div className="customer-inline-error" role="alert">{error}</div>}
-    <main className="customer-content"><Outlet context={{ profile, firstName }} /></main>
-  </div>
+  const name = profile?.name || session.user?.displayName || 'Cliente'
+  const firstName = name.split(/\s+/)[0]
+  const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+  const todayLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+  const closeMenu = () => setOpen(false)
+
+  return (
+    <LumisPageShell intensity="muted" className="customer-shell-page">
+      <div className="customer-shell">
+        <aside className={`customer-sidebar ${open ? 'is-open' : ''}`}>
+          <div className="customer-sidebar-brand">
+            <Link to="/cliente" onClick={closeMenu}><img className="customer-sidebar-logo" src="/lumis-logo-transparent.png" alt="LUMIS" /></Link>
+          </div>
+          <nav className="customer-sidebar-nav" aria-label="Navegação do cliente">
+            {customerNavItems.map(({ to, label, icon: Icon, end }) => (
+              <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>
+            ))}
+          </nav>
+          <div className="customer-sidebar-footer">
+            <button className="customer-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
+          </div>
+        </aside>
+        {open && <button className="customer-sidebar-overlay" type="button" onClick={closeMenu} aria-label="Fechar menu" />}
+        <div className="customer-main">
+          <header className="customer-topbar">
+            <button className="menu-trigger icon-button" type="button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={20} /></button>
+            <div className="customer-topbar-heading">
+              <span className="eyebrow">Área do cliente</span>
+              <h1>Olá, {firstName}!</h1>
+              <p>Seu bem-estar em um só lugar.</p>
+            </div>
+            <div className="customer-topbar-meta">
+              <span className="customer-topbar-date">{todayLabel}</span>
+              <div className="customer-topbar-profile"><span className="customer-avatar">{initials}</span><strong>{name}</strong></div>
+            </div>
+          </header>
+          {error && <div className="customer-inline-error" role="alert">{error}</div>}
+          <main className="customer-content"><Outlet context={{ profile, firstName }} /></main>
+        </div>
+      </div>
+    </LumisPageShell>
+  )
 }
 
 export function CustomerHome() {
