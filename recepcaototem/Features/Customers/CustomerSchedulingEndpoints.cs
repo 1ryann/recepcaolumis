@@ -20,7 +20,7 @@ using recepcaototem.Features.Totem;
 namespace recepcaototem.Features.Customers;
 
 public sealed record CustomerAvailabilityRequest(Guid ProfessionalId, DateOnly Date, int DurationMinutes) : IStrictModuleRequest;
-public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt) : IStrictModuleRequest;
+public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? HandoffToken = null) : IStrictModuleRequest;
 public sealed record CustomerReservationRescheduleRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationPageResponse(ReservationResponse[] Items, int Page, int PageSize, int TotalCount);
@@ -116,19 +116,115 @@ public static class CustomerSchedulingEndpoints
         if (request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
         var professional = await db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
+
+        // Task 14 — optional handoff completion. A null/absent HandoffToken leaves every line below
+        // this block untouched (201, no rollback dance). When present, the reservation INSERT and the
+        // handoff.Complete() UPDATE ride the SAME transaction (all or nothing), and any retry or
+        // concurrent duplicate by the same customer replays the winner's reservation (200) — never a
+        // second row.
+        TotemBookingHandoff? handoff = null;
+        byte[] handoffHash = [];
+        if (request.HandoffToken is { } rawHandoff)
+        {
+            if (!TotemBookingHandoffEndpoints.TryDecodeHash(rawHandoff, out handoffHash))
+                return Results.Json(new ApiError("INVALID_HANDOFF", "Não foi possível validar este convite."), statusCode: 400);
+            handoff = await db.TotemBookingHandoffs.SingleOrDefaultAsync(x => x.HandoffTokenHash == handoffHash, ct);
+            if (handoff is null)
+                return Results.Json(new ApiError("INVALID_HANDOFF", "Não foi possível validar este convite."), statusCode: 400);
+
+            var nowHandoff = time.GetUtcNow();
+            // CASE 4 — terminal-expired, or Pending past its deadline.
+            if (handoff.Status == TotemBookingHandoffStatus.Expired ||
+                (handoff.Status == TotemBookingHandoffStatus.Pending && handoff.ExpiresAt <= nowHandoff))
+                return Results.Json(new ApiError("HANDOFF_EXPIRED", "Este QR Code expirou."), statusCode: 410);
+
+            // CASE 2/3 — already completed: pure-read idempotent replay, no transaction, no SaveChanges.
+            if (handoff.Status == TotemBookingHandoffStatus.Completed)
+                return await ReplayHandoffAsync(db, handoff, customer, request.ProfessionalId, ct);
+
+            // CASE 1 — Pending & not expired: the invite must be for the professional being booked.
+            if (handoff.ProfessionalId != request.ProfessionalId)
+                return Results.Json(new ApiError("INVALID_HANDOFF", "Não foi possível validar este convite."), statusCode: 400);
+            // `handoff` stays tracked from the query above so Complete() persists in the single SaveChanges.
+        }
+
         var roomIds = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, [request.ProfessionalId]), ct);
         var available = await availability.FindAvailableRoomAsync(
             request.ProfessionalId, request.StartAt, request.EndAt, null, null, ct);
-        if (!available.IsAvailable) return AppointmentAvailabilityResults.Conflict(available.Failure);
+        if (!available.IsAvailable)
+        {
+            if (handoff is not null)
+            {
+                // Controller ruling: two concurrent POSTs with the same handoffToken serialize on the
+                // Professionals FOR UPDATE lock. After the winner commits, the loser acquires the lock,
+                // sees the winner's committed Approved reservation here, and would 409 before ever
+                // building a reservation. Intercept: roll back, re-read in a clean state, and replay
+                // the winner's reservation (200). A genuine slot conflict (handoff still not Completed)
+                // falls through to the normal Conflict below, leaving the handoff Pending.
+                await transaction.RollbackAsync(ct);
+                db.ChangeTracker.Clear();
+                var fresh = await db.TotemBookingHandoffs.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.HandoffTokenHash == handoffHash, ct);
+                if (fresh is { Status: TotemBookingHandoffStatus.Completed })
+                    return await ReplayHandoffAsync(db, fresh, customer, request.ProfessionalId, ct);
+            }
+            return AppointmentAvailabilityResults.Conflict(available.Failure);
+        }
         var roomId = available.RoomId!.Value;
         var reservation = Reservation.CreateApproved(roomId, request.ProfessionalId, request.StartAt, request.EndAt,
             principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? customer.ApplicationUserId!, time.GetUtcNow(), customer.Id);
         db.Reservations.Add(reservation);
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
-        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        if (handoff is not null)
+        {
+            var completedAt = time.GetUtcNow();
+            handoff.Complete(reservation.Id, completedAt);
+            db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "TOTEM_HANDOFF_COMPLETED", Result = "SUCCEEDED", TargetEntityType = "TOTEM_HANDOFF", TargetEntityId = handoff.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = completedAt, CorrelationId = context.TraceIdentifier });
+        }
+        try
+        {
+            await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException) when (handoff is not null)
+        {
+            // Safety net for any window where both requests cleared the lock + availability: the
+            // loser's handoff.Complete() UPDATE loses the xmin race. Same recovery as above.
+            await transaction.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            var fresh = await db.TotemBookingHandoffs.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.HandoffTokenHash == handoffHash, ct);
+            if (fresh is { Status: TotemBookingHandoffStatus.Completed })
+                return await ReplayHandoffAsync(db, fresh, customer, request.ProfessionalId, ct);
+            return Results.Json(new ApiError("HANDOFF_ALREADY_USED", "Este convite já foi utilizado."), statusCode: 409);
+        }
         return Results.Created($"/api/customer/reservations/{reservation.Id}", reservation.ToResponse((await db.Rooms.FindAsync([roomId], ct))!.Name, professional.Name));
+    }
+
+    /// <summary>
+    /// CASE 2/3 idempotent replay: a handoff that is already <see cref="TotemBookingHandoffStatus.Completed"/>
+    /// yields the reservation it produced — but only to the customer who owns it, and only while that
+    /// reservation is still an Approved booking for the same professional. Any invariant miss collapses
+    /// to a generic <c>409 HANDOFF_ALREADY_USED</c> with no reservation data in the body. Pure read:
+    /// opens no transaction and issues no SaveChanges.
+    /// </summary>
+    private static async Task<IResult> ReplayHandoffAsync(ApplicationDbContext db, TotemBookingHandoff handoff,
+        Customer customer, Guid requestProfessionalId, CancellationToken ct)
+    {
+        var reservation = handoff.ReservationId is { } reservationId
+            ? await db.Reservations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reservationId, ct)
+            : null;
+        if (reservation is null
+            || reservation.CustomerId != customer.Id
+            || reservation.ProfessionalId != handoff.ProfessionalId
+            || reservation.ProfessionalId != requestProfessionalId
+            || reservation.Status != ReservationStatus.Approved)
+            return Results.Json(new ApiError("HANDOFF_ALREADY_USED", "Este convite já foi utilizado."), statusCode: 409);
+
+        var roomName = await db.Rooms.AsNoTracking().Where(x => x.Id == reservation.RoomId).Select(x => x.Name).SingleAsync(ct);
+        var professionalName = await db.Professionals.AsNoTracking().Where(x => x.Id == reservation.ProfessionalId).Select(x => x.Name).SingleAsync(ct);
+        return Results.Ok(reservation.ToResponse(roomName, professionalName));
     }
 
     private static async Task<IResult> CancelReservation(Guid id, CustomerReservationConcurrencyRequest request, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time, CancellationToken ct)
