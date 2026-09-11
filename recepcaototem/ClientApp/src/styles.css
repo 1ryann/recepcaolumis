@@ -1856,26 +1856,31 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .totem-code-cell.is-active { border-color: var(--lumis-text-dim); }
 
-/* --- LUMIS animated backdrop (LumisBackground / LumisPageShell) --- */
+/* --- LUMIS animated backdrop (LumisBackground / LumisPageShell) ---
+   Anchored to the original Home hero streak: one thin diagonal line of light per
+   ray (not a wide filled band), resting in place with only a small alternate
+   wiggle — never sweeping fully across the screen. Three rays at slightly
+   different angles/offsets and falling opacity add quiet depth without ever
+   reading as a shape. */
 .lumis-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .lumis-bg-ray {
-  position: absolute; top: -20%; left: -30%; width: 42vw; height: 140%;
-  background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, .045) 50%, transparent 100%);
-  transform: translate3d(-40vw, -10vh, 0) rotate(9deg);
-  opacity: 0; will-change: transform, opacity;
-  animation: lumis-ray-drift 26s linear infinite;
+  position: absolute;
+  inset: -20% -30% auto -30%;
+  height: 150%;
+  background: linear-gradient(58deg, transparent 42%, rgba(255, 255, 255, .05) 49%, rgba(255, 255, 255, .1) 50%, rgba(255, 255, 255, .05) 51%, transparent 58%);
+  opacity: .85;
+  will-change: transform;
+  animation: lumis-ray-drift 15s ease-in-out infinite alternate;
 }
-.lumis-bg-ray:nth-child(2) { top: 10%; width: 30vw; animation-duration: 34s; animation-delay: -9s; }
-.lumis-bg-ray:nth-child(3) { top: -30%; width: 52vw; animation-duration: 19s; animation-delay: -15s; }
+.lumis-bg-ray:nth-child(2) { inset: -32% -34% auto -20%; opacity: .45; animation-duration: 21s; animation-delay: -6s; }
+.lumis-bg-ray:nth-child(3) { inset: -6% -22% auto -36%; opacity: .28; animation-duration: 26s; animation-delay: -12s; }
 .lumis-bg[data-intensity="muted"] { opacity: .55; }
 @keyframes lumis-ray-drift {
-  0%   { transform: translate3d(-40vw, -10vh, 0) rotate(9deg); opacity: 0; }
-  12%  { opacity: .5; }
-  88%  { opacity: .5; }
-  100% { transform: translate3d(120vw, 34vh, 0) rotate(9deg); opacity: 0; }
+  from { transform: translate3d(-3%, -1.5%, 0); }
+  to   { transform: translate3d(3%, 1.5%, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .lumis-bg-ray { animation: none; opacity: .16; transform: translate3d(30vw, 10vh, 0) rotate(9deg); }
+  .lumis-bg-ray { animation: none; transform: none; }
 }
 
 /* --- LUMIS page shell (LumisPageShell) --- */
