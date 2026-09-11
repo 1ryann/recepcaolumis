@@ -117,7 +117,7 @@ export function CustomerHome() {
         : 'Não foi possível gerar o QR Code agora.')
     } finally { setIssuing(false) }
   }
-  const copyCode = async () => { if (token) await navigator.clipboard?.writeText(token) }
+  const copyCode = async () => { if (manualCode) await navigator.clipboard?.writeText(manualCode) }
 
   if (!data && !error) return <div className="customer-loading page-enter" role="status">Carregando seu painel…</div>
   if (error) return <div className="form-error page-enter" role="alert">{error}</div>

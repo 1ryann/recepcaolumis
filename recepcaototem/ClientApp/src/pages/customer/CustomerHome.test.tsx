@@ -98,6 +98,18 @@ test('generates a real QR code and manual code from the API, never a hardcoded o
   expect(screen.queryByText('472916')).not.toBeInTheDocument()
 })
 
+test('copies the manual code (not the QR token) to the clipboard', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.assign(navigator, { clipboard: { writeText } })
+  renderHome()
+  const generate = await screen.findByRole('button', { name: /gerar qr code/i })
+  fireEvent.click(generate)
+  const copyButton = await screen.findByRole('button', { name: /copiar/i })
+  fireEvent.click(copyButton)
+  expect(writeText).toHaveBeenCalledWith('004821')
+  expect(writeText).not.toHaveBeenCalledWith('strong-token')
+})
+
 test('shows the not-yet-eligible message from CHECK_IN_NOT_ELIGIBLE instead of a QR', async () => {
   vi.mocked(customerApi.issueCheckInToken).mockRejectedValue(new ApiError(409, 'CHECK_IN_NOT_ELIGIBLE', 'not eligible'))
   renderHome()
