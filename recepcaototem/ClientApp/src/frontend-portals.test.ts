@@ -99,6 +99,15 @@ test('reception monitor reads the real queue and transitions visits through the 
   expect(receptionMonitorSource).not.toContain('useAppStore')
 })
 
+test('the real /admin dashboard (not the old mock-data one) is routed on both development and production route trees', () => {
+  for (const source of [appSource, developmentSource]) {
+    expect(source).toContain("import { AdminDashboard } from '")
+    expect(source).toMatch(/<Route path="\/admin" element=\{<AdminLayout \/>\}>\s*<Route index element=\{<AdminDashboard \/>\}/)
+    expect(source).not.toContain("import { Dashboard } from '")
+    expect(source).not.toContain('<Route index element={<Dashboard />} />')
+  }
+})
+
 test('availability management is exposed to both Professional and Operations routes', () => {
   for (const source of [appSource, developmentSource]) {
     expect(source).toContain('path="disponibilidade"')

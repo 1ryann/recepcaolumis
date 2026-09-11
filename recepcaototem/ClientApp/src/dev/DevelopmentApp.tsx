@@ -4,7 +4,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute'
 import { ChangePassword } from '../pages/ChangePassword'
 import { Login } from '../pages/Login'
 import { Reception } from '../pages/Reception'
-import { Dashboard } from '../pages/admin/Dashboard'
+import { AdminDashboard } from '../pages/admin/AdminDashboard'
 import { Leases } from '../pages/admin/Leases'
 import { Reservations } from '../pages/admin/Reservations'
 import { Professionals } from '../pages/admin/Professionals'
@@ -68,7 +68,7 @@ export default function DevelopmentApp() {
         <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/configuracoes" element={<Settings />} /></Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
           <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<AdminDashboard />} />
             <Route path="salas" element={<Rooms />} />
             <Route path="profissionais" element={<Professionals />} />
             <Route path="locacoes" element={<Leases />} />
