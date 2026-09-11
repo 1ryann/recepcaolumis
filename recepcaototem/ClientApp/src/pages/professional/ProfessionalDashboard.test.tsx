@@ -47,6 +47,10 @@ const agendaScheduled = reservation({ id: 'r-scheduled', roomName: 'Sala 2', sta
 const agendaEnded = reservation({ id: 'r-ended', roomName: 'Sala 3', startAt: '2026-09-11T15:00:00Z', endAt: '2026-09-11T16:00:00Z' })
 const endedVisit = visit({ id: 'v-ended', reservationId: 'r-ended', status: 'ENDED', visitorName: 'Ciclano' })
 
+// Agenda de hoje: reservation stays APPROVED but its linked Visit was separately cancelled (e.g. a no-show cancelled at the totem).
+const agendaCancelledVisit = reservation({ id: 'r-cancelled-visit', roomName: 'Sala 4', startAt: '2026-09-11T17:00:00Z', endAt: '2026-09-11T18:00:00Z' })
+const cancelledVisit = visit({ id: 'v-cancelled', reservationId: 'r-cancelled-visit', status: 'CANCELLED', visitorName: 'Beltrano' })
+
 const pendingReschedule = reservation({ id: 'r-pending-1', kind: 'RESCHEDULE', status: 'PENDING' })
 const pendingCancellation = reservation({ id: 'r-pending-2', kind: 'CANCELLATION', status: 'PENDING' })
 const pendingNew = reservation({ id: 'r-pending-3', kind: 'NEW', status: 'PENDING' })
@@ -105,6 +109,24 @@ test('Agenda de hoje derives status by joining reservations to visits: matched E
   const agenda = await screen.findByTestId('professional-agenda-today')
   expect(within(agenda).getByText('Concluído')).toBeInTheDocument()
   expect(within(agenda).getByText('Agendado')).toBeInTheDocument()
+})
+
+test('Agenda de hoje renders Cancelado when the matched Visit was cancelled, even though the reservation itself stays APPROVED', async () => {
+  vi.mocked(professionalReservationsApi.list).mockImplementation(async (query: ReservationListQuery) => {
+    if (query.status === 'all') return { items: [agendaCancelledVisit], page: 1, pageSize: 100, totalCount: 1 }
+    if (query.status === 'PENDING') return { items: [], page: 1, pageSize: 100, totalCount: 0 }
+    throw new Error(`unexpected reservations query ${JSON.stringify(query)}`)
+  })
+  vi.mocked(professionalVisitsApi.list).mockImplementation(async (query: VisitListQuery) => {
+    if (query.status === 'IN_SERVICE') return { items: [], page: 1, pageSize: 1, totalCount: 0 }
+    if (query.status === 'ENDED') return { items: [], page: 1, pageSize: 1, totalCount: 0 }
+    if (query.status === 'all' && query.pageSize === 1) return { items: [], page: 1, pageSize: 1, totalCount: 0 }
+    if (query.status === 'all' && query.pageSize === 100) return { items: [cancelledVisit], page: 1, pageSize: 100, totalCount: 1 }
+    throw new Error(`unexpected visits query ${JSON.stringify(query)}`)
+  })
+  renderDashboard({ reservations: [], visits: [], loading: false, error: '' })
+  const agenda = await screen.findByTestId('professional-agenda-today')
+  expect(within(agenda).getByText('Cancelado')).toBeInTheDocument()
 })
 
 test('Próximo horário uses the next APPROVED reservation from context with endAt in the future', async () => {

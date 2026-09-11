@@ -2042,6 +2042,9 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .customer-topbar {
   position: sticky; z-index: 20; top: 0; display: flex; align-items: center; gap: 20px;
   padding: 26px clamp(22px, 4vw, 48px) 18px;
+  background: rgba(24, 24, 24, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--lumis-border-soft);
 }
 .customer-topbar .menu-trigger { display: none; color: var(--lumis-text-dim); }
 .customer-topbar .menu-trigger:hover { color: var(--lumis-text); background: rgba(255,255,255,.08); }
@@ -2176,6 +2179,9 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-topbar {
   position: sticky; z-index: 20; top: 0; display: flex; align-items: center; gap: 20px;
   padding: 26px clamp(22px, 4vw, 48px) 18px;
+  background: rgba(24, 24, 24, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--lumis-border-soft);
 }
 .professional-topbar .menu-trigger { display: none; color: var(--lumis-text-dim); }
 .professional-topbar .menu-trigger:hover { color: var(--lumis-text); background: rgba(255,255,255,.08); }

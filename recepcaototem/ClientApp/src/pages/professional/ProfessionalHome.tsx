@@ -117,6 +117,7 @@ function deriveAgendaStatus(reservationItem: ReservationDto, visitsForToday: Vis
   if (reservationItem.status === 'CANCELLED') return 'Cancelado'
   const matched = visitsForToday.find((item) => item.reservationId === reservationItem.id)
   if (!matched) return 'Agendado'
+  if (matched.status === 'CANCELLED') return 'Cancelado'
   if (matched.status === 'ENDED') return 'Concluído'
   if (matched.status === 'IN_SERVICE') return 'Em atendimento'
   if (matched.status === 'WAITING') return 'Aguardando'
