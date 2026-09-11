@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { customerApi, totemApi, type CustomerProfessionalDto, type ResolveHandoffDto } from '../../api/modules'
+import { ApiError } from '../../api/client'
 import { CustomerBooking } from './CustomerBooking'
 
 // `useNavigate` is spied so we can assert the ?handoff= token is dropped from the
@@ -82,6 +83,24 @@ test('shows the expiry message and falls back to normal professional selection w
   const select = await screen.findByLabelText(/profissional/i)
   await waitFor(() => expect(select).toHaveValue('p2'))
   expect(customerApi.professionals).toHaveBeenCalled()
+})
+
+test('clears the handoff token and shows the expiry message when submit fails with HANDOFF_EXPIRED, so the next submit is a plain booking', async () => {
+  vi.mocked(customerApi.createReservation).mockRejectedValueOnce(new ApiError(410, 'HANDOFF_EXPIRED', 'expired'))
+  const { container } = renderAt('/cliente/agendar?handoff=TOKEN')
+  const select = await screen.findByLabelText(/profissional/i)
+  await waitFor(() => expect(select).toHaveValue('p2'))
+  await waitFor(() => expect(container.querySelector('.customer-slot')).toBeInTheDocument())
+  fireEvent.click(container.querySelector('.customer-slot')!)
+  fireEvent.click(screen.getByRole('button', { name: /confirmar agendamento/i }))
+  await waitFor(() => expect(customerApi.createReservation).toHaveBeenCalledTimes(1))
+  expect(await screen.findByText('Este convite expirou. Você pode escolher o profissional normalmente.')).toBeInTheDocument()
+
+  fireEvent.click(container.querySelector('.customer-slot')!)
+  fireEvent.click(screen.getByRole('button', { name: /confirmar agendamento/i }))
+  await waitFor(() => expect(customerApi.createReservation).toHaveBeenCalledTimes(2))
+  const secondCall = vi.mocked(customerApi.createReservation).mock.calls[1][0]
+  expect(secondCall).not.toHaveProperty('handoffToken')
 })
 
 test('never claims/resolves and omits handoffToken when no ?handoff= is present', async () => {

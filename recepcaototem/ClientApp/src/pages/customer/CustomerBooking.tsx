@@ -97,7 +97,12 @@ export function CustomerBooking() {
       })
       navigate(`/cliente/agendamentos/${reservation.id}`)
     } catch (caught) {
-      setError(caught instanceof ApiError && caught.status === 409 ? 'Esse horário acabou de ser ocupado. Escolha outro.' : 'Não foi possível criar o agendamento.')
+      if (handoffToken && caught instanceof ApiError && (caught.code === 'HANDOFF_EXPIRED' || caught.code === 'HANDOFF_ALREADY_USED')) {
+        setHandoffToken(null)
+        setHandoffError('Este convite expirou. Você pode escolher o profissional normalmente.')
+      } else {
+        setError(caught instanceof ApiError && caught.status === 409 ? 'Esse horário acabou de ser ocupado. Escolha outro.' : 'Não foi possível criar o agendamento.')
+      }
     } finally { setChecking(false) }
   }
 
