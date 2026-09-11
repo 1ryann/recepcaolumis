@@ -1,5 +1,7 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
@@ -372,6 +374,64 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
         Assert.Equal("INVALID_HANDOFF", (await unknown.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
 
         await AssertNoReservationAsync();
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Privacy regression guard for the public, unauthenticated status poll on a COMPLETED handoff.
+    // CompletedPayload is coded today to project only { status, professionalName, startAt, roomName
+    // } — this pins that exact member set so a future change that accidentally widens the payload
+    // (customer name/phone/email/CPF, customerId, reservationId, either token, ...) fails loudly.
+    // -------------------------------------------------------------------------------------------
+    [Fact]
+    public async Task Status_of_a_completed_handoff_exposes_exactly_status_professionalName_startAt_and_roomName()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedCustomerAsync();
+        var professionalId = await SeedActiveProfessionalWithRoomAsync();
+        var b = await CreateHandoffAsync(professionalId);
+
+        // Phone opens the QR (claim), the customer authenticates and resolves the professional
+        // context, then completes the booking — the ordinary Task 12/13/14 flow.
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync(
+            "/api/totem/booking-handoffs/claim", new { handoffToken = b.HandoffToken })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await factory.PostWithCsrfAsync(
+            "/api/customer/booking-handoffs/resolve", new { handoffToken = b.HandoffToken })).StatusCode);
+
+        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero).AddHours(14);
+        var created = await factory.PostWithCsrfAsync(CreatePath, new
+        {
+            professionalId,
+            startAt = start,
+            endAt = start.AddHours(1),
+            handoffToken = b.HandoffToken,
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        // The kiosk polls with just the statusToken — no session, no cookie needed.
+        var statusResponse = await factory.Client.PostAsJsonAsync(
+            $"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken });
+        Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+
+        using var document = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync());
+        var propertyNames = document.RootElement.EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToArray();
+        var expected = new[] { "professionalName", "roomName", "startAt", "status" };
+        Assert.Equal(expected, propertyNames);
+
+        Assert.Equal("COMPLETED", document.RootElement.GetProperty("status").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("professionalName").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("roomName").GetString()));
+
+        // Belt-and-suspenders: no PII, identifier, or token field anywhere in the raw body,
+        // beyond the four allowed member names asserted above.
+        var raw = await statusResponse.Content.ReadAsStringAsync();
+        foreach (var forbidden in new[]
+        {
+            "customerId", "customerName", "phone", "email", "cpf", "reservationId",
+            "handoffToken", "statusToken", "\"id\"",
+        })
+            Assert.DoesNotContain(forbidden, raw, StringComparison.OrdinalIgnoreCase);
     }
 
     private static object Body(BookableHandoff a) =>
