@@ -30,6 +30,8 @@ public static class ProfessionalReservationEndpoints
         int? page,
         int? pageSize,
         string? status,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
         HttpContext context,
         ApplicationDbContext db,
         CancellationToken cancellationToken)
@@ -44,6 +46,8 @@ public static class ProfessionalReservationEndpoints
         if (actualStatus == "ALL") actualStatus = "all";
         if (!Statuses.Contains(actualStatus, StringComparer.Ordinal))
             return Results.BadRequest(new ApiError("INVALID_STATUS", "O status informado é inválido."));
+        if (from is not null && to is not null && from >= to)
+            return Results.BadRequest(new ApiError("INVALID_DATE_RANGE", "O intervalo é inválido."));
         var professionalId = await ResolveProfessionalId(db, context, cancellationToken);
         if (professionalId is null)
             return Results.Ok(new PagedResponse<ReservationResponse>([], actualPage, actualSize, 0));
@@ -55,6 +59,8 @@ public static class ProfessionalReservationEndpoints
             var parsedStatus = ParseStatus(actualStatus);
             reservations = reservations.Where(value => value.Status == parsedStatus);
         }
+        if (from is not null) reservations = reservations.Where(value => value.StartAt >= from);
+        if (to is not null) reservations = reservations.Where(value => value.StartAt < to);
         var query =
             from reservation in reservations
             join room in db.Rooms.AsNoTracking() on reservation.RoomId equals room.Id

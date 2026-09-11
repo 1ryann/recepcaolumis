@@ -5,7 +5,7 @@ namespace GestaoPredio.Application.Dashboard;
 public sealed record DashboardCounts(
     int ActiveProfessionals, int ActiveRooms, int OccupiedRooms, int ReservedRooms,
     int ActiveLeases, int ScheduledLeases, int PendingReservations, int TodayReservations,
-    int WaitingVisits, int InServiceVisits);
+    int WaitingVisits, int InServiceVisits, int TodayCheckIns);
 
 public sealed record DashboardAgendaItem(Guid ReservationId, Guid ProfessionalId, string ProfessionalName,
     Guid RoomId, string RoomName, DateTimeOffset StartAt, DateTimeOffset EndAt);

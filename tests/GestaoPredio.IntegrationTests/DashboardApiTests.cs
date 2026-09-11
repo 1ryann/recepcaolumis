@@ -69,6 +69,35 @@ public sealed class DashboardApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Dashboard_reports_todays_check_in_count_exactly()
+    {
+        await factory.ResetAsync();
+        var admin = await factory.CreateUserAsync($"dashboard-checkins-{Guid.NewGuid():N}@lumis.test", Password,
+            [SystemRoles.Administrador]);
+        var now = DateTimeOffset.UtcNow;
+        var room = Room.Create($"Sala checkins {Guid.NewGuid():N}", null, 50m, 200m, now);
+        var professional = Professional.Create("Profissional checkins", "Fisioterapia", "+5565999999999", now);
+        var todayVisitA = Visit.Arrive(professional.Id, room.Id, null, "Visitante hoje A", admin.Id, now.AddMinutes(-30));
+        var todayVisitB = Visit.Arrive(professional.Id, room.Id, null, "Visitante hoje B", admin.Id, now.AddMinutes(-10));
+        var yesterdayVisit = Visit.Arrive(professional.Id, room.Id, null, "Visitante ontem", admin.Id, now.AddDays(-1));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AddRange(room, professional, todayVisitA, todayVisitB, yesterdayVisit);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(admin.Email!, Password)).StatusCode);
+        var response = await factory.Client.GetAsync("/api/admin/dashboard");
+        response.EnsureSuccessStatusCode();
+        var dashboard = await response.Content.ReadFromJsonAsync<DashboardPayload>();
+
+        Assert.NotNull(dashboard);
+        Assert.Equal(2, dashboard!.Counts.TodayCheckIns);
+    }
+
+    [Fact]
     public async Task Dashboard_is_global_operations_only()
     {
         await factory.ResetAsync();
@@ -86,7 +115,7 @@ public sealed class DashboardApiTests(ModulesApiFactory factory)
         IReadOnlyList<CurrentVisitPayload> CurrentVisits, IReadOnlyList<RoomPayload> Rooms);
     private sealed record CountsPayload(int ActiveProfessionals, int ActiveRooms, int OccupiedRooms,
         int ReservedRooms, int ActiveLeases, int ScheduledLeases, int PendingReservations,
-        int TodayReservations, int WaitingVisits, int InServiceVisits);
+        int TodayReservations, int WaitingVisits, int InServiceVisits, int TodayCheckIns);
     private sealed record FinancialPayload(decimal PendingAmount, decimal OverdueAmount, decimal PaidAmount,
         int PendingCount, int OverdueCount, int PaidCount);
     private sealed record AgendaPayload(Guid ReservationId);

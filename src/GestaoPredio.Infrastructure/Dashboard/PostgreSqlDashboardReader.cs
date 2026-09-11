@@ -39,6 +39,7 @@ public sealed class PostgreSqlDashboardReader(
             x.StartAt < day.EndAt && x.EndAt > day.StartAt, cancellationToken);
         var waitingVisits = await db.Visits.AsNoTracking().CountAsync(x => x.Status == VisitStatus.Waiting, cancellationToken);
         var inServiceVisits = await db.Visits.AsNoTracking().CountAsync(x => x.Status == VisitStatus.InService, cancellationToken);
+        var todayCheckIns = await db.Visits.AsNoTracking().CountAsync(x => x.ArrivedAt >= day.StartAt && x.ArrivedAt < day.EndAt, cancellationToken);
 
         var agenda = await (from reservation in db.Reservations.AsNoTracking()
                             join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
@@ -93,7 +94,7 @@ public sealed class PostgreSqlDashboardReader(
             rooms.Count(x => x.Status == "OCCUPIED"),
             rooms.Count(x => x.Status == "RESERVED"),
             activeLeases, scheduledLeases, pendingReservations, todayReservations,
-            waitingVisits, inServiceVisits);
+            waitingVisits, inServiceVisits, todayCheckIns);
         return new DashboardSnapshot(operationalDate, counts, financial, alertSummary, agenda, currentVisits, rooms);
     }
 
