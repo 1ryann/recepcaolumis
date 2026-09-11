@@ -8,9 +8,12 @@ import { LightRays } from '../features/totem/magic/LightRays'
 import { RippleButton } from '../features/totem/magic/RippleButton'
 
 // The `/totem/profissionais` screen. A visitor without a check-in code lands here from
-// `/totem`, picks one professional in the swipe carousel, and "Continuar →" carries that
-// choice to the CUSTOMER booking route as `?professionalId=<id>` and nothing else (spec
-// §5.4 — no origin/analytics param). Four phases share the kiosk shell (top bar + LightRays
+// `/totem`, picks one professional in the swipe carousel, and "Continuar →" opens a booking
+// handoff (`totemApi.createHandoff`) and carries the returned id/tokens/expiry to
+// `/totem/handoff` via navigation `state` — the Totem NEVER navigates to any `/cliente/*`
+// route (the customer finishes the booking on their own phone via the QR). A create
+// failure surfaces an inline `role="alert"` next to the button and the visitor stays on
+// the carousel. Four phases share the kiosk shell (top bar + LightRays
 // + a centred BlurFade column):
 //   loading -> three shimmer skeleton cards
 //   ready   -> carousel + Continuar + Voltar
@@ -26,6 +29,31 @@ export function TotemProfessionals() {
   const [phase, setPhase] = useState<Phase>('loading')
   const [professionals, setProfessionals] = useState<TotemProfessionalCardDto[]>([])
   const [active, setActive] = useState<TotemProfessionalCardDto | null>(null)
+  const [handoffLoading, setHandoffLoading] = useState(false)
+  const [handoffError, setHandoffError] = useState('')
+
+  const continueToHandoff = async () => {
+    if (!active) return
+    setHandoffLoading(true)
+    setHandoffError('')
+    try {
+      const dto = await totemApi.createHandoff(active.id)
+      navigate('/totem/handoff', {
+        state: {
+          handoffId: dto.id,
+          handoffToken: dto.handoffToken,
+          statusToken: dto.statusToken,
+          professionalId: active.id,
+          professionalName: dto.professionalName,
+          profession: dto.profession,
+          expiresAt: dto.expiresAt,
+        },
+      })
+    } catch {
+      setHandoffError('Não foi possível continuar agora. Tente novamente.')
+      setHandoffLoading(false)
+    }
+  }
 
   // A fresh AbortController per call keeps this callable both from the mount effect
   // (which aborts it on cleanup) and from the "Tentar novamente" button.
@@ -86,11 +114,14 @@ export function TotemProfessionals() {
               <TotemProfessionalCarousel professionals={professionals} onActiveChange={setActive} />
               <RippleButton
                 className="totem-continue"
-                disabled={!active}
-                onClick={() => active && navigate('/cliente/agendar?professionalId=' + active.id)}
+                disabled={!active || handoffLoading}
+                onClick={() => { void continueToHandoff() }}
               >
                 Continuar →
               </RippleButton>
+              {handoffError && (
+                <p className="totem-professionals-message" role="alert">{handoffError}</p>
+              )}
               <button type="button" className="totem-back" onClick={() => navigate('/totem')}>
                 ← Voltar
               </button>

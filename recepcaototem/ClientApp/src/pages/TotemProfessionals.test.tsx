@@ -1,27 +1,22 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemApi } from '../api/modules'
 import { TotemProfessionals } from './TotemProfessionals'
 
-// Deviations from the task brief's verbatim test snippet (all harness-only; every queried
-// role/name/text and every asserted result string stays byte-identical to the brief —
-// see task-9-report.md for the full rationale):
-//  1. Navigation clicks use `fireEvent.click` instead of a raw `.click()`. Under
-//     react 19 / react-router 7 / @testing-library/react 16 a raw `.click()` does not
-//     flush the router state update outside `act()` (the repo convention — see
-//     `Login.test.tsx`). Route-change assertions are awaited via `findBy*` / `waitFor`.
-//     The success test also waits for the Continuar button to be enabled first (the
-//     carousel sets the active professional from its own mount effect) — an adaptation
-//     the brief explicitly permits.
-//  2. `Dest()` reads the query through `useSearchParams()`. `MemoryRouter` never updates
-//     `window.location`, so the brief's `new URLSearchParams(window.location.search)`
-//     could never observe `professionalId` and `AGENDAR professionalId=a` could never pass.
-//  3. The brief's `matchMedia` + `scrollTo`/`scrollBy` stubs are kept verbatim.
-
+// `useNavigate` is spied so every navigation target can be asserted directly — in
+// particular that the Totem "Continuar" flow reaches `/totem/handoff` with a full
+// navigation `state` and NEVER a `/cliente/*` path. Every other react-router export
+// (MemoryRouter, Routes, useSearchParams, …) stays real. The carousel/matchMedia/
+// scroll stubs are carried over from the pre-handoff version of this file.
+const navigateSpy = vi.fn()
+vi.mock('react-router-dom', async (orig) => ({
+  ...(await orig<typeof import('react-router-dom')>()),
+  useNavigate: () => navigateSpy,
+}))
 vi.mock('../api/modules', async (orig) => ({
   ...(await orig<typeof import('../api/modules')>()),
-  totemApi: { professionals: vi.fn() },
+  totemApi: { professionals: vi.fn(), createHandoff: vi.fn() },
 }))
 vi.stubGlobal('matchMedia', (q: string) => ({
   matches: false, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -37,19 +32,21 @@ const people = [
   { id: 'a', name: 'Ana Souza', profession: 'Fisio', photoUrl: null, status: 'AVAILABLE' as const },
   { id: 'b', name: 'Bruno Lima', profession: 'Psi', photoUrl: null, status: 'UNAVAILABLE' as const },
 ]
+const handoff = {
+  id: 'h1', handoffToken: 'H', statusToken: 'S', expiresAt: '2026-09-10T10:00:00Z',
+  professionalName: 'Ana Souza', profession: 'Fisio',
+}
 const renderAt = () => render(
   <MemoryRouter initialEntries={['/totem/profissionais']}>
     <Routes>
       <Route path="/totem/profissionais" element={<TotemProfessionals />} />
-      <Route path="/totem" element={<div>ENTRY</div>} />
-      <Route path="/totem/check-in" element={<div>CHECKIN</div>} />
-      <Route path="/cliente/agendar" element={<Dest />} />
     </Routes>
   </MemoryRouter>,
 )
-function Dest() {
-  const [p] = useSearchParams()
-  return <div>AGENDAR professionalId={p.get('professionalId')}</div>
+const noClienteNav = () => {
+  for (const call of navigateSpy.mock.calls) {
+    expect(String(call[0])).not.toContain('/cliente')
+  }
 }
 
 test('loading shows the kiosk layout with skeleton cards', () => {
@@ -59,22 +56,50 @@ test('loading shows the kiosk layout with skeleton cards', () => {
   expect(screen.getAllByTestId('totem-skeleton-card').length).toBeGreaterThan(0)
 })
 
-test('success -> carousel + Continuar (uses the active professional id) + Voltar', async () => {
+test('Continuar creates a handoff and navigates to /totem/handoff with the 7-field state', async () => {
   vi.mocked(totemApi.professionals).mockResolvedValue(people)
+  vi.mocked(totemApi.createHandoff).mockResolvedValue(handoff)
   renderAt()
   await screen.findByRole('listbox')
   const continuar = screen.getByRole('button', { name: /continuar/i })
   await waitFor(() => expect(continuar).toBeEnabled())
   fireEvent.click(continuar)
-  await waitFor(() => expect(screen.getByText('AGENDAR professionalId=a')).toBeInTheDocument())
+
+  await waitFor(() => expect(totemApi.createHandoff).toHaveBeenCalledWith('a'))
+  await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith('/totem/handoff', {
+    state: {
+      handoffId: 'h1',
+      handoffToken: 'H',
+      statusToken: 'S',
+      professionalId: 'a',
+      professionalName: 'Ana Souza',
+      profession: 'Fisio',
+      expiresAt: '2026-09-10T10:00:00Z',
+    },
+  }))
+  noClienteNav()
 })
 
-test('Voltar goes to /totem', async () => {
+test('a createHandoff rejection shows an inline alert and does not navigate', async () => {
+  vi.mocked(totemApi.professionals).mockResolvedValue(people)
+  vi.mocked(totemApi.createHandoff).mockRejectedValue(new Error('boom'))
+  renderAt()
+  await screen.findByRole('listbox')
+  const continuar = screen.getByRole('button', { name: /continuar/i })
+  await waitFor(() => expect(continuar).toBeEnabled())
+  fireEvent.click(continuar)
+
+  expect(await screen.findByRole('alert')).toBeInTheDocument()
+  expect(navigateSpy).not.toHaveBeenCalledWith('/totem/handoff', expect.anything())
+  noClienteNav()
+})
+
+test('Voltar navigates to /totem', async () => {
   vi.mocked(totemApi.professionals).mockResolvedValue(people)
   renderAt()
   await screen.findByRole('listbox')
   fireEvent.click(screen.getByRole('button', { name: /voltar/i }))
-  expect(await screen.findByText('ENTRY')).toBeInTheDocument()
+  expect(navigateSpy).toHaveBeenCalledWith('/totem')
 })
 
 test('empty -> message + Tentar novamente + Tenho código', async () => {
@@ -83,10 +108,10 @@ test('empty -> message + Tentar novamente + Tenho código', async () => {
   expect(await screen.findByText('Nenhum profissional disponível.')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /tentar novamente/i })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /tenho código/i }))
-  expect(await screen.findByText('CHECKIN')).toBeInTheDocument()
+  expect(navigateSpy).toHaveBeenCalledWith('/totem/check-in')
 })
 
-test('error -> message + Tentar novamente (refetches) + Tenho código', async () => {
+test('error -> message + Tentar novamente (refetches)', async () => {
   vi.mocked(totemApi.professionals).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(people)
   renderAt()
   expect(await screen.findByText('Não foi possível carregar os profissionais.')).toBeInTheDocument()
