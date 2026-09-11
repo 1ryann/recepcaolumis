@@ -1,11 +1,11 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminLayout } from './components/AdminLayout'
-import { ModuleUnavailable } from './components/ModuleUnavailable'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ChangePassword } from './pages/ChangePassword'
 import { Home } from './pages/Home'
 import { Login } from './pages/Login'
+import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { Professionals } from './pages/admin/Professionals'
 import { Settings } from './pages/admin/Settings'
 import { Rooms } from './pages/admin/Rooms'
@@ -69,7 +69,7 @@ function ProductionApp() {
   <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/configuracoes" element={<Settings />} /></Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<ModuleUnavailable title="Visão geral" />} />
+          <Route index element={<AdminDashboard />} />
           <Route path="salas" element={<Rooms />} />
           <Route path="profissionais" element={<Professionals />} />
           <Route path="locacoes" element={<Leases />} />
