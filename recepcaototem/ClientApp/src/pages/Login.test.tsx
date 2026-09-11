@@ -17,6 +17,27 @@ const fillAndSubmitLogin = () => {
 
 vi.mock('../api/client', async (original) => ({ ...await original<typeof import('../api/client')>(), apiClient: { get: vi.fn(), post: vi.fn() } }))
 const user = (role: string) => ({ userId: role, displayName: role, email: 'test@example.test', roles: [role], mustChangePassword: false })
+
+type Audience = 'admin' | 'customer' | 'professional'
+const pathFor: Record<Audience, string> = { admin: '/login', customer: '/cliente/login', professional: '/profissional/login' }
+// Match the existing file's approach: real SessionProvider over a mocked apiClient. The mount
+// call to /api/auth/session rejects (401) so status settles to 'anonymous' and the card renders.
+async function renderLogin(audience: Audience = 'admin', entry?: string) {
+  vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+  const path = pathFor[audience]
+  const utils = render(
+    <MemoryRouter initialEntries={[entry ?? path]}>
+      <SessionProvider>
+        <Routes>
+          <Route path={path} element={<Login audience={audience} />} />
+        </Routes>
+      </SessionProvider>
+    </MemoryRouter>,
+  )
+  await screen.findByRole('heading', { name: /bem-vindo de volta/i })
+  return utils
+}
+
 test.each([['CUSTOMER', '/cliente'], ['PROFISSIONAL', '/profissional'], ['PROFESSIONAL_APPLICANT', '/profissional/aguardando'], ['ADMINISTRADOR', '/admin'], ['GERENTE', '/recepcao']])('redirects fresh %s session to %s regardless of login presentation', async (role, destination) => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user(role))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
@@ -82,20 +103,93 @@ test('admin login ignores returnUrl entirely', async () => {
   expect(screen.queryByText(/booking sink/)).not.toBeInTheDocument()
 })
 
-test('the "Criar minha conta" link carries an encoded returnUrl when present', async () => {
+test('submits the entered credentials to the session login', async () => {
+  vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user('ADMINISTRADOR'))
+  vi.mocked(apiClient.post).mockResolvedValue(undefined)
+  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+    <Route path="/login" element={<Login audience="admin" />} />
+    <Route path="/admin" element={<p>admin panel</p>} />
+  </Routes></SessionProvider></MemoryRouter>)
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  fillAndSubmitLogin()
+  await screen.findByText('admin panel')
+  expect(apiClient.post).toHaveBeenCalledWith('/api/auth/login', { email: 'test@example.test', password: 'test-only' })
+})
+
+test('shows an inline error when the credentials are rejected', async () => {
+  vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+  vi.mocked(apiClient.post).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+    <Route path="/login" element={<Login audience="admin" />} />
+  </Routes></SessionProvider></MemoryRouter>)
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  fillAndSubmitLogin()
+  expect(await screen.findByText('E-mail ou senha inválidos.')).toBeInTheDocument()
+})
+
+test('shows the cooldown message after too many attempts (429)', async () => {
+  vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
+  vi.mocked(apiClient.post).mockRejectedValue(new ApiError(429, 'TOO_MANY_REQUESTS', ''))
+  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+    <Route path="/login" element={<Login audience="admin" />} />
+  </Routes></SessionProvider></MemoryRouter>)
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+  fillAndSubmitLogin()
+  expect(await screen.findByText('Muitas tentativas. Aguarde alguns instantes e tente novamente.')).toBeInTheDocument()
+})
+
+test('the "Criar conta" link carries an encoded returnUrl when present', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
   render(<MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
   </Routes></SessionProvider></MemoryRouter>)
-  const link = await screen.findByRole('link', { name: /criar minha conta/i })
+  const link = await screen.findByRole('link', { name: /criar conta/i })
   expect(link).toHaveAttribute('href', '/cliente/cadastro?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx')
 })
 
-test('the "Criar minha conta" link stays plain when no returnUrl is present', async () => {
+test('the "Criar conta" link stays plain when no returnUrl is present', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
   render(<MemoryRouter initialEntries={['/cliente/login']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
   </Routes></SessionProvider></MemoryRouter>)
-  const link = await screen.findByRole('link', { name: /criar minha conta/i })
+  const link = await screen.findByRole('link', { name: /criar conta/i })
   expect(link).toHaveAttribute('href', '/cliente/cadastro')
+})
+
+test('customer login: discrete card, no social / no forgot / no remember-me', async () => {
+  await renderLogin('customer')
+  expect(screen.getByText('ÁREA DO CLIENTE')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /bem-vindo de volta/i })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /criar conta/i })).toHaveAttribute('href', expect.stringContaining('/cliente/cadastro'))
+  expect(screen.queryByText(/google|apple|icloud/i)).toBeNull()
+  expect(screen.queryByText(/esqueci.*senha|recuperar senha/i)).toBeNull()
+  expect(screen.queryByLabelText(/lembrar de mim|manter conectado/i)).toBeNull()
+})
+
+test('professional login points to the real registration flow', async () => {
+  await renderLogin('professional')
+  expect(screen.getByText('ÁREA DO PROFISSIONAL')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /solicitar cadastro/i })).toHaveAttribute('href', '/profissional/cadastro')
+})
+
+test('admin login has no account-creation affordance', async () => {
+  await renderLogin('admin')
+  expect(screen.getByText('ADMINISTRAÇÃO')).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: /criar conta|solicitar/i })).toBeNull()
+})
+
+test('customer returnUrl is preserved into the create-account link', async () => {
+  await renderLogin('customer', '/cliente/login?returnUrl=%2Fcliente%2Fagendar%3Fhandoff%3DAbc-1')
+  expect(screen.getByRole('link', { name: /criar conta/i }).getAttribute('href'))
+    .toContain('returnUrl=')
+})
+
+test('sober look: no decorative icons, textual show/hide password control', async () => {
+  const { container } = await renderLogin('customer')
+  // the only <svg> allowed anywhere is none — no envelope / lock / shield / eye / arrow icons
+  expect(container.querySelectorAll('svg')).toHaveLength(0)
+  const toggle = screen.getByRole('button', { name: /mostrar/i })
+  fireEvent.click(toggle)
+  expect(screen.getByRole('button', { name: /ocultar/i })).toBeInTheDocument()
+  expect(screen.getByLabelText(/senha/i)).toHaveAttribute('type', 'text')
 })

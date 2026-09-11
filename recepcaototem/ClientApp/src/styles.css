@@ -1825,3 +1825,28 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 /* --- LUMIS page shell (LumisPageShell) --- */
 .lumis-shell { position: relative; isolation: isolate; min-height: 100dvh; background: var(--lumis-bg); }
 .lumis-shell-content { position: relative; z-index: 1; }
+
+/* --------------------------------------------------------------------------
+   LUMIS login — discrete, icon-free card on the animated backdrop (Task 5)
+   Sober LUMIS surface; no social / forgot-password / remember-me affordances.
+   -------------------------------------------------------------------------- */
+.lumis-login { display: flex; align-items: center; justify-content: center; padding: clamp(16px, 5vh, 64px) 16px; }
+.lumis-login-card { max-width: 400px; margin: auto; padding: clamp(24px, 5vw, 40px); color: var(--lumis-text-dim); background: var(--lumis-surface-2); border: 1px solid var(--lumis-border); border-radius: 16px; display: flex; flex-direction: column; gap: 14px; }
+.lumis-login-logo { align-self: flex-start; height: 38px; width: auto; }
+.lumis-login-eyebrow { color: var(--lumis-muted); font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.lumis-login-title { margin: 0; color: var(--lumis-text); font-size: clamp(24px, 4vw, 30px); font-weight: 700; letter-spacing: -.02em; }
+.lumis-login-text { margin: 0; color: var(--lumis-muted); font-size: 14px; line-height: 1.55; }
+.lumis-login-form { display: flex; flex-direction: column; gap: 14px; }
+.lumis-login-card .field-label { color: var(--lumis-text-dim); }
+.lumis-login-card .field-input { min-height: 44px; color: var(--lumis-text); border-color: var(--lumis-border); background: var(--lumis-surface); }
+.lumis-login-card .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px var(--lumis-border-soft); }
+.lumis-login-submit { min-height: 48px; width: 100%; margin-top: 2px; }
+.lumis-login-active { display: flex; flex-direction: column; gap: 10px; }
+.lumis-password-field { position: relative; display: block; }
+.lumis-password-field .field-input { padding-right: 84px; }
+.lumis-password-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); min-height: 32px; padding: 0 8px; background: none; border: 0; color: var(--lumis-muted); font-size: 13px; cursor: pointer; }
+.lumis-password-toggle:hover { color: var(--lumis-text-dim); text-decoration: underline; }
+.lumis-login-secondary { margin: 0; color: var(--lumis-muted); font-size: 13px; }
+.lumis-login-secondary a { color: var(--lumis-text-dim); }
+.lumis-login-back { align-self: flex-start; margin-top: 2px; color: var(--lumis-muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+.lumis-login-back:hover { color: var(--lumis-text-dim); text-decoration: underline; }
