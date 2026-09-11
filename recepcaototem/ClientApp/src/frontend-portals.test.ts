@@ -8,6 +8,8 @@ import professionalSource from './pages/professional/ProfessionalHome.tsx?raw'
 import customerBookingSource from './pages/customer/CustomerBooking.tsx?raw'
 import customerDetailSource from './pages/customer/CustomerReservationDetail.tsx?raw'
 import totemCheckInSource from './pages/TotemCheckIn.tsx?raw'
+import totemProfessionalsSource from './pages/TotemProfessionals.tsx?raw'
+import totemHandoffSource from './pages/TotemHandoff.tsx?raw'
 import modulesSource from './api/modules.ts?raw'
 import receptionMonitorSource from './pages/admin/ReceptionMonitor.tsx?raw'
 import availabilitySource from './features/availability/AvailabilityEditor.tsx?raw'
@@ -66,6 +68,27 @@ test('the Totem kiosk is reachable at /totem and /totem/check-in on both route t
   expect(totemCheckInSource).toContain('totemApi.confirmCheckIn')
   expect(modulesSource).toContain("'/api/totem/check-in/confirm'")
   expect(modulesSource).toContain("'/api/totem/professionals'")
+})
+
+test('the Totem booking handoff route is public and the Totem flow never falls back to a login screen', () => {
+  expect(appSource).toContain('<Route path="/totem/handoff" element={<TotemHandoff />} />')
+  const handoffRouteIndex = appSource.indexOf('<Route path="/totem/handoff" element={<TotemHandoff />} />')
+  const firstProtectedRouteIndex = appSource.indexOf('<ProtectedRoute')
+  expect(handoffRouteIndex).toBeGreaterThan(-1)
+  expect(firstProtectedRouteIndex).toBeGreaterThan(-1)
+  expect(handoffRouteIndex).toBeLessThan(firstProtectedRouteIndex)
+
+  expect(totemProfessionalsSource).toContain('totemApi.createHandoff')
+  expect(totemProfessionalsSource).toContain("navigate('/totem/handoff'")
+  expect(totemProfessionalsSource).not.toContain('/cliente/agendar')
+  expect(totemProfessionalsSource).not.toContain('/cliente/login')
+
+  for (const source of [totemProfessionalsSource, totemHandoffSource]) {
+    expect(source).not.toContain('/cliente/login')
+    expect(source).not.toContain('/profissional/login')
+    expect(source).not.toMatch(/navigate\(['"]\/login['"]/)
+    expect(source).not.toMatch(/<Navigate to=['"]\/(cliente|profissional|login)/)
+  }
 })
 
 test('reception monitor reads the real queue and transitions visits through the API', () => {
