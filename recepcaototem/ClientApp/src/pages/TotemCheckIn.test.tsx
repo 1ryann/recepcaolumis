@@ -59,6 +59,26 @@ test('the discrete Voltar control returns to /totem', async () => {
   expect(await screen.findByText('ENTRY')).toBeInTheDocument()
 })
 
+test('kiosk chrome: discrete topbar with Voltar / LUMIS / clock, centred stage', () => {
+  renderPage()
+  expect(screen.getByRole('button', { name: /voltar/i })).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: 'LUMIS' })).toBeInTheDocument()
+  expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument()
+  expect(screen.getByText('CHECK-IN')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /confirme sua chegada/i })).toBeInTheDocument()
+})
+
+test('code tab uses the 6-box control and still validates leading zeros', async () => {
+  vi.mocked(totemApi.resolveCheckIn).mockResolvedValue(preview(false))
+  const { container } = renderPage()
+  fireEvent.click(screen.getByRole('tab', { name: /digitar código/i }))
+  expect(container.querySelectorAll('.totem-code-cell')).toHaveLength(6)
+  const input = screen.getByLabelText(/código de 6 dígitos/i)
+  fireEvent.change(input, { target: { value: '004729' } })
+  fireEvent.click(screen.getByRole('button', { name: /confirmar|validar/i }))
+  await waitFor(() => expect(totemApi.resolveCheckIn).toHaveBeenCalledWith('004729'))
+})
+
 test('each check-in option is a large target that explains what it does', () => {
   renderPage()
   expect(screen.getByText('Use a câmera para ler seu código')).toBeInTheDocument()

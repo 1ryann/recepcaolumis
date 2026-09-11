@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { totemApi, type CheckInPreviewDto } from '../api/modules'
 import { Modal } from '../components/Modal'
+import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
-import { LightRays } from '../features/totem/magic/LightRays'
 import { normalizeToken } from '../features/totem/normalizeToken'
-import { isComplete6, onlyDigits6 } from '../features/totem/digits6'
+import { SixDigitCode } from '../features/totem/SixDigitCode'
+import { isComplete6 } from '../features/totem/digits6'
 import { useQrScanner } from '../features/totem/useQrScanner'
 
 type Segment = 'scan' | 'manual'
@@ -103,20 +104,20 @@ export function TotemCheckIn() {
     : 'A câmera é aberta somente quando você inicia a leitura.'
 
   return <main className="totem-kiosk">
-    <LightRays />
-    <button type="button" className="totem-back" aria-label="Voltar" onClick={goHome}>← Voltar</button>
+    <LumisBackground />
 
-    <aside className="totem-aside">
-      <img className="totem-aside-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
+    <div className="totem-kiosk-topbar">
+      <button type="button" className="totem-back" aria-label="Voltar" onClick={goHome}>← Voltar</button>
+      <img src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
       <KioskClock />
-    </aside>
+    </div>
 
-    <section className="totem-stage">
+    <div className="totem-kiosk-stage">
       <div className="totem-stage-inner">
         <header className="totem-stage-head">
-          <span className="totem-eyebrow">Check-in</span>
+          <span className="totem-eyebrow">CHECK-IN</span>
           <h2>Confirme sua chegada</h2>
-          <p>Escolha como quer identificar seu agendamento.</p>
+          <p>Escolha como deseja identificar seu agendamento</p>
         </header>
 
         <div className="totem-options" role="tablist" aria-label="Forma de check-in">
@@ -151,11 +152,8 @@ export function TotemCheckIn() {
                 <Camera size={20} aria-hidden="true" /> {cameraState === 'starting' ? 'Abrindo…' : 'Ativar câmera'}
               </button>}
         </div> : <form className="totem-manual" onSubmit={submitManual}>
-          <label className="totem-field-label" htmlFor="totem-code">Código de 6 dígitos</label>
-          <input id="totem-code" className="totem-input totem-code-input" value={token}
-            onChange={(event) => setToken(onlyDigits6(event.target.value))}
-            inputMode="numeric" autoComplete="one-time-code" maxLength={6} spellCheck={false}
-            placeholder="000000" />
+          <SixDigitCode value={token} onChange={setToken}
+            onSubmit={() => isComplete6(token) && resolveToken(token, 'manual')} disabled={loading} />
           <button className="totem-btn totem-btn-primary" type="submit" disabled={!isComplete6(token) || loading}>
             {loading ? 'Validando…' : 'Validar agendamento'} <ArrowRight size={20} aria-hidden="true" />
           </button>
@@ -171,7 +169,7 @@ export function TotemCheckIn() {
           <button className="totem-btn totem-btn-primary" type="button" onClick={() => void confirmManually()} disabled={loading}>Confirmar chegada <Check size={20} aria-hidden="true" /></button>
         </div>}
       </div>
-    </section>
+    </div>
 
     <Modal open={confirmed} title="Chegada registrada" onClose={goHome}>
       <div className="totem-modal-done">
