@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { isComplete6, onlyDigits6 } from './sixDigitCode'
+import { isComplete6, onlyDigits6 } from './digits6'
 test('keeps only digits, max 6, leading zeros', () => {
   expect(onlyDigits6('a1b2c3d4')).toBe('1234')
   expect(onlyDigits6('123456789')).toBe('123456')

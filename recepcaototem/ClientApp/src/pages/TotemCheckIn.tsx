@@ -7,7 +7,7 @@ import { Modal } from '../components/Modal'
 import { KioskClock } from '../features/totem/KioskClock'
 import { LightRays } from '../features/totem/magic/LightRays'
 import { normalizeToken } from '../features/totem/normalizeToken'
-import { isComplete6, onlyDigits6 } from '../features/totem/sixDigitCode'
+import { isComplete6, onlyDigits6 } from '../features/totem/digits6'
 import { useQrScanner } from '../features/totem/useQrScanner'
 
 type Segment = 'scan' | 'manual'
