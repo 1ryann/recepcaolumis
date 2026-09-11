@@ -84,9 +84,15 @@ function TotemHandoffScreen({ nav }: { nav: HandoffNavState }) {
   }, [handoffToken])
 
   // --- Polling every 2 s while PENDING ----------------------------------------
+  // `pollCancelledRef` mirrors the `cancelled` flag the QR effect above uses: it is
+  // flipped true whenever the polling effect below tears down (unmount, or the phase
+  // leaving 'pending'), so a `pollHandoff` promise still in flight at that point can't
+  // call `setScreen`/`setFailures` afterwards.
+  const pollCancelledRef = useRef(false)
   const poll = useCallback(async () => {
     try {
       const res = await totemApi.pollHandoff(handoffId, statusToken)
+      if (pollCancelledRef.current) return
       setFailures(0)
       if (res.status === 'PENDING') {
         setExpiresAt(res.expiresAt)
@@ -96,14 +102,15 @@ function TotemHandoffScreen({ nav }: { nav: HandoffNavState }) {
         setScreen({ phase: 'expired' })
       }
     } catch {
-      setFailures((n) => n + 1)
+      if (!pollCancelledRef.current) setFailures((n) => n + 1)
     }
   }, [handoffId, statusToken])
 
   useEffect(() => {
     if (screen.phase !== 'pending') return
+    pollCancelledRef.current = false
     const id = window.setInterval(() => { void poll() }, 2000)
-    return () => window.clearInterval(id)
+    return () => { pollCancelledRef.current = true; window.clearInterval(id) }
   }, [screen.phase, poll])
 
   // --- Coarse countdown tick (1 s visual; 30 s under reduced motion) ----------
