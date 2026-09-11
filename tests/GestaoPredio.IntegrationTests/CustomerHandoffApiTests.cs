@@ -257,6 +257,56 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Handoff_present_with_a_genuine_slot_conflict_returns_conflict_and_leaves_the_handoff_pending()
+    {
+        var a = await ArrangeBookableHandoffAsync();
+
+        // A different customer books professional P at the very same slot through the normal path
+        // (no handoffToken), so P is genuinely busy when customer A tries to complete the handoff.
+        // This is NOT a concurrent duplicate of A's handoff — it is an unrelated occupant.
+        var other = await SeedCustomerAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(other.Email, other.Password)).StatusCode);
+        var blocking = await factory.PostWithCsrfAsync(CreatePath,
+            new { professionalId = a.ProfessionalId, startAt = a.Start, endAt = a.Start.AddHours(1) });
+        Assert.Equal(HttpStatusCode.Created, blocking.StatusCode);
+
+        // Customer A now completes the handoff against the now-occupied slot: rollback + ChangeTracker
+        // clear + re-read (still Pending, no concurrent winner) -> falls through to the normal
+        // availability-conflict response, and the handoff must be left Pending with nothing committed.
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(a.Email, a.Password)).StatusCode);
+        var res = await factory.PostWithCsrfAsync(CreatePath, Body(a));
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+        Assert.Equal("RESERVATION_RESOURCE_CONFLICT", (await res.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var handoff = await db.TotemBookingHandoffs.AsNoTracking().SingleAsync();
+            Assert.Equal(TotemBookingHandoffStatus.Pending, handoff.Status);
+            Assert.Null(handoff.ReservationId);
+            Assert.Null(handoff.CompletedAt);
+            Assert.Equal(1, await db.Reservations.CountAsync());   // only the other customer's booking
+            Assert.Equal(0, await db.AuditEntries.CountAsync(x => x.Action == "TOTEM_HANDOFF_COMPLETED"));
+        }
+
+        // The handoff survived the earlier conflict and is still usable: retry against a free slot.
+        var retry = await factory.PostWithCsrfAsync(CreatePath,
+            new { professionalId = a.ProfessionalId, startAt = a.Start.AddHours(2), endAt = a.Start.AddHours(3), handoffToken = a.Token });
+        Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var handoff = await db.TotemBookingHandoffs.AsNoTracking().SingleAsync();
+            Assert.Equal(TotemBookingHandoffStatus.Completed, handoff.Status);
+            Assert.NotNull(handoff.ReservationId);
+            Assert.NotNull(handoff.CompletedAt);
+            Assert.Equal(2, await db.Reservations.CountAsync());
+            Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "TOTEM_HANDOFF_COMPLETED"));
+        }
+    }
+
+    [Fact]
     public async Task Reservation_without_handoffToken_is_unchanged()
     {
         var a = await ArrangeBookableHandoffAsync();
