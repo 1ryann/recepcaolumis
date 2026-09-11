@@ -81,6 +81,7 @@ beforeEach(() => {
   vi.mocked(professionalReservationsApi.list).mockImplementation(async (query: ReservationListQuery) => {
     if (query.status === 'all') return { items: [agendaScheduled, agendaEnded], page: 1, pageSize: 100, totalCount: 2 }
     if (query.status === 'PENDING') return { items: [pendingReschedule, pendingCancellation, pendingNew], page: 1, pageSize: 100, totalCount: 3 }
+    if (query.status === 'APPROVED') return { items: [], page: 1, pageSize: 10, totalCount: 0 }
     throw new Error(`unexpected reservations query ${JSON.stringify(query)}`)
   })
   vi.mocked(professionalAvailabilityApi.get).mockResolvedValue(availability)
@@ -115,6 +116,7 @@ test('Agenda de hoje renders Cancelado when the matched Visit was cancelled, eve
   vi.mocked(professionalReservationsApi.list).mockImplementation(async (query: ReservationListQuery) => {
     if (query.status === 'all') return { items: [agendaCancelledVisit], page: 1, pageSize: 100, totalCount: 1 }
     if (query.status === 'PENDING') return { items: [], page: 1, pageSize: 100, totalCount: 0 }
+    if (query.status === 'APPROVED') return { items: [], page: 1, pageSize: 10, totalCount: 0 }
     throw new Error(`unexpected reservations query ${JSON.stringify(query)}`)
   })
   vi.mocked(professionalVisitsApi.list).mockImplementation(async (query: VisitListQuery) => {
@@ -129,10 +131,39 @@ test('Agenda de hoje renders Cancelado when the matched Visit was cancelled, eve
   expect(within(agenda).getByText('Cancelado')).toBeInTheDocument()
 })
 
-test('Próximo horário uses the next APPROVED reservation from context with endAt in the future', async () => {
-  renderDashboard({ reservations: [upcomingApproved], visits: [], loading: false, error: '' })
+test('Próximo horário uses the dedicated ascending, from-now reservations fetch, not the (possibly truncated) context list', async () => {
+  vi.mocked(professionalReservationsApi.list).mockImplementation(async (query: ReservationListQuery) => {
+    if (query.status === 'all') return { items: [agendaScheduled, agendaEnded], page: 1, pageSize: 100, totalCount: 2 }
+    if (query.status === 'PENDING') return { items: [pendingReschedule, pendingCancellation, pendingNew], page: 1, pageSize: 100, totalCount: 3 }
+    if (query.status === 'APPROVED') return { items: [upcomingApproved], page: 1, pageSize: 10, totalCount: 1 }
+    throw new Error(`unexpected reservations query ${JSON.stringify(query)}`)
+  })
+  renderDashboard({ reservations: [], visits: [], loading: false, error: '' })
   const kpi = await screen.findByTestId('professional-kpi-next')
   expect(within(kpi).getByText('Sala 1')).toBeInTheDocument()
+})
+
+test('Próximo horário and Próximas reservas show the earliest appointment even when the professional has more future reservations than the page size (no silent truncation to a far-future page)', async () => {
+  const earliest = reservation({ id: 'r-earliest', roomName: 'Sala Cedo', startAt: '2026-09-12T09:00:00Z', endAt: '2026-09-12T10:00:00Z' })
+  const later = reservation({ id: 'r-later', roomName: 'Sala Tarde', startAt: '2026-09-20T09:00:00Z', endAt: '2026-09-20T10:00:00Z' })
+  let capturedQuery: ReservationListQuery | undefined
+  vi.mocked(professionalReservationsApi.list).mockImplementation(async (query: ReservationListQuery) => {
+    if (query.status === 'all') return { items: [agendaScheduled, agendaEnded], page: 1, pageSize: 100, totalCount: 2 }
+    if (query.status === 'PENDING') return { items: [pendingReschedule, pendingCancellation, pendingNew], page: 1, pageSize: 100, totalCount: 3 }
+    if (query.status === 'APPROVED') {
+      capturedQuery = query
+      // Simulate the backend honoring orderBy=asc: the earliest reservation comes first,
+      // proving the dashboard no longer relies on a 50-row furthest-future-first page.
+      return { items: [earliest, later], page: 1, pageSize: 10, totalCount: 200 }
+    }
+    throw new Error(`unexpected reservations query ${JSON.stringify(query)}`)
+  })
+  renderDashboard({ reservations: [], visits: [], loading: false, error: '' })
+  const kpi = await screen.findByTestId('professional-kpi-next')
+  expect(within(kpi).getByText('Sala Cedo')).toBeInTheDocument()
+  expect(within(kpi).queryByText('Sala Tarde')).not.toBeInTheDocument()
+  expect(await screen.findAllByText('Sala Cedo')).not.toHaveLength(0)
+  expect((capturedQuery as unknown as { orderBy?: string })?.orderBy).toBe('asc')
 })
 
 test('Disponibilidade reflects today\'s effective interval total from the availability API', async () => {

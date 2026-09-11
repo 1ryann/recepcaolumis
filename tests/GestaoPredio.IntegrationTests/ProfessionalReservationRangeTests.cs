@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using GestaoPredio.Domain.Professionals;
@@ -61,6 +62,47 @@ public sealed class ProfessionalReservationRangeTests(ModulesApiFactory factory)
         Assert.Equal(8, page!.TotalCount);
     }
 
+    [Fact]
+    public async Task Professional_reservations_orderBy_asc_returns_soonest_first_while_the_default_stays_unchanged()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedProfessionalWithReservationsAsync(todayCount: 3, otherDayCount: 5);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, Password)).StatusCode);
+
+        var ascending = await factory.Client.GetFromJsonAsync<PagedReservations>(
+            "/api/professional/reservations?status=all&orderBy=asc&page=1&pageSize=8");
+        var defaultOrder = await factory.Client.GetFromJsonAsync<PagedReservations>(
+            "/api/professional/reservations?status=all&page=1&pageSize=8");
+        var explicitDescending = await factory.Client.GetFromJsonAsync<PagedReservations>(
+            "/api/professional/reservations?status=all&orderBy=desc&page=1&pageSize=8");
+
+        Assert.NotNull(ascending);
+        Assert.NotNull(defaultOrder);
+        Assert.NotNull(explicitDescending);
+        Assert.Equal(8, ascending!.Items.Count);
+
+        var ascendingStarts = ascending.Items.Select(item => item.StartAt).ToList();
+        Assert.Equal(ascendingStarts.OrderBy(value => value), ascendingStarts);
+
+        var defaultStarts = defaultOrder!.Items.Select(item => item.StartAt).ToList();
+        Assert.Equal(defaultStarts.OrderByDescending(value => value), defaultStarts);
+        Assert.Equal(defaultStarts, explicitDescending!.Items.Select(item => item.StartAt).ToList());
+        Assert.Equal(ascendingStarts, ((IEnumerable<DateTimeOffset>)defaultStarts).Reverse().ToList());
+    }
+
+    [Fact]
+    public async Task Professional_reservations_reject_an_invalid_orderBy_value()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedProfessionalWithReservationsAsync(todayCount: 1, otherDayCount: 0);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, Password)).StatusCode);
+
+        var response = await factory.Client.GetAsync("/api/professional/reservations?orderBy=sideways");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("INVALID_ORDER_BY", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+    }
+
     private static string Iso(DateTimeOffset value) =>
         value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
@@ -99,6 +141,6 @@ public sealed class ProfessionalReservationRangeTests(ModulesApiFactory factory)
 
     private sealed record SeededProfessional(string Email, Guid ProfessionalId);
     private sealed record PagedReservations(IReadOnlyList<ReservationRow> Items, int Page, int PageSize, int TotalCount);
-    private sealed record ReservationRow(Guid Id);
+    private sealed record ReservationRow(Guid Id, DateTimeOffset StartAt);
     private sealed record ErrorPayload(string Code, string Message);
 }

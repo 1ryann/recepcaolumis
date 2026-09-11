@@ -136,19 +136,25 @@ function timeLabel(value: string) { return new Date(value).toLocaleTimeString('p
 function shortDateLabel(value: string) { return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) }
 
 export function ProfessionalDashboard() {
-  const { reservations, error } = useProfessionalContext()
+  const { error } = useProfessionalContext()
   const [attendancesToday, setAttendancesToday] = useState(0)
   const [checkinsToday, setCheckinsToday] = useState(0)
   const [agendaToday, setAgendaToday] = useState<ReservationDto[]>([])
   const [visitsToday, setVisitsToday] = useState<VisitDto[]>([])
   const [availability, setAvailability] = useState<ProfessionalAvailabilityDto | null>(null)
   const [pendingRequests, setPendingRequests] = useState<ReservationDto[]>([])
+  // Fetched separately from the 50-row "all reservations" context list: that list is
+  // ordered furthest-future-first and can be truncated, so a professional with more
+  // than 50 upcoming reservations would silently lose their true next appointment.
+  // This is a small, ascending, from-now page instead.
+  const [upcomingSoon, setUpcomingSoon] = useState<ReservationDto[]>([])
   const [dashLoading, setDashLoading] = useState(true)
   const [dashError, setDashError] = useState('')
 
   useEffect(() => {
     let active = true
     const { from, to } = todayWindow()
+    const nowIso = new Date().toISOString()
     Promise.all([
       professionalVisitsApi.list({ status: 'IN_SERVICE', from, to, page: 1, pageSize: 1 }),
       professionalVisitsApi.list({ status: 'ENDED', from, to, page: 1, pageSize: 1 }),
@@ -156,24 +162,23 @@ export function ProfessionalDashboard() {
       professionalVisitsApi.list({ status: 'all', from, to, page: 1, pageSize: 100 }),
       professionalReservationsApi.list({ status: 'all', from, to, page: 1, pageSize: 100 }),
       professionalReservationsApi.list({ status: 'PENDING', page: 1, pageSize: 100 }),
+      professionalReservationsApi.list({ status: 'APPROVED', from: nowIso, orderBy: 'asc', page: 1, pageSize: 10 }),
       professionalAvailabilityApi.get(),
-    ]).then(([inServiceCount, endedCount, checkinsCount, visitsPage, reservationsPage, pendingPage, availabilityDto]) => {
+    ]).then(([inServiceCount, endedCount, checkinsCount, visitsPage, reservationsPage, pendingPage, upcomingPage, availabilityDto]) => {
       if (!active) return
       setAttendancesToday(inServiceCount.totalCount + endedCount.totalCount)
       setCheckinsToday(checkinsCount.totalCount)
       setVisitsToday(visitsPage.items)
       setAgendaToday(reservationsPage.items)
       setPendingRequests(pendingPage.items)
+      setUpcomingSoon(upcomingPage.items)
       setAvailability(availabilityDto)
     }).catch(() => { if (active) setDashError('Não foi possível carregar os indicadores de hoje.') })
       .finally(() => { if (active) setDashLoading(false) })
     return () => { active = false }
   }, [])
 
-  const upcomingApproved = useMemo(() => reservations
-    .filter((item) => item.status === 'APPROVED' && new Date(item.endAt).getTime() >= Date.now())
-    .sort((a, b) => a.startAt.localeCompare(b.startAt)), [reservations])
-  const next = upcomingApproved[0]
+  const next = upcomingSoon[0]
   const todaysIntervals = useMemo(() => intervalsForToday(availability), [availability])
   const availabilitySummary = formatAvailabilityDuration(todaysIntervals)
   const pendingSummaryCount = pendingRequests.filter((item) => item.kind === 'RESCHEDULE' || item.kind === 'CANCELLATION').length
@@ -235,8 +240,8 @@ export function ProfessionalDashboard() {
           </section>
           <section className="professional-side-panel">
             <div className="panel-header"><div><h2>Próximas reservas</h2><p>Seus próximos compromissos aprovados.</p></div></div>
-            {upcomingApproved.length === 0 ? <div className="professional-empty"><CalendarDays size={22} /><span>Nenhuma reserva futura.</span></div>
-              : <div className="professional-upcoming-list">{upcomingApproved.slice(0, 4).map((item) => <div className="professional-upcoming-row" key={item.id}><strong>{shortDateLabel(item.startAt)} · {timeLabel(item.startAt)}</strong><span>{item.roomName}</span></div>)}</div>}
+            {upcomingSoon.length === 0 ? <div className="professional-empty"><CalendarDays size={22} /><span>Nenhuma reserva futura.</span></div>
+              : <div className="professional-upcoming-list">{upcomingSoon.slice(0, 4).map((item) => <div className="professional-upcoming-row" key={item.id}><strong>{shortDateLabel(item.startAt)} · {timeLabel(item.startAt)}</strong><span>{item.roomName}</span></div>)}</div>}
           </section>
           <section className="professional-side-panel professional-alert-summary">
             <div className="panel-header"><div><h2>Resumo/avisos</h2><p>Solicitações aguardando sua atenção.</p></div><AlertTriangle size={20} /></div>

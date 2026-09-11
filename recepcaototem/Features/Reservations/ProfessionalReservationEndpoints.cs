@@ -32,6 +32,7 @@ public static class ProfessionalReservationEndpoints
         string? status,
         DateTimeOffset? from,
         DateTimeOffset? to,
+        string? orderBy,
         HttpContext context,
         ApplicationDbContext db,
         CancellationToken cancellationToken)
@@ -48,6 +49,9 @@ public static class ProfessionalReservationEndpoints
             return Results.BadRequest(new ApiError("INVALID_STATUS", "O status informado é inválido."));
         if (from is not null && to is not null && from >= to)
             return Results.BadRequest(new ApiError("INVALID_DATE_RANGE", "O intervalo é inválido."));
+        var actualOrderBy = string.IsNullOrWhiteSpace(orderBy) ? "desc" : orderBy.Trim().ToLowerInvariant();
+        if (actualOrderBy is not ("asc" or "desc"))
+            return Results.BadRequest(new ApiError("INVALID_ORDER_BY", "O parâmetro orderBy deve ser 'asc' ou 'desc'."));
         var professionalId = await ResolveProfessionalId(db, context, cancellationToken);
         if (professionalId is null)
             return Results.Ok(new PagedResponse<ReservationResponse>([], actualPage, actualSize, 0));
@@ -67,7 +71,10 @@ public static class ProfessionalReservationEndpoints
             join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
             select new { Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name };
         var totalCount = await query.CountAsync(cancellationToken);
-        var rows = await query.OrderByDescending(row => row.Reservation.StartAt).ThenBy(row => row.Reservation.Id)
+        var ordered = actualOrderBy == "asc"
+            ? query.OrderBy(row => row.Reservation.StartAt).ThenBy(row => row.Reservation.Id)
+            : query.OrderByDescending(row => row.Reservation.StartAt).ThenBy(row => row.Reservation.Id);
+        var rows = await ordered
             .Skip((actualPage - 1) * actualSize).Take(actualSize).ToListAsync(cancellationToken);
         return Results.Ok(new PagedResponse<ReservationResponse>(
             rows.Select(row => row.Reservation.ToResponse(row.RoomName, row.ProfessionalName)).ToArray(),
