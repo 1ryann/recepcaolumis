@@ -72,9 +72,16 @@ public sealed class DashboardApiTests(ModulesApiFactory factory)
     public async Task Dashboard_reports_todays_check_in_count_exactly()
     {
         await factory.ResetAsync();
+        // The dashboard counts check-ins against the operational-timezone civil day (America/Porto_
+        // Velho, UTC-4, so civil midnight == 04:00 UTC). Seeding relative to the real wall clock made
+        // this test flaky whenever it happened to run between 04:00-04:30 UTC (the earlier-seeded
+        // visit would fall into the previous civil day). Freeze the clock to a fixed instant
+        // comfortably mid-day in the operational timezone before seeding, so it is deterministic
+        // regardless of when the suite actually runs.
+        factory.FreezeTime(new DateTimeOffset(2026, 1, 15, 16, 0, 0, TimeSpan.Zero)); // 12:00 in America/Porto_Velho
         var admin = await factory.CreateUserAsync($"dashboard-checkins-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Administrador]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala checkins {Guid.NewGuid():N}", null, 50m, 200m, now);
         var professional = Professional.Create("Profissional checkins", "Fisioterapia", "+5565999999999", now);
         var todayVisitA = Visit.Arrive(professional.Id, room.Id, null, "Visitante hoje A", admin.Id, now.AddMinutes(-30));
