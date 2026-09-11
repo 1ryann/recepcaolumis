@@ -164,6 +164,28 @@ export interface TotemProfessionalCardDto {
   status: 'AVAILABLE' | 'IN_SERVICE' | 'UNAVAILABLE'
 }
 
+export interface CreateHandoffDto {
+  id: string
+  handoffToken: string
+  statusToken: string
+  expiresAt: string
+  professionalName: string
+  profession: string
+}
+
+export type HandoffStatusDto =
+  | { status: 'PENDING'; expiresAt: string }
+  | { status: 'COMPLETED'; professionalName: string; startAt: string; roomName: string | null }
+  | { status: 'EXPIRED' }
+
+export interface ResolveHandoffDto {
+  handoffId: string
+  professionalId: string
+  professionalName: string
+  profession: string
+  expiresAt: string
+}
+
 export interface CheckInPreviewDto {
   professional: string
   room: string
@@ -503,7 +525,10 @@ export const reservationsApi = {
 }
 
 export const professionalReservationsApi = {
-  list(query: { status: ReservationStatus | 'all', page: number, pageSize: number }, signal?: AbortSignal) {
+  list(
+    query: { status: ReservationStatus | 'all', page: number, pageSize: number, from?: string, to?: string },
+    signal?: AbortSignal,
+  ) {
     return apiClient.get<PagedResponse<ReservationDto>>('/api/professional/reservations',
       { query: { ...query }, signal })
   },
@@ -562,8 +587,11 @@ export const customerApi = {
   reservation(id: string, signal?: AbortSignal) {
     return apiClient.get<ReservationDto>(`/api/customer/reservations/${encodeURIComponent(id)}`, { signal })
   },
-  createReservation(input: { professionalId: string, startAt: string, endAt: string }) {
+  createReservation(input: { professionalId: string, startAt: string, endAt: string, handoffToken?: string }) {
     return apiClient.post<ReservationDto>('/api/customer/reservations', input)
+  },
+  resolveHandoff(handoffToken: string) {
+    return apiClient.post<ResolveHandoffDto>('/api/customer/booking-handoffs/resolve', { handoffToken })
   },
   issueCheckInToken(id: string) {
     return apiClient.post<{ token: string, manualCode: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
@@ -668,6 +696,18 @@ export const totemApi = {
   },
   confirmCheckIn(token: string) {
     return apiClient.post<CheckInResultDto>('/api/totem/check-in/confirm', { token })
+  },
+  createHandoff(professionalId: string) {
+    return apiClient.post<CreateHandoffDto>('/api/totem/booking-handoffs', { professionalId })
+  },
+  pollHandoff(id: string, statusToken: string) {
+    return apiClient.post<HandoffStatusDto>(`/api/totem/booking-handoffs/${id}/status`, { statusToken })
+  },
+  cancelHandoff(id: string, statusToken: string) {
+    return apiClient.post<{ status: string }>(`/api/totem/booking-handoffs/${id}/cancel`, { statusToken })
+  },
+  claimHandoff(handoffToken: string) {
+    return apiClient.post<{ status: string, expiresAt: string }>('/api/totem/booking-handoffs/claim', { handoffToken })
   },
 }
 
