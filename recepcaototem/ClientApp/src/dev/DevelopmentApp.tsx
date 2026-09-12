@@ -20,7 +20,7 @@ import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { TotemEntry } from '../pages/TotemEntry'
 import { TotemHandoff } from '../pages/TotemHandoff'
 import { TotemProfessionals } from '../pages/TotemProfessionals'
-import { ProfessionalDashboard, ProfessionalPlaceholder, ProfessionalShell } from '../pages/professional/ProfessionalHome'
+import { ProfessionalDashboard, ProfessionalShell } from '../pages/professional/ProfessionalHome'
 import { ProfessionalAgenda } from '../pages/professional/ProfessionalAgenda'
 import { ProfessionalRegistration } from '../pages/professional/ProfessionalRegistration'
 import { ProfessionalApplicationStatus } from '../pages/professional/ProfessionalApplicationStatus'
@@ -29,6 +29,7 @@ import { ProfessionalProfile } from '../pages/professional/ProfessionalProfile'
 import { ProfessionalReservations } from '../pages/professional/ProfessionalReservations'
 import { ProfessionalVisits } from '../pages/professional/ProfessionalVisits'
 import { ProfessionalLeases } from '../pages/professional/ProfessionalLeases'
+import { ProfessionalFinance } from '../pages/professional/ProfessionalFinance'
 import { ProfessionalApplications } from '../pages/admin/ProfessionalApplications'
 import { DevelopmentAppStore } from './DevelopmentAppStore'
 
@@ -62,7 +63,7 @@ export default function DevelopmentApp() {
             <Route path="atendimentos" element={<ProfessionalVisits />} />
             <Route path="disponibilidade" element={<ProfessionalAvailability />} />
             <Route path="locacoes" element={<ProfessionalLeases />} />
-            <Route path="financeiro" element={<ProfessionalPlaceholder title="Financeiro" />} />
+            <Route path="financeiro" element={<ProfessionalFinance />} />
             <Route path="perfil" element={<ProfessionalProfile />} />
           </Route>
         </Route>

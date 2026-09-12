@@ -253,6 +253,4 @@ export function ProfessionalDashboard() {
   )
 }
 
-export function ProfessionalPlaceholder({ title }: { title: string }) { return <section className="professional-section page-enter"><span className="page-eyebrow">Área do profissional</span><h1>{title}</h1><div className="professional-empty panel"><Activity size={25} /><strong>Estamos preparando esta área</strong><span>O dashboard e a agenda já estão disponíveis.</span><Link className="secondary-button" to="/profissional">Voltar ao dashboard</Link></div></section> }
-
 function useProfessionalContext() { return useOutletContext<ProfessionalContext>() }

@@ -608,6 +608,24 @@ export const professionalLeasesApi = {
   },
 }
 
+export type FinancialChargeStatus = 'PENDING' | 'OVERDUE' | 'PAID' | 'CANCELLED'
+export interface FinancialChargeDto {
+  id: string; leaseId: string; professionalId: string; tenantId: string
+  referencePeriodStart: string; referencePeriodEnd: string; dueDate: string
+  calculatedAmount: number; finalAmount: number; status: FinancialChargeStatus
+  calculationDetails: string; adjustmentReason: string | null; cancellationReason: string | null
+  paidAt: string | null; createdAt: string; updatedAt: string; concurrencyToken: string
+}
+
+export const professionalFinanceApi = {
+  list(query: { status: FinancialChargeStatus | 'all', page: number, pageSize: number, referenceFrom?: string, referenceTo?: string }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<FinancialChargeDto>>('/api/professional/finance/charges', { query: { ...query }, signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<FinancialChargeDto>(`/api/professional/finance/charges/${encodeURIComponent(id)}`, { signal })
+  },
+}
+
 export const reservationsApi = {
   list(query: ReservationListQuery, signal?: AbortSignal) {
     return apiClient.get<PagedResponse<ReservationDto>>('/api/admin/reservations', { query: { ...query }, signal })
