@@ -207,6 +207,29 @@ public sealed class ProfessionalPhotoTests(ModulesApiFactory factory)
         Assert.Equal(1, await db.PrivateFiles.CountAsync());
     }
 
+    // Pins a deliberate, controller-accepted behavior change from the ProfessionalPhotoMutation
+    // extraction (Task 3): the professional-by-id lookup now runs before body/token validation,
+    // so a nonexistent professional id combined with a malformed request now returns 404 instead
+    // of the pre-extraction 400. See task-3-report.md for the full ruling.
+    [Fact]
+    public async Task Put_with_nonexistent_id_and_malformed_token_returns_not_found()
+    {
+        await PrepareAdminAsync("photo-put-404-before-400@lumis.test");
+        var csrf = await factory.GetCsrfTokenAsync();
+        var response = await PutPhotoAsync(factory.Client, Guid.NewGuid(), "invalid", TestImageData.Png(),
+            "photo.png", "image/png", csrf);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_with_nonexistent_id_and_malformed_token_returns_not_found()
+    {
+        await PrepareAdminAsync("photo-delete-404-before-400@lumis.test");
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/professionals/{Guid.NewGuid()}/photo",
+            new { concurrencyToken = "invalid" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private async Task PrepareAdminAsync(string email)
     {
         await factory.ResetAsync();
