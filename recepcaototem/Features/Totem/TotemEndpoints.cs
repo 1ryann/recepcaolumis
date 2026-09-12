@@ -186,7 +186,7 @@ public static class TotemEndpoints
                 PresenceEvaluator.IsEffective(presence, operatingHours, now, timeZone));
             return new TotemProfessionalCard(
                 p.Id, p.Name, p.Profession,
-                p.PhotoFileId is null ? null : $"/api/totem/professionals/{p.Id}/photo",
+                p.PhotoFileId is null ? null : $"/api/totem/professionals/{p.Id}/photo?v={p.PhotoFileId}",
                 status);
         }).ToArray();
 
@@ -202,7 +202,7 @@ public static class TotemEndpoints
             .SingleOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
         return await recepcaototem.Features.Professionals.ProfessionalPhotoStreaming.StreamAsync(
-            professional, db, storage, loggerFactory, context, "public, max-age=300",
+            professional, db, storage, loggerFactory, context, "public, max-age=31536000, immutable",
             notFoundWhenMetadataUnusable: true, ct);
     }
 

@@ -111,6 +111,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         Guid withPhoto;
+        Guid photoFileId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -124,10 +125,39 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
             db.Professionals.Add(p);
             await db.SaveChangesAsync();
             withPhoto = p.Id;
+            photoFileId = photo.Id;
         }
 
         var cards = await factory.Client.GetFromJsonAsync<List<Card>>("/api/totem/professionals");
-        Assert.Equal($"/api/totem/professionals/{withPhoto}/photo", Assert.Single(cards!).PhotoUrl);
+        Assert.Equal($"/api/totem/professionals/{withPhoto}/photo?v={photoFileId}", Assert.Single(cards!).PhotoUrl);
+    }
+
+    [Fact]
+    public async Task Professional_with_photo_gets_a_version_busted_photo_url_with_long_lived_cache_header()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        Guid professionalId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            var professional = Professional.Create("Test Professional", "X", "+5569999995001", now);
+            var photoFileId = await SeedPhotoFileAsync(db);
+            professional.SetPhoto(photoFileId, now);
+            db.Professionals.Add(professional);
+            await db.SaveChangesAsync();
+            professionalId = professional.Id;
+        }
+
+        var cardsResponse = await factory.Client.GetAsync("/api/totem/professionals");
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<JsonElement[]>();
+        var card = cards!.Single(c => c.GetProperty("id").GetString() == professionalId.ToString());
+        var photoUrl = card.GetProperty("photoUrl").GetString();
+        Assert.Contains("?v=", photoUrl);
+
+        var photoResponse = await factory.Client.GetAsync(photoUrl);
+        Assert.Equal("public, max-age=31536000, immutable", photoResponse.Headers.CacheControl?.ToString());
     }
 
     [Fact]
@@ -152,7 +182,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
 
         var ok = await factory.Client.GetAsync($"/api/totem/professionals/{activeWithPhoto}/photo");
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
-        Assert.Equal("public, max-age=300", ok.Headers.CacheControl?.ToString());
+        Assert.Equal("public, max-age=31536000, immutable", ok.Headers.CacheControl?.ToString());
         Assert.False(string.IsNullOrEmpty(ok.Content.Headers.ContentType?.MediaType));
 
         Assert.Equal(HttpStatusCode.NotFound,
