@@ -1371,23 +1371,17 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   position: absolute;
   top: 0;
   bottom: 0;
-  width: clamp(48px, 9vw, 120px);
+  width: clamp(24px, 4vw, 56px);
   z-index: 2;
   pointer-events: none;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 .totem-magic-progblur--left {
   left: 0;
-  background: linear-gradient(to right, var(--lumis-bg), transparent);
-  -webkit-mask: linear-gradient(to right, #000, transparent);
-  mask: linear-gradient(to right, #000, transparent);
+  background: linear-gradient(to right, rgba(24, 24, 24, .3), transparent);
 }
 .totem-magic-progblur--right {
   right: 0;
-  background: linear-gradient(to left, var(--lumis-bg), transparent);
-  -webkit-mask: linear-gradient(to left, #000, transparent);
-  mask: linear-gradient(to left, #000, transparent);
+  background: linear-gradient(to left, rgba(24, 24, 24, .3), transparent);
 }
 
 .totem-magic-ripple {
