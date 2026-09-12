@@ -34,6 +34,7 @@ internal static class ProfessionalPhotoMutation
         ApplicationDbContext db,
         IPrivateFileStorage storage,
         IProfessionalPhotoValidator validator,
+        IImageNormalizer imageNormalizer,
         IOptions<PrivateFileStorageOptions> storageOptions,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
@@ -85,14 +86,23 @@ internal static class ProfessionalPhotoMutation
             return PhotoMutationOutcome.Failed(InvalidPhoto());
         }
 
+        NormalizedImage normalized;
+        await using (var validatedContent = await storage.OpenStagedReadAsync(upload.Staged, cancellationToken))
+        {
+            normalized = await imageNormalizer.NormalizeAsync(validatedContent, cancellationToken);
+        }
+        var normalizedStaged = await storage.StageAsync(normalized.Content,
+            storageOptions.Value.ProfessionalPhotoMaxBytes, cancellationToken);
+        await DiscardSafely(storage, upload.Staged); // the original, pre-normalization staged file is no longer needed
+
         string newStorageKey;
         try
         {
-            newStorageKey = await storage.CommitAsync(upload.Staged, cancellationToken);
+            newStorageKey = await storage.CommitAsync(normalizedStaged, cancellationToken);
         }
         catch
         {
-            await DiscardSafely(storage, upload.Staged);
+            await DiscardSafely(storage, normalizedStaged);
             throw;
         }
 
@@ -112,7 +122,7 @@ internal static class ProfessionalPhotoMutation
         }
 
         var now = timeProvider.GetUtcNow();
-        var newFile = PrivateFile.Create(newStorageKey, validated.MimeType, validated.Length,
+        var newFile = PrivateFile.Create(newStorageKey, "image/webp", normalized.Length,
             PrivateFilePurposes.ProfessionalPhoto, now);
         db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
         professional.SetPhoto(newFile.Id, now);

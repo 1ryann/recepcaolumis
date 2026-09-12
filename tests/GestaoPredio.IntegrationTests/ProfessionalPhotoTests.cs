@@ -5,6 +5,7 @@ using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SixLabors.ImageSharp;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -49,23 +50,31 @@ public sealed class ProfessionalPhotoTests(ModulesApiFactory factory)
 
         var get = await factory.Client.GetAsync($"/api/admin/professionals/{professional.Id}/photo");
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
-        Assert.Equal("image/png", get.Content.Headers.ContentType?.MediaType);
+        // The endpoint normalizes every uploaded photo to 512x512 WebP (spec §13.3), so the
+        // returned content type and bytes are no longer the original PNG upload's — this is an
+        // intentional, spec-required behavior change, not a regression (see task-4-report.md).
+        Assert.Equal("image/webp", get.Content.Headers.ContentType?.MediaType);
         Assert.Equal("inline", get.Content.Headers.ContentDisposition?.DispositionType);
         Assert.Contains("private", get.Headers.CacheControl?.ToString());
         Assert.Contains("no-store", get.Headers.CacheControl?.ToString());
         Assert.Equal("nosniff", get.Headers.GetValues("X-Content-Type-Options").Single());
-        Assert.Equal(bytes, await get.Content.ReadAsByteArrayAsync());
+        var normalizedBytes = await get.Content.ReadAsByteArrayAsync();
+        using (var normalized = await Image.LoadAsync(new MemoryStream(normalizedBytes)))
+        {
+            Assert.Equal(512, normalized.Width);
+            Assert.Equal(512, normalized.Height);
+        }
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var metadata = await db.PrivateFiles.SingleAsync();
-        Assert.Equal("image/png", metadata.MimeType);
-        Assert.Equal(bytes.Length, metadata.Length);
+        Assert.Equal("image/webp", metadata.MimeType);
+        Assert.Equal(normalizedBytes.Length, metadata.Length);
         var audit = await db.AuditEntries.SingleAsync(x => x.Action == "PROFESSIONAL_PHOTO_UPLOADED");
         var serialized = System.Text.Json.JsonSerializer.Serialize(audit);
         Assert.DoesNotContain("dra.ana", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(metadata.StorageKey, serialized, StringComparison.Ordinal);
-        Assert.DoesNotContain("image/png", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("image/webp", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -89,8 +98,28 @@ public sealed class ProfessionalPhotoTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var get = await factory.Client.GetAsync($"/api/admin/professionals/{professional.Id}/photo");
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
-        Assert.Equal(mime.ToLowerInvariant(), get.Content.Headers.ContentType?.MediaType);
-        Assert.Equal(bytes, await get.Content.ReadAsByteArrayAsync());
+        // Every accepted format is normalized to WebP on write (spec §13.3), regardless of the
+        // format that was uploaded/validated — intentional behavior change, not a regression.
+        Assert.Equal("image/webp", get.Content.Headers.ContentType?.MediaType);
+        using var normalized = await Image.LoadAsync(await get.Content.ReadAsStreamAsync());
+        Assert.Equal(512, normalized.Width);
+        Assert.Equal(512, normalized.Height);
+    }
+
+    [Fact]
+    public async Task Admin_photo_upload_is_normalized_to_512x512_webp()
+    {
+        await PrepareAdminAsync("photo-normalize@lumis.test");
+        var professional = await CreateProfessionalAsync();
+        var response = await PutPhotoWithCsrfAsync(professional, TestImageData.Png(1200, 800), "wide.png", "image/png");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var getResponse = await factory.Client.GetAsync($"/api/admin/professionals/{professional.Id}/photo");
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal("image/webp", getResponse.Content.Headers.ContentType?.MediaType);
+        using var image = await Image.LoadAsync(await getResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(512, image.Width);
+        Assert.Equal(512, image.Height);
     }
 
     [Fact]

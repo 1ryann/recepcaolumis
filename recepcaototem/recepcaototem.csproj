@@ -6,6 +6,7 @@
 <ScopedCssEnabled>false</ScopedCssEnabled>
 </PropertyGroup>
 <ItemGroup>
+<PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
 <ProjectReference Include="../src/GestaoPredio.Infrastructure/GestaoPredio.Infrastructure.csproj" />
 <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11"><PrivateAssets>all</PrivateAssets></PackageReference>

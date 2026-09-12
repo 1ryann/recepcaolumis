@@ -1,4 +1,8 @@
 using System.Buffers.Binary;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -27,19 +31,28 @@ internal static class TestImageData
         return stream.ToArray();
     }
 
+    /// <summary>
+    /// Produces a real PNG with the given pixel dimensions (via ImageSharp), for tests that need
+    /// a non-trivial source image (e.g. to exercise center-crop normalization end to end).
+    /// </summary>
+    public static byte[] Png(int width, int height)
+    {
+        using var image = new Image<Rgba32>(width, height);
+        using var stream = new MemoryStream();
+        image.Save(stream, new PngEncoder());
+        return stream.ToArray();
+    }
+
+    // A real, fully decodable WebP image (via ImageSharp) rather than a hand-crafted minimal
+    // bitstream: once the endpoint began decoding uploaded photos (for 512x512 normalization),
+    // a synthetic-but-undecoable VP8L payload that merely satisfied the header-only WebPParser
+    // sniff check started failing at decode time. A real encode keeps this fixture valid at both
+    // layers.
     public static byte[] WebP()
     {
-        byte[] payload = [0x2f, 0x00, 0x00, 0x00, 0x00, 0x00];
+        using var image = new Image<Rgba32>(1, 1);
         using var stream = new MemoryStream();
-        stream.Write("RIFF"u8);
-        Span<byte> size = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)(4 + 8 + payload.Length));
-        stream.Write(size);
-        stream.Write("WEBP"u8);
-        stream.Write("VP8L"u8);
-        BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)payload.Length);
-        stream.Write(size);
-        stream.Write(payload);
+        image.Save(stream, new WebpEncoder());
         return stream.ToArray();
     }
 

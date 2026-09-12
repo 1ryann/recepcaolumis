@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using GestaoPredio.Application.Abstractions;
+using GestaoPredio.Application.Files;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Auditing;
 using GestaoPredio.Infrastructure.Identity;
@@ -70,6 +71,7 @@ builder.Services.AddSingleton<recepcaototem.Features.Totem.TotemHandoffRateLimit
 builder.Services.AddSingleton<RescheduleTokenRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton<IImageNormalizer, ImageSharpImageNormalizer>();
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
 builder.Services.Configure<ManualCheckInCodeHashingOptions>(
     builder.Configuration.GetSection(ManualCheckInCodeHashingOptions.SectionName));

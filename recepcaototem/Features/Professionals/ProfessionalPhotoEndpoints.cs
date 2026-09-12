@@ -46,6 +46,7 @@ public static class ProfessionalPhotoEndpoints
         ApplicationDbContext db,
         IPrivateFileStorage storage,
         IProfessionalPhotoValidator validator,
+        IImageNormalizer imageNormalizer,
         IOptions<PrivateFileStorageOptions> storageOptions,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
@@ -54,7 +55,7 @@ public static class ProfessionalPhotoEndpoints
         var professional = await db.Professionals.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (professional is null) return Results.NotFound();
         var outcome = await ProfessionalPhotoMutation.PutAsync(professional, request, context, db, storage, validator,
-            storageOptions, timeProvider, loggerFactory, cancellationToken);
+            imageNormalizer, storageOptions, timeProvider, loggerFactory, cancellationToken);
         return outcome.Succeeded ? Results.Ok(professional.ToResponse()) : outcome.ErrorResult!;
     }
 
