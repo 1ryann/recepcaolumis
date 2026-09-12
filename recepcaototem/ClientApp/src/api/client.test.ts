@@ -98,6 +98,22 @@ test('does not retry a mutation for another 400 error', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 
+test('postMultipart sends a POST with FormData body and a CSRF header', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ token: 'csrf-token' }))
+    .mockResolvedValueOnce(json({ ok: true }))
+  vi.stubGlobal('fetch', fetchMock)
+  const { apiClient } = await import('./client')
+  const form = new FormData()
+  form.append('file', new Blob(['x']), 'x.png')
+  const result = await apiClient.postMultipart<{ ok: boolean }>('/api/professional/me/photo', form)
+  expect(result.ok).toBe(true)
+  const init = fetchMock.mock.calls[1][1] as RequestInit
+  expect(init.method).toBe('POST')
+  expect(init.body).toBe(form)
+  expect(init.headers).toEqual(expect.objectContaining({ 'X-CSRF-TOKEN': 'csrf-token' }))
+})
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }

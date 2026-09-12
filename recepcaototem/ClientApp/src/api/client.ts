@@ -95,4 +95,7 @@ export const apiClient = {
   putMultipart<T>(path: string, body: FormData) {
     return mutate<T>('PUT', path, body)
   },
+  postMultipart<T>(path: string, body: FormData) {
+    return mutate<T>('POST', path, body)
+  },
 }

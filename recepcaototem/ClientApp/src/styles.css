@@ -1066,6 +1066,50 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .admin-content .reception-live-row small,
 .admin-content .reception-quick-row small { color: #9a9a9a; }
 
+/* LUMIS professional — dark surfaces across every professional-area route (Agenda,
+   Reservas, Atendimentos, Locações, Financeiro). Scoped to .professional-content so
+   the shared .panel/.data-table/.field-input/.modal-* base rules (still used by the
+   reception/customer/admin areas) are untouched. Mirrors the .admin-content block above. */
+.professional-content .panel { background: #212121; border-color: rgba(255,255,255,.06); box-shadow: 0 14px 30px rgba(0,0,0,.3); }
+.professional-content .panel-header h2 { color: var(--lumis-text-dim); }
+.professional-content .panel-header p { color: #9a9a9a; }
+
+.professional-content .table-toolbar { background: transparent; border-bottom-color: var(--lumis-border-soft); }
+.professional-content .search-field { background: rgba(255,255,255,.04); border-color: var(--lumis-border); color: var(--lumis-muted); }
+.professional-content .search-field input { color: var(--lumis-text-dim); }
+.professional-content .search-field input::placeholder { color: #767676; }
+.professional-content .search-field:focus-within { background: rgba(255,255,255,.06); border-color: var(--lumis-border-strong); box-shadow: 0 0 0 4px rgba(255,255,255,.05); }
+.professional-content .data-table th { color: #9a9a9a; background: rgba(255,255,255,.03); border-bottom-color: rgba(255,255,255,.06); }
+.professional-content .data-table td { color: var(--lumis-text-dim); border-bottom-color: rgba(255,255,255,.06); }
+.professional-content .data-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.professional-content .person-cell strong { color: var(--lumis-text-dim); }
+.professional-content .person-cell small { color: #8a8a8a; }
+.professional-content .person-cell img { border-color: rgba(255,255,255,.1); }
+.professional-content .row-actions button { color: #b8b8b8; border-color: var(--lumis-border); background: transparent; }
+.professional-content .row-actions button:hover { color: #fff; border-color: var(--lumis-border-strong); background: rgba(255,255,255,.08); }
+.professional-content .empty-state { color: #9a9a9a; }
+.professional-content .pagination { color: #9a9a9a; }
+
+.professional-content .field-label { color: var(--lumis-muted); }
+.professional-content .field-input { color: var(--lumis-text-dim); background: rgba(255,255,255,.04); border-color: var(--lumis-border); }
+.professional-content .field-input::placeholder { color: #767676; }
+.professional-content .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+.professional-content .field-input:disabled { color: #767676; background: rgba(255,255,255,.02); }
+
+.professional-content .modal-card { background: var(--lumis-surface-2); box-shadow: 0 25px 70px rgba(0,0,0,.5); }
+.professional-content .modal-header { border-bottom-color: var(--lumis-border-soft); }
+.professional-content .modal-header h2 { color: var(--lumis-text-dim); }
+.professional-content .modal-header p { color: #9a9a9a; }
+.professional-content .modal-actions { border-top-color: var(--lumis-border-soft); }
+
+.professional-filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Fixes a light-token leak: .professional-empty/.professional-loading (styles.css ~line
+   143) fall back to the shared light-theme `color: var(--muted)` rule whenever they're
+   used outside .professional-dashboard (e.g. ProfessionalAgenda/ProfessionalPlaceholder). */
+.professional-content .professional-empty,
+.professional-content .professional-loading { color: var(--lumis-muted); }
+
 /* LUMIS admin dashboard — dark surfaces for KPI cards and panels, replacing the
    light .panel/.metric-card convention on this page only (other admin pages
    keep the existing quiet-light rhythm). */
