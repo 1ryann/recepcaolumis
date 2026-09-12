@@ -2102,7 +2102,13 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .customer-topbar-profile strong { color: var(--lumis-text-dim); font-size: 12px; }
 .customer-avatar { width: 34px; height: 34px; display: grid; place-items: center; color: var(--lumis-text); background: var(--lumis-surface-3); border-radius: 10px; font-size: 10px; font-weight: 800; }
 .customer-content { width: min(1180px, 100%); margin: 0 auto; padding: 0 clamp(22px, 4vw, 48px) 70px; }
-.customer-shell .customer-inline-error { width: min(1180px, calc(100% - 44px)); margin: 0 auto 18px; }
+.customer-shell .customer-inline-error {
+  width: min(1180px, calc(100% - 44px));
+  margin: 0 auto 18px;
+  color: #f0b8b8;
+  border-color: rgba(226, 120, 120, .35);
+  background: rgba(226, 120, 120, .08);
+}
 
 @media (max-width: 880px) {
   .customer-sidebar { transform: translateX(-102%); transition: transform .25s ease; box-shadow: 14px 0 40px rgba(0,0,0,.35); }
@@ -2129,48 +2135,92 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   border-color: var(--lumis-border);
   box-shadow: none;
 }
-.customer-dashboard-grid .panel-header h2 { color: var(--lumis-text); }
-.customer-dashboard-grid .panel-header p { color: var(--lumis-muted); }
+.customer-content .panel-header h2 { color: var(--lumis-text); }
+.customer-content .panel-header p { color: var(--lumis-muted); }
 .customer-next-details { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 14px; }
 .customer-next-details > strong { color: var(--lumis-text); font-size: 15px; }
 .customer-next-details > span { display: flex; align-items: center; gap: 6px; color: var(--lumis-muted); font-size: 12px; }
 .customer-next-details > span svg { color: var(--lumis-text-dim); flex: none; }
 .customer-next-details > .customer-status { margin-top: 2px; }
 .customer-next-details > .text-link { margin-top: 6px; color: var(--lumis-text-dim); }
-.customer-dashboard-grid .customer-empty,
-.customer-dashboard-grid .customer-qr-empty { color: var(--lumis-muted); }
-.customer-dashboard-grid .customer-empty strong,
-.customer-dashboard-grid .customer-qr-empty strong { color: var(--lumis-text); }
-.customer-dashboard-grid .customer-empty svg,
-.customer-dashboard-grid .customer-qr-empty svg { color: var(--lumis-text-dim); }
+.customer-content .customer-empty,
+.customer-content .customer-qr-empty { color: var(--lumis-muted); }
+.customer-content .customer-empty strong,
+.customer-content .customer-qr-empty strong { color: var(--lumis-text); }
+.customer-content .customer-empty svg,
+.customer-content .customer-qr-empty svg { color: var(--lumis-text-dim); }
 .customer-qr-card-home { display: flex; flex-direction: column; }
 .customer-qr-card-home .customer-qr-empty { padding: 14px 4px 4px; }
 .customer-qr-generated { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 12px; text-align: center; }
 .customer-qr-generated .customer-qr-image { width: min(170px, 100%); margin-bottom: 4px; border-radius: 10px; }
 .customer-qr-generated .secondary-button { margin-top: 10px; min-height: 44px; }
-.customer-dashboard-grid .secondary-button { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: transparent; }
-.customer-dashboard-grid .secondary-button:hover { border-color: var(--lumis-border-strong); background: rgba(255,255,255,.06); }
-.customer-dashboard-grid .customer-checkin-code { background: var(--lumis-surface-3); border-color: var(--lumis-border); }
-.customer-dashboard-grid .customer-checkin-code strong { color: var(--lumis-text); }
-.customer-dashboard-grid .customer-checkin-code small,
-.customer-dashboard-grid .customer-checkin-code span { color: var(--lumis-muted); }
+.customer-content .secondary-button { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: transparent; }
+.customer-content .secondary-button:hover { border-color: var(--lumis-border-strong); background: rgba(255,255,255,.06); }
+.customer-content .customer-checkin-code { background: var(--lumis-surface-3); border-color: var(--lumis-border); }
+.customer-content .customer-checkin-code strong { color: var(--lumis-text); }
+.customer-content .customer-checkin-code small,
+.customer-content .customer-checkin-code span { color: var(--lumis-muted); }
 .customer-dashboard-grid .primary-button { margin-top: 16px; min-height: 44px; }
 
+/* Every customer route (Dashboard, Meus agendamentos, Novo agendamento, Detalhe) shares
+   this one dark-surface pass — .panel/.field-input/.field-label/etc. are also used by
+   Admin's light back-office pages, so the override is scoped to .customer-content (the
+   single real ancestor of every /cliente/* route) instead of touching their base rules. */
+.customer-content .panel { background: var(--lumis-surface-2); border-color: var(--lumis-border); box-shadow: none; }
+.customer-content h1 { color: var(--lumis-text); }
+.customer-content .eyebrow { color: var(--lumis-muted); }
+.customer-content .customer-section-heading p { color: var(--lumis-muted); }
+.customer-content .customer-back-link { color: var(--lumis-muted); }
+.customer-content .customer-back-link:hover { color: var(--lumis-text-dim); }
+.customer-content .field-label { color: var(--lumis-text-dim); }
+.customer-content .field-input {
+  color: var(--lumis-text);
+  border-color: var(--lumis-border);
+  background: var(--lumis-surface);
+  color-scheme: dark;
+}
+.customer-content .field-input::placeholder { color: var(--lumis-muted); }
+.customer-content .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px var(--lumis-border-soft); }
+.customer-content .field-input:disabled { opacity: .5; cursor: not-allowed; }
+.customer-content .customer-booking-avatar,
+.customer-content .customer-detail-icon { color: var(--lumis-text-dim); background: rgba(255, 255, 255, .06); }
+.customer-content .customer-booking-professional span { color: var(--lumis-muted); }
+.customer-content .customer-booking-professional p { color: var(--lumis-muted); }
+.customer-content .customer-slot {
+  color: var(--lumis-text-dim);
+  border-color: var(--lumis-border);
+  background: rgba(255, 255, 255, .03);
+}
+.customer-content .customer-slot:hover,
+.customer-content .customer-slot.is-selected {
+  color: var(--lumis-text);
+  border-color: var(--lumis-border-strong);
+  background: rgba(255, 255, 255, .07);
+  box-shadow: none;
+}
+.customer-content .customer-slot small { color: var(--lumis-muted); }
+.customer-content .customer-booking-footer { color: var(--lumis-muted); }
+.customer-content .customer-detail-row { border-bottom-color: var(--lumis-border-soft); }
+.customer-content .customer-detail-row > svg { color: var(--lumis-text-dim); }
+.customer-content .customer-detail-row small { color: var(--lumis-muted); }
+.customer-content .customer-detail-row strong { color: var(--lumis-text); }
+.customer-content .customer-qr-expiry { color: var(--lumis-muted); }
+
 /* Próximos agendamentos / Histórico recente list + empty states (below the grid) */
-.customer-home .customer-reservation-card,
-.customer-home .customer-empty.panel {
+.customer-content .customer-reservation-card,
+.customer-content .customer-empty.panel {
   background: var(--lumis-surface-2);
   border-color: var(--lumis-border);
   box-shadow: none;
 }
-.customer-home .customer-reservation-card > div span { color: var(--lumis-muted); }
-.customer-home .customer-reservation-card > div strong { color: var(--lumis-text); }
-.customer-home .customer-reservation-card section strong { color: var(--lumis-text); }
-.customer-home .customer-reservation-card section span { color: var(--lumis-muted); }
-.customer-home .customer-empty.panel { color: var(--lumis-muted); }
-.customer-home .customer-empty.panel strong { color: var(--lumis-text); }
-.customer-home .customer-empty.panel svg { color: var(--lumis-text-dim); }
-.customer-home .customer-reservation-list { background: transparent; }
+.customer-content .customer-reservation-card > div span { color: var(--lumis-muted); }
+.customer-content .customer-reservation-card > div strong { color: var(--lumis-text); }
+.customer-content .customer-reservation-card section strong { color: var(--lumis-text); }
+.customer-content .customer-reservation-card section span { color: var(--lumis-muted); }
+.customer-content .customer-empty.panel { color: var(--lumis-muted); }
+.customer-content .customer-empty.panel strong { color: var(--lumis-text); }
+.customer-content .customer-empty.panel svg { color: var(--lumis-text-dim); }
+.customer-content .customer-reservation-list { background: transparent; }
 
 @media (max-width: 1080px) {
   .customer-dashboard-grid { grid-template-columns: 1fr 1fr; }
