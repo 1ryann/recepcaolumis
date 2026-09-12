@@ -923,6 +923,149 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .rooms-admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }.room-admin-card { display: flex; flex-direction: column; gap: 14px; padding: 19px; border: 1px solid #e3e9e9; border-radius: 17px; background: #fff; }.room-admin-heading { display: flex; align-items: flex-start; gap: 11px; }.room-admin-heading > div { display: grid; gap: 7px; }.room-admin-heading strong { color: var(--brand); font-size: 16px; }.room-admin-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; color: var(--brand); background: #e6eeee; border-radius: 11px; }.room-admin-card > p { min-height: 36px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }.room-rates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }.room-rates div { padding: 10px; border-radius: 10px; background: #f5f8f8; }.room-rates dt { color: var(--muted); font-size: 10px; }.room-rates dd { margin: 4px 0 0; color: var(--brand); font-size: 13px; font-weight: 700; }.room-admin-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; }.room-admin-actions .secondary-button,.room-admin-actions .ghost-button { min-height: 36px; font-size: 12px; }.field-textarea { min-height: 82px; resize: vertical; }
 .module-unavailable { display: grid; justify-items: start; align-content: center; min-height: 260px; padding: 40px; border: 1px solid rgba(61,61,61,.14); border-radius: 18px; background: rgba(255,255,255,.9); box-shadow: 0 18px 38px rgba(61,61,61,.07); }.module-unavailable-icon { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 16px; color: #666; background: #f2f2f2; border-radius: 14px; }.module-unavailable h1 { margin: 0; color: #3d3d3d; font-size: 23px; }.module-unavailable p { margin: 7px 0 0; color: #777; }
 
+/* LUMIS admin — dark surfaces across every back-office route (Salas, Profissionais,
+   Locações, Reservas, Visitas, Recepção, Solicitações, Configurações). Scoped to
+   .admin-content so the shared .panel/.table-panel/.data-table/.field-input/.modal-*
+   base rules (still used by the reception/customer/professional areas) are untouched. */
+.admin-content .panel { background: #212121; border-color: rgba(255,255,255,.06); box-shadow: 0 14px 30px rgba(0,0,0,.3); }
+.admin-content .panel-header h2 { color: var(--lumis-text-dim); }
+.admin-content .panel-header p,
+.admin-content .panel-header svg { color: #9a9a9a; }
+.admin-content .text-link { color: var(--lumis-info); }
+
+.admin-content .metric-card { background: var(--lumis-surface-2); border-color: rgba(255,255,255,.06); box-shadow: 0 10px 26px rgba(0,0,0,.28); }
+.admin-content .metric-card:hover { background: #292929; box-shadow: 0 14px 32px rgba(0,0,0,.34); }
+.admin-content .metric-card small,
+.admin-content .metric-card p { color: #9a9a9a; }
+.admin-content .metric-card strong { color: var(--lumis-text-dim); }
+.admin-content .metric-icon { background: rgba(255,255,255,.06); }
+.admin-content .tone-blue,
+.admin-content .tone-navy { color: #cfcfcf; background: rgba(255,255,255,.08); }
+
+.admin-content .table-toolbar { background: transparent; border-bottom-color: var(--lumis-border-soft); }
+.admin-content .table-toolbar > span { color: var(--lumis-muted); }
+.admin-content .search-field { background: rgba(255,255,255,.04); border-color: var(--lumis-border); color: var(--lumis-muted); }
+.admin-content .search-field input { color: var(--lumis-text-dim); }
+.admin-content .search-field input::placeholder { color: #767676; }
+.admin-content .search-field:focus-within { background: rgba(255,255,255,.06); border-color: var(--lumis-border-strong); box-shadow: 0 0 0 4px rgba(255,255,255,.05); }
+.admin-content .data-table th { color: #9a9a9a; background: rgba(255,255,255,.03); border-bottom-color: rgba(255,255,255,.06); }
+.admin-content .data-table td { color: var(--lumis-text-dim); border-bottom-color: rgba(255,255,255,.06); }
+.admin-content .data-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.admin-content .person-cell strong { color: var(--lumis-text-dim); }
+.admin-content .person-cell small { color: #8a8a8a; }
+.admin-content .person-cell img { border-color: rgba(255,255,255,.1); }
+.admin-content .person-placeholder { color: var(--lumis-text-dim); background: rgba(255,255,255,.08); }
+.admin-content .row-actions button { color: #b8b8b8; border-color: var(--lumis-border); background: transparent; }
+.admin-content .row-actions button:hover { color: #fff; border-color: var(--lumis-border-strong); background: rgba(255,255,255,.08); }
+.admin-content .empty-state { color: #9a9a9a; }
+.admin-content .list-refreshing { color: #9a9a9a; }
+.admin-content .pagination { color: #9a9a9a; }
+
+.admin-content .rooms-admin-grid .room-admin-card { background: rgba(255,255,255,.03); border-color: var(--lumis-border); }
+.admin-content .room-admin-heading strong { color: var(--lumis-text-dim); }
+.admin-content .room-admin-icon { color: var(--lumis-text-dim); background: rgba(255,255,255,.08); }
+.admin-content .room-admin-card > p { color: #9a9a9a; }
+.admin-content .room-rates dd { color: var(--lumis-text-dim); }
+.admin-content .room-rates dt { color: #9a9a9a; }
+.admin-content .room-rates div { background: rgba(255,255,255,.05); }
+
+.admin-content .lease-summary > div { background: rgba(255,255,255,.03); border-color: var(--lumis-border); }
+.admin-content .lease-summary strong { color: var(--lumis-text-dim); }
+.admin-content .lease-summary small { color: #9a9a9a; }
+.admin-content .filter-tabs { border-bottom-color: var(--lumis-border-soft); }
+.admin-content .filter-tabs button { color: #9a9a9a; }
+.admin-content .filter-tabs button:hover { background: rgba(255,255,255,.06); }
+.admin-content .filter-tabs button.active { color: var(--lumis-text-dim); background: rgba(255,255,255,.1); }
+.admin-content .money-cell { color: var(--lumis-text-dim) !important; }
+.admin-content .date-cell svg { color: #9a9a9a; }
+.admin-content .visitor-name-cell strong { color: var(--lumis-text-dim); }
+
+.admin-content .field-label { color: var(--lumis-muted); }
+.admin-content .field-input { color: var(--lumis-text-dim); background: rgba(255,255,255,.04); border-color: var(--lumis-border); }
+.admin-content .field-input::placeholder { color: #767676; }
+.admin-content .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+.admin-content .field-input:disabled { color: #767676; background: rgba(255,255,255,.02); }
+.admin-content select.field-input { color-scheme: dark; }
+.admin-content .field-textarea { background: rgba(255,255,255,.04); }
+.admin-content .secondary-button { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: rgba(255,255,255,.04); }
+.admin-content .secondary-button:hover { border-color: var(--lumis-border-strong); background: rgba(255,255,255,.08); }
+.admin-content .ghost-button { color: var(--lumis-muted); }
+.admin-content .ghost-button:hover { color: var(--lumis-text-dim); background: rgba(255,255,255,.06); }
+.admin-content .icon-button { color: #b8b8b8; }
+.admin-content .icon-button:hover { color: #fff; background: rgba(255,255,255,.08); }
+
+.admin-content .settings-title { border-bottom-color: var(--lumis-border-soft); }
+.admin-content .settings-title h2 { color: var(--lumis-text-dim); }
+.admin-content .settings-title > span { color: var(--lumis-text-dim); background: rgba(255,255,255,.08); }
+.admin-content .room-block-row { background: rgba(255,255,255,.03); border-color: var(--lumis-border); }
+.admin-content .room-block-row strong { color: var(--lumis-text-dim); }
+.admin-content .room-block-row small { color: #8fb3a6; }
+.admin-content .availability-empty { color: #9a9a9a; }
+.admin-content .availability-success { color: #7fd4b3; border-color: rgba(63,185,140,.3); background: rgba(63,185,140,.1); }
+
+.admin-content .wpe-suggestion,
+.admin-content .oh-bulk-bar,
+.admin-content .availability-exception-form { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: rgba(255,255,255,.03); }
+.admin-content .oh-bulk-copy strong,
+.admin-content .wpe-day-head > div strong,
+.admin-content .exception-date strong,
+.admin-content .availability-subheading strong,
+.admin-content .availability-day-row strong,
+.admin-content .availability-day-title strong,
+.admin-content .availability-editor-heading h2 { color: var(--lumis-text-dim); }
+.admin-content .oh-bulk-copy span,
+.admin-content .wpe-hint,
+.admin-content .wpe-closed,
+.admin-content .exception-reason,
+.admin-content .availability-preserved,
+.admin-content .availability-editor-heading p,
+.admin-content .availability-day-title span { color: #9a9a9a; }
+.admin-content .wpe-day,
+.admin-content .exception-row,
+.admin-content .availability-day-card { background: rgba(255,255,255,.03); border-color: var(--lumis-border); }
+.admin-content .time-input,
+.admin-content .availability-interval-row input { color: var(--lumis-text-dim); background: rgba(255,255,255,.05); border-color: var(--lumis-border); }
+.admin-content .time-input:disabled { color: #767676; background: rgba(255,255,255,.02); }
+.admin-content .timefield-open { color: var(--lumis-muted); border-color: var(--lumis-border); background: rgba(255,255,255,.05); }
+.admin-content .timefield-open:hover:not(:disabled) { color: var(--lumis-text-dim); border-color: var(--lumis-border-strong); }
+.admin-content .timefield-pop { border-color: var(--lumis-border); background: var(--lumis-surface-2); box-shadow: 0 18px 42px rgba(0,0,0,.4); }
+.admin-content .timefield-opt { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: rgba(255,255,255,.04); }
+.admin-content .timefield-opt:hover { border-color: var(--lumis-success); background: rgba(63,185,140,.12); }
+.admin-content .availability-editor-heading,
+.admin-content .availability-editor-actions { border-bottom-color: var(--lumis-border-soft); border-top-color: var(--lumis-border-soft); }
+.admin-content .oh-save-bar { background: linear-gradient(rgba(24,24,24,0), var(--lumis-bg) 32%); }
+.admin-content .oh-save-bar > span,
+.admin-content .availability-editor-actions > span { color: #9a9a9a; }
+.admin-content .availability-effective { background: rgba(63,185,140,.08); border-color: rgba(63,185,140,.25); }
+
+.admin-content .modal-card { background: var(--lumis-surface-2); box-shadow: 0 25px 70px rgba(0,0,0,.5); }
+.admin-content .modal-header { border-bottom-color: var(--lumis-border-soft); }
+.admin-content .modal-header h2 { color: var(--lumis-text-dim); }
+.admin-content .modal-header p { color: #9a9a9a; }
+.admin-content .modal-actions { border-top-color: var(--lumis-border-soft); }
+.admin-content .photo-upload { background: rgba(255,255,255,.04); }
+.admin-content .photo-upload > div { color: var(--lumis-text-dim); background: rgba(255,255,255,.08); }
+.admin-content .photo-upload small { color: #9a9a9a; }
+.admin-content .profile-facts > div,
+.admin-content .link-current { color: var(--lumis-text-dim); border-color: var(--lumis-border); background: rgba(255,255,255,.03); }
+.admin-content .profile-facts small,
+.admin-content .link-current small { color: #9a9a9a; }
+.admin-content .danger-button { color: #f0b8b8; border-color: rgba(226,120,120,.4); background: rgba(226,120,120,.08); }
+
+.admin-content .application-list { background: transparent; }
+.admin-content .application-row { border-color: var(--lumis-border); }
+.admin-content .customer-empty { color: #9a9a9a; }
+.admin-content .customer-empty strong { color: var(--lumis-text-dim); }
+
+.admin-content .reception-live-panel,
+.admin-content .reception-quick-panel { background: transparent; }
+.admin-content .reception-live-row,
+.admin-content .reception-quick-row { border-color: var(--lumis-border-soft); }
+.admin-content .reception-live-row strong,
+.admin-content .reception-quick-row strong { color: var(--lumis-text-dim); }
+.admin-content .reception-live-row small,
+.admin-content .reception-quick-row small { color: #9a9a9a; }
+
 /* LUMIS admin dashboard — dark surfaces for KPI cards and panels, replacing the
    light .panel/.metric-card convention on this page only (other admin pages
    keep the existing quiet-light rhythm). */
@@ -937,7 +1080,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .admin-dashboard .tone-green { color: var(--lumis-success); background: rgba(63,185,140,.14); }
 .admin-dashboard .tone-amber { color: var(--lumis-warning); background: rgba(224,169,59,.14); }
 
-.admin-dashboard .panel { background: #212121; border-color: rgba(255,255,255,.06); box-shadow: 0 14px 30px rgba(0,0,0,.3); }
+.admin-dashboard .panel { padding: 21px 22px 22px; background: #212121; border-color: rgba(255,255,255,.06); box-shadow: 0 14px 30px rgba(0,0,0,.3); }
+.admin-dashboard .panel-header { margin-bottom: 18px; }
 .admin-dashboard .panel-header h2 { color: var(--lumis-text-dim); }
 .admin-dashboard .panel-header p,
 .admin-dashboard .panel-header svg { color: #9a9a9a; }
