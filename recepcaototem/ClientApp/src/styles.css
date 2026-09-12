@@ -1549,23 +1549,22 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   align-items: center;
   gap: 12px;
   padding: clamp(20px, 2.4vw, 30px);
-  color: var(--lumis-text-dim);
+  color: var(--lumis-muted);
   text-align: center;
   border: 1px solid var(--lumis-border-soft);
   border-radius: 20px;
-  background: var(--lumis-surface-2);
+  background: rgba(255, 255, 255, .03);
   cursor: pointer;
-  opacity: .58;
   transform: scale(.92);
-  transition: transform .22s ease, opacity .22s ease, border-color .22s ease, background-color .22s ease;
+  transition: transform .22s ease, border-color .22s ease, background-color .22s ease, color .22s ease;
 }
 .totem-carousel-card:hover { border-color: var(--lumis-border-strong); }
 .totem-carousel-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
 .totem-carousel-card.is-active {
-  opacity: 1;
   transform: scale(1.06);
+  color: var(--lumis-text-dim);
   border-color: var(--lumis-border-strong);
-  background: var(--lumis-surface-3);
+  background: rgba(255, 255, 255, .055);
 }
 
 .totem-carousel-photo {
@@ -1573,15 +1572,17 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   height: clamp(84px, 9vw, 120px);
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--lumis-border-strong);
+  border: 1px solid var(--lumis-border-soft);
   background: #1c1c1c;
   user-select: none;
   -webkit-user-drag: none;
+  transition: border-color .22s ease;
 }
+.totem-carousel-card.is-active .totem-carousel-photo { border-color: var(--lumis-border-strong); }
 .totem-carousel-initials {
   display: grid;
   place-items: center;
-  color: var(--lumis-text-dim);
+  color: currentColor;
   font-size: clamp(26px, 3vw, 38px);
   font-weight: 650;
   letter-spacing: .02em;
