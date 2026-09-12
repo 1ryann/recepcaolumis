@@ -451,12 +451,38 @@ internal static class ProfessionalPhotoMutation
         CancellationToken cancellationToken);
 }
 ```
-This is a **pure extraction** — the professional entity is now a parameter (already resolved+tracked by the caller) instead of being loaded by id inside the method, so the exact same helper serves both "resolve by `{id:guid}` route param" (admin) and "resolve by authenticated identity" (self-serve, Task 5) call sites. No behavior changes; every existing assertion in `ProfessionalPhotoTests.cs`/`ProfessionalPhotoFailureTests.cs` must still pass unmodified.
+This is a **pure extraction** — the professional entity is now a parameter (already resolved+tracked by the caller) instead of being loaded by id inside the method, so the exact same helper serves both "resolve by `{id:guid}` route param" (admin) and "resolve by authenticated identity" (self-serve, Task 5) call sites. No behavior changes; every existing assertion in `ProfessionalPhotoTests.cs`/`ProfessionalPhotoFailureTests.cs` must still pass unmodified. **No artificial failing test is written for this task** — a refactor with an existing black-box HTTP test suite proves itself by that suite staying green before and after, not by a new test invented to "fail first."
 
-- [ ] **Step 1: Confirm the safety net — run the existing photo tests before touching anything**
+- [ ] **Step 0: Enumerate existing coverage and confirm the baseline, before writing any code**
+
+Run, to list every test currently exercising the photo endpoints by name (do this before touching any file):
+```bash
+dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalPhoto" --list-tests
+```
+Read `tests/GestaoPredio.IntegrationTests/ProfessionalPhotoTests.cs` and `ProfessionalPhotoFailureTests.cs` in full and map each listed test name to one of the behaviors this extraction must preserve. The extraction is only safe to proceed with once every row below has a real, named test checked off — if a row has no matching test, STOP this step and add a **characterization test** for that exact behavior first (a test that pins down what the code does *today*, using the pre-extraction `ProfessionalPhotoEndpoints.Put`/`Delete`, run once to confirm it passes against current behavior — not a test of desired-but-unbuilt behavior):
+
+| Behavior that must survive the extraction | Existing test (fill in the real name found above) |
+|---|---|
+| Upload validation rejects bad magic bytes / oversized file / mismatched extension | |
+| Successful upload persists a new `PrivateFile` and updates `Professional.PhotoFileId` | |
+| Uploading again (photo already exists) replaces the photo and `PhotoFileId` changes to a new value | |
+| Successful upload cleans up the previous physical file after commit | |
+| `DELETE` clears `Professional.PhotoFileId` and removes the `PrivateFile` row | |
+| Concurrency conflict (`ConcurrencyToken` stale) on `PUT` returns `409 RESOURCE_MODIFIED` and leaves the previous photo intact | |
+| Concurrency conflict on `DELETE` returns `409 RESOURCE_MODIFIED` | |
+
+If, after reading both files, any row is genuinely uncovered, add a minimal characterization test for it now, in the existing test file (not a new file), run it once against the **current, pre-extraction** code to confirm it passes (this proves what "correct" means before refactoring), then proceed to Step 1.
+
+Run the full baseline once every row is checked off:
+```bash
+dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalPhoto"
+```
+Expected baseline result: **all tests in the filtered set PASS** (record the exact count reported, e.g. "14 passed, 0 failed" — Step 4 below must reproduce the identical count).
+
+- [ ] **Step 1: Re-run the same filtered suite immediately before starting the extraction (idempotency check — confirms nothing else in the working tree changed the baseline between Step 0 and now)**
 
 Run: `dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalPhoto"`
-Expected: PASS (baseline — this suite is the regression net for this whole task; no new test is written here because this is a pure internal refactor with an existing black-box test suite already covering the exact same HTTP behavior).
+Expected: PASS, identical count to Step 0.
 
 - [ ] **Step 2: Create `ProfessionalPhotoMutation.cs` by moving the body of `Put`/`Delete`**
 
@@ -544,7 +570,7 @@ Keep `ProfessionalPhotoDeleteRequest`, `Get`, `MapProfessionalPhotoEndpoints`, a
 - [ ] **Step 4: Run the full photo test suite and confirm it still passes byte-for-byte**
 
 Run: `dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalPhoto"`
-Expected: PASS — identical results to Step 1. If anything differs, the extraction changed behavior; fix the extraction, do not adjust the tests (this step's whole purpose is proving zero behavior change).
+Expected: PASS — the exact same test count as the baseline recorded in Step 0/Step 1 (including any characterization test added in Step 0). If anything differs — a different count, a different test now failing, or a previously-failing test now passing for the wrong reason — the extraction changed behavior; fix the extraction, do not adjust the tests (this step's whole purpose is proving zero behavior change).
 
 - [ ] **Step 5: Full backend regression**
 
@@ -572,9 +598,19 @@ git commit -m "refactor(professional): extract photo mutation logic for reuse by
 - Create: `tests/GestaoPredio.UnitTests/ImageSharpImageNormalizerTests.cs`
 
 **Library decision (documented per spec §13.3 instruction to decide in the plan):**
-- **Recommended: `SixLabors.ImageSharp`** (NuGet package id `SixLabors.ImageSharp`, pin to the latest stable 3.x release available at implementation time — verify via `dotnet package search SixLabors.ImageSharp` or nuget.org before adding, since this plan does not install it). Reasons: pure managed .NET (no native binaries), so it runs on Railway's Linux containers without extra system packages, matching this repo's existing zero-native-dependency posture (confirmed: no `SkiaSharp`/`Magick.NET`/`System.Drawing` anywhere in any `.csproj`); actively maintained; supports decoding JPEG/PNG/WebP and encoding WebP directly; well-documented `Resize`+crop API for the required 512×512 center-crop.
-- **Rejected alternatives:** `SkiaSharp` (native bindings per-platform, heavier container image, more fragile Railway deploys); `Magick.NET` (wraps native ImageMagick binaries, large binary size, licensing friction); `System.Drawing.Common` (Windows-only since .NET 6+, explicitly unsupported on Linux — would break Railway).
-- **Licensing note to record, not resolve here:** Six Labors' split license requires a paid commercial license once the product/organization crosses specific revenue/funding thresholds (see sixlabors.com/pricing at implementation time) — confirm license terms still apply favorably before `dotnet add package` in Step 3; if not, fall back to `Magick.NET` and document the container-size tradeoff instead. This check is a real implementation-time gate, not a formality.
+- **Recommended technical option: `SixLabors.ImageSharp`** (NuGet package id `SixLabors.ImageSharp`). Reasons: pure managed .NET (no native binaries), so it runs on Railway's Linux containers without extra system packages, matching this repo's existing zero-native-dependency posture (confirmed: no `SkiaSharp`/`Magick.NET`/`System.Drawing` anywhere in any `.csproj`); actively maintained; supports decoding JPEG/PNG/WebP and encoding WebP directly; well-documented `Resize`+crop API for the required 512×512 center-crop.
+- **Rejected alternatives (technical grounds, not licensing):** `SkiaSharp` (native bindings per-platform, heavier container image, more fragile Railway deploys); `Magick.NET` (wraps native ImageMagick binaries, large binary size); `System.Drawing.Common` (Windows-only since .NET 6+, explicitly unsupported on Linux — would break Railway). These are **not** automatic fallbacks if ImageSharp's license turns out to be unsuitable — see the gate in Step 3 below; a licensing failure on ImageSharp does not silently promote one of these, it stops the task.
+- **This is a technical recommendation only, not a license clearance.** Six Labors ImageSharp ships under the "Six Labors Split License" — free for open-source/qualifying-small-business use, but requiring a paid commercial license above certain revenue/funding thresholds, and some historical versions have required a runtime license key for commercial use. Whether Lumis (a closed-source commercial product) can use it for free, and which exact version's license terms apply, **has not been verified by this plan** and must not be assumed. Step 3 below is a mandatory pre-install gate, not a formality — do not run `dotnet add package` before it passes.
+
+- [ ] **Step 0 (licensing/compatibility gate — must pass before Step 3, and before any other step in this task touches ImageSharp):**
+  1. **Exact version:** identify the latest stable release of `SixLabors.ImageSharp` at implementation time (check nuget.org's version list) and pin that exact version string — do not use a floating/wildcard version.
+  2. **Official license text:** read the license actually shipped with that exact version (the package's `LICENSE`/`license.txt` on nuget.org, or https://sixlabors.com/pricing and the linked EULA at implementation time — do not rely on general internet hearsay about "ImageSharp's license").
+  3. **Qualification check:** determine, against that license text, whether Lumis's actual situation (closed-source, commercial, current revenue/company size/funding — confirm these facts with the user/business owner if not already known, do not guess) qualifies for free use, or requires a paid commercial license.
+  4. **Build/CI/license-key requirement:** confirm whether the identified version requires any runtime license key, environment variable, or build-time configuration to run without a watermark/exception/reduced functionality — some Six Labors product tiers have imposed this in the past; confirm the specific version's requirement, not an assumption from an older or newer version.
+  5. **Platform compatibility:** confirm the exact pinned version's stated compatibility with `net10.0` and with linux-x64 (Railway's runtime) in its own release notes/target framework list — do not assume compatibility carries forward from an earlier major version.
+  6. **Record the outcome of 1-5 explicitly** (in the PR/commit description for this task, or in a short note added to this plan section) before proceeding.
+  - **If all five checks are satisfied** (license terms are clear, Lumis qualifies for free use or a commercial license is already in place, no unmet key/config requirement, and platform compatibility is confirmed): proceed to Step 1.
+  - **If any check fails, is ambiguous, or cannot be confirmed with confidence** (e.g. Lumis's qualifying status is unclear, or the license requires a paid tier and none is authorized): **STOP this task.** Do not silently substitute `SkiaSharp`/`Magick.NET`/anything else. Report back exactly which check failed and why, and wait for an explicit decision on how to proceed (authorize the commercial license, accept a different library with its own tradeoffs re-evaluated from scratch, or pause the photo-normalization feature) before writing any ImageSharp-dependent code in this task.
 
 **Interfaces:**
 - Consumes: nothing new (works on a `Stream` handed to it after validation).
@@ -626,12 +662,14 @@ public sealed class ImageSharpImageNormalizerTests
 Run: `dotnet test tests/GestaoPredio.UnitTests --filter "FullyQualifiedName~ImageSharpImageNormalizerTests"`
 Expected: FAIL — `ImageSharpImageNormalizer` does not exist; also the package is not yet referenced (compile error).
 
-- [ ] **Step 3: Add the package reference (implementation-time install — this is the one point in this entire plan where a new external dependency is added; confirm license terms per the note above immediately before running this)**
+- [ ] **Step 3: Add the package reference — only after Step 0's gate has explicitly passed**
+
+Do not run this step until Step 0 above is fully checked off and its outcome recorded. This is the one point in this entire plan where a new external dependency is added.
 
 ```bash
-cd recepcaototem && dotnet add package SixLabors.ImageSharp
+cd recepcaototem && dotnet add package SixLabors.ImageSharp --version <exact-version-confirmed-in-step-0>
 ```
-Also add the same package reference (or just a project reference, since `Infrastructure` already references nothing external for imaging) to `src/GestaoPredio.Infrastructure/GestaoPredio.Infrastructure.csproj` — the normalizer implementation lives there, next to `FileSystemPrivateFileStorage`.
+Use the literal exact version string identified and cleared in Step 0 — never a floating version. Also add the same package reference (or just a project reference, since `Infrastructure` already references nothing external for imaging) to `src/GestaoPredio.Infrastructure/GestaoPredio.Infrastructure.csproj` — the normalizer implementation lives there, next to `FileSystemPrivateFileStorage`.
 
 - [ ] **Step 4: Define the interface and result type**
 
@@ -1037,8 +1075,10 @@ git commit -m "feat(totem): version professional photo URLs by PhotoFileId for i
 ### Task 7: Meu Perfil frontend + crop
 
 **Files:**
+- Modify: `recepcaototem/ClientApp/package.json` / `package-lock.json` (add `react-easy-crop` — only after Step 0's gate passes)
 - Modify: `recepcaototem/ClientApp/src/api/modules.ts` (add `professionalProfileApi`, `ProfessionalProfileResponse`/`ProfessionalProfileUpdateRequest` types)
 - Create: `recepcaototem/ClientApp/src/api/modules.professionalProfile.test.ts`
+- Create: `recepcaototem/ClientApp/src/features/professionals/cropToBlob.ts`
 - Create: `recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.tsx`
 - Create: `recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.test.tsx`
 - Create: `recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.tsx`
@@ -1047,9 +1087,18 @@ git commit -m "feat(totem): version professional photo URLs by PhotoFileId for i
 - Modify: `recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx` (same swap, keep dev router in sync per existing convention)
 - Modify: `recepcaototem/ClientApp/src/styles.css` (crop modal + profile page classes, scoped under `.professional-content`)
 
-**Frontend crop library decision (per spec §19 instruction to decide in the plan, after inspecting `package.json`):**
-- **Recommended: hand-rolled, no new dependency.** `package.json` has zero UI-interaction libraries today (no `framer-motion`, no `react-dnd`, no existing crop/canvas package) — every drag/zoom/pointer interaction in this codebase (`TotemProfessionalCarousel.tsx`) is hand-rolled directly on native Pointer Events. A 1:1 crop-with-drag-and-zoom is a bounded problem (one `<canvas>`, one image, uniform scale + pan) that does not justify a new dependency, and matches this project's established convention of avoiding UI libraries entirely. Build `ProfessionalPhotoCropper` using the exact `onPointerDown`/`onPointerMove`/`onPointerUp`/`onPointerCancel`/`onPointerLeave` + `setPointerCapture`/`releasePointerCapture` (wrapped in `try/catch` for jsdom, matching `TotemProfessionalCarousel.tsx`'s established pattern) technique for drag, and a simple range `<input type="range">` (or wheel/pinch, decide during implementation) for zoom, drawing the cropped 1:1 region to an offscreen `<canvas>` and exporting via `canvas.toBlob('image/png')` (or `.jpeg` — the server re-validates and re-normalizes regardless, per spec §19, so the export format only needs to pass the existing extension/MIME/magic-byte validator, e.g. PNG is simplest to produce losslessly from canvas).
-- **Fallback if hand-rolling proves harder than expected during implementation:** `react-easy-crop` (small, ~5 KB gzipped, itself built on native pointer events, MIT-licensed) — only introduce this if the hand-rolled version cannot reliably handle both mouse and touch within a reasonable implementation budget; if so, add it in this task's Step 3 instead of hand-rolling, and update this section's decision record accordingly before committing.
+**Frontend crop library decision (revised): `react-easy-crop`, not hand-rolled.** `package.json` has zero UI-interaction libraries today (confirmed: no `framer-motion`, no `react-dnd`, no existing crop/canvas package), so this is a genuinely new dependency — but drag+zoom+touch gesture handling is exactly the kind of proprietary interaction code most likely to accumulate subtle regressions (edge cases in pointer capture, momentum, multi-touch pinch, orientation) if hand-rolled, and `react-easy-crop` already solves precisely this bounded problem (1:1 drag+zoom crop, mouse and touch, TypeScript types included) as its entire purpose. Use it for the **interaction** only; a `<canvas>` is still used, but strictly to *produce* the final cropped image from the library's reported `croppedAreaPixels`, never to reimplement the drag/zoom/pinch gesture logic itself.
+
+- **Flow:** `react-easy-crop`'s `<Cropper>` component (mouse/touch drag + pinch/wheel zoom built in) → its `onCropComplete(croppedArea, croppedAreaPixels)` callback → a small canvas helper function that draws the source `<img>` at `croppedAreaPixels`'s crop rectangle onto an offscreen canvas → `canvas.toBlob(...)` → the resulting `Blob` handed to `apiClient.postMultipart` (via `professionalProfileApi.uploadPhoto`, Task 7's own API layer). The canvas helper is a small, pure, easily-unit-tested function (`getCroppedImageBlob(imageSrc, croppedAreaPixels): Promise<Blob>`), not a gesture-handling surface.
+- **Rejected:** hand-rolled Pointer-Events crop (the plan's original recommendation) — reversed per explicit instruction: less proprietary gesture code to maintain, and `react-easy-crop` is itself pointer-events-based internally, so no capability is lost.
+
+- [ ] **Step 0 (license/version/compatibility gate — must pass before Step 3's install, lighter than Task 4's ImageSharp gate but still mandatory, not skippable):**
+  1. **Exact version:** identify the latest stable release of `react-easy-crop` on npm and pin that exact version (no `^`/`~` range) in `package.json`.
+  2. **License:** confirm the package's license (expected: MIT, per its public repository) by checking the version actually being installed, not an assumption from memory.
+  3. **React compatibility:** confirm the pinned version's declared `peerDependencies` accept the React version already in this project's `package.json` (`react`/`react-dom`, currently pinned to `"latest"` at plan-writing time — resolve to the actual installed major version with `npm ls react` before comparing).
+  4. **Record the outcome** of 1-3 (in this task's commit message or a short note here) before running the install in Step 3.
+  - **If satisfied:** proceed.
+  - **If the declared peer-dependency range genuinely excludes this project's React version, or the license is not MIT/compatible-with-closed-source-use:** STOP, do not install, and report the specific incompatibility back before falling back to any alternative (do not silently hand-roll or silently pick a different library) — the decision to change course again belongs to the user, not to a silent implementation choice.
 
 **Interfaces:**
 - Consumes: `apiClient.get/put/postMultipart/delete` (Task 1), `ProfessionalProfileResponse`/`ProfessionalProfileUpdateRequest` shape (Task 2, mirrored as TS types), `POST`/`DELETE /api/professional/me/photo` (Task 5), `PageHeader`/`EmptyState` (`components/PageElements.tsx`), `.professional-content` dark scope (Task 1).
@@ -1142,47 +1191,180 @@ export const professionalProfileApi = {
 Run: `npx vitest run src/api/modules.professionalProfile.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing test for `ProfessionalPhotoCropper`**
+- [ ] **Step 5: Install `react-easy-crop` — only after Step 0's gate has passed**
+
+```bash
+cd recepcaototem/ClientApp && npm install react-easy-crop@<exact-version-confirmed-in-step-0>
+```
+
+- [ ] **Step 6: Write the failing tests for `ProfessionalPhotoCropper`, covering the full required list (abrir crop, drag/zoom wiring, confirmar, cancelar, upload, loading, erro, cleanup de object URLs)**
 
 ```tsx
 // recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.test.tsx
-import { render, screen, fireEvent } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { expect, test, vi, afterEach } from 'vitest'
 import { ProfessionalPhotoCropper } from './ProfessionalPhotoCropper'
 
-test('calls onCropped with a Blob when the user confirms the crop', async () => {
-  const file = new File([new Uint8Array([137, 80, 78, 71])], 'photo.png', { type: 'image/png' })
+const file = new File([new Uint8Array([137, 80, 78, 71])], 'photo.png', { type: 'image/png' })
+
+afterEach(() => vi.restoreAllMocks())
+
+test('opens showing the Cropper with the selected file as its image source', async () => {
+  const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={() => {}} onUploadError={() => {}} />)
+  expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  expect(createObjectURL).toHaveBeenCalledWith(file)
+})
+
+test('revokes the object URL on unmount (cleanup)', () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL')
+  const { unmount } = render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={() => {}} onUploadError={() => {}} />)
+  unmount()
+  expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+})
+
+test('wires the zoom control through to react-easy-crop', async () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={() => {}} onUploadError={() => {}} />)
+  const zoomSlider = screen.getByRole('slider', { name: /zoom/i })
+  fireEvent.change(zoomSlider, { target: { value: '2' } })
+  expect((zoomSlider as HTMLInputElement).value).toBe('2')
+  // Drag/pinch gesture behavior is react-easy-crop's own tested internal responsibility — this component only
+  // needs to prove it wires the library's onCropChange/onZoomChange/onCropComplete callbacks correctly, not
+  // reimplement or re-verify pointer/touch gesture math.
+})
+
+test('Salvar foto crops via canvas and calls onCropped with a Blob', async () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
   const onCropped = vi.fn()
-  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={onCropped} />)
-  fireEvent.click(screen.getByRole('button', { name: /salvar foto/i }))
-  await vi.waitFor(() => expect(onCropped).toHaveBeenCalledWith(expect.any(Blob)))
+  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={onCropped} onUploadError={() => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /salvar foto/i }))
+  await waitFor(() => expect(onCropped).toHaveBeenCalledWith(expect.any(Blob)))
+})
+
+test('shows a loading state while cropping/uploading and disables Salvar foto meanwhile', async () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  let resolveCropped: () => void = () => {}
+  const onCropped = vi.fn(() => new Promise<void>((resolve) => { resolveCropped = resolve }))
+  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={onCropped} onUploadError={() => {}} />)
+  const saveButton = await screen.findByRole('button', { name: /salvar foto/i })
+  fireEvent.click(saveButton)
+  expect(saveButton).toBeDisabled()
+  resolveCropped()
+})
+
+test('surfaces an error via onUploadError when the crop/upload promise rejects, without closing the modal', async () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  const onUploadError = vi.fn()
+  const onCropped = vi.fn().mockRejectedValue(new Error('falha'))
+  render(<ProfessionalPhotoCropper file={file} onCancel={() => {}} onCropped={onCropped} onUploadError={onUploadError} />)
+  fireEvent.click(await screen.findByRole('button', { name: /salvar foto/i }))
+  await waitFor(() => expect(onUploadError).toHaveBeenCalled())
+  expect(screen.getByRole('dialog')).toBeInTheDocument() // stays open so the user can retry
 })
 
 test('calls onCancel when the user dismisses the modal', () => {
-  const file = new File([new Uint8Array([137, 80, 78, 71])], 'photo.png', { type: 'image/png' })
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
   const onCancel = vi.fn()
-  render(<ProfessionalPhotoCropper file={file} onCancel={onCancel} onCropped={() => {}} />)
+  render(<ProfessionalPhotoCropper file={file} onCancel={onCancel} onCropped={() => {}} onUploadError={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: /cancelar/i }))
   expect(onCancel).toHaveBeenCalled()
 })
 ```
-(jsdom does not implement real `<canvas>` pixel operations or `Image` decoding — verify during implementation whether `canvas.toBlob` needs a jsdom polyfill/mock in `src/test/setup.ts`; if so, add a minimal `HTMLCanvasElement.prototype.toBlob` mock there, following whatever existing polyfill pattern `src/test/setup.ts` already uses for other jsdom gaps.)
+`jsdom` does not implement real `<canvas>` pixel operations — verify during implementation whether `HTMLCanvasElement.prototype.getContext`/`toBlob` need a jsdom polyfill/mock in `src/test/setup.ts` for the `getCroppedImageBlob` helper's own unit test (Step 8 below); if so, add a minimal mock there following whatever existing polyfill pattern `src/test/setup.ts` already uses for other jsdom gaps.
 
-- [ ] **Step 6: Run and confirm failure**
+- [ ] **Step 7: Run and confirm failure**
 
 Run: `npx vitest run src/features/professionals/ProfessionalPhotoCropper.test.tsx`
 Expected: FAIL — module not found.
 
-- [ ] **Step 7: Implement `ProfessionalPhotoCropper`**
+- [ ] **Step 8: Implement `ProfessionalPhotoCropper` and its canvas output helper**
 
-Build a modal (reuse `Modal` from `components/Modal.tsx`) containing: an `<img>` or `<canvas>` preview of `file` (via `URL.createObjectURL`), a drag handler using the exact pointer-capture technique from `TotemProfessionalCarousel.tsx` (`onPointerDown`/`onPointerMove`/`onPointerUp`/`onPointerCancel`/`onPointerLeave`, `setPointerCapture`/`releasePointerCapture` wrapped in `try/catch`) to pan, a zoom `<input type="range">`, a circular preview overlay (CSS `border-radius: 50%` clip, matching spec §19's "preview circular"), "Cancelar" and "Salvar foto" buttons. On "Salvar foto": draw the current pan/zoom transform onto an offscreen 512×512 (or any square size — the server re-normalizes to 512×512 regardless per Task 4, so the client only needs to produce a reasonably-sized square crop) `<canvas>`, call `canvas.toBlob(blob => onCropped(blob!), 'image/png')`.
+```tsx
+// recepcaototem/ClientApp/src/features/professionals/cropToBlob.ts
+export interface PixelCrop { x: number; y: number; width: number; height: number }
 
-- [ ] **Step 8: Run and confirm pass**
+export function getCroppedImageBlob(imageSrc: string, crop: PixelCrop): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = crop.width
+      canvas.height = crop.height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('Canvas indisponível.')); return }
+      ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height)
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Falha ao gerar a imagem recortada.'))), 'image/png')
+    }
+    image.onerror = () => reject(new Error('Não foi possível carregar a imagem selecionada.'))
+    image.src = imageSrc
+  })
+}
+```
+```tsx
+// recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.tsx
+import Cropper, { type Area } from 'react-easy-crop'
+import { useEffect, useRef, useState } from 'react'
+import { Modal } from '../../components/Modal'
+import { getCroppedImageBlob } from './cropToBlob'
+
+export function ProfessionalPhotoCropper({ file, onCancel, onCropped, onUploadError }: {
+  file: File; onCancel: () => void; onCropped: (blob: Blob) => void | Promise<void>; onUploadError: (message: string) => void
+}) {
+  const objectUrlRef = useRef<string>('')
+  if (!objectUrlRef.current) objectUrlRef.current = URL.createObjectURL(file)
+  useEffect(() => () => URL.revokeObjectURL(objectUrlRef.current), [])
+
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [pixelCrop, setPixelCrop] = useState<Area | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!pixelCrop) return
+    setSaving(true)
+    try {
+      const blob = await getCroppedImageBlob(objectUrlRef.current, pixelCrop)
+      await onCropped(blob)
+    } catch (error) {
+      onUploadError(error instanceof Error ? error.message : 'Não foi possível salvar a foto.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open title="Ajustar foto" onClose={onCancel}>
+      <div className="professional-photo-crop-stage">
+        <Cropper
+          image={objectUrlRef.current} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false}
+          onCropChange={setCrop} onZoomChange={setZoom}
+          onCropComplete={(_area, areaPixels) => setPixelCrop(areaPixels)}
+        />
+      </div>
+      <label className="field-label">Zoom
+        <input type="range" aria-label="Zoom" min={1} max={3} step={0.1} value={zoom}
+          onChange={(event) => setZoom(Number(event.target.value))} />
+      </label>
+      <div className="modal-actions">
+        <button className="ghost-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+        <button className="primary-button" type="button" onClick={() => void save()} disabled={saving || !pixelCrop}>
+          {saving ? 'Salvando…' : 'Salvar foto'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+```
+(Verify `react-easy-crop`'s exact prop names — `cropShape="round"`, `onCropComplete(croppedArea, croppedAreaPixels)` — against the pinned version's actual TypeScript types once installed; the shape above matches the library's documented public API at the time of writing this plan, but pin-and-confirm before relying on it. Also confirm whether `<Modal>` needs an `open` prop of this exact name — check `components/Modal.tsx`'s real signature, already read in earlier tasks, before wiring this call.)
+
+- [ ] **Step 9: Run and confirm pass**
 
 Run: `npx vitest run src/features/professionals/ProfessionalPhotoCropper.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 9: Write the failing test for `ProfessionalProfile` page**
+- [ ] **Step 10: Write the failing test for `ProfessionalProfile` page**
 
 ```tsx
 // recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.test.tsx
@@ -1227,21 +1409,21 @@ test('saves WhatsApp/description via PUT and reflects the returned profile', asy
 })
 ```
 
-- [ ] **Step 10: Run and confirm failure**
+- [ ] **Step 11: Run and confirm failure**
 
 Run: `npx vitest run src/pages/professional/ProfessionalProfile.test.tsx`
 Expected: FAIL — module not found.
 
-- [ ] **Step 11: Implement `ProfessionalProfile`**
+- [ ] **Step 12: Implement `ProfessionalProfile`**
 
 Structure: `<section className="professional-section page-enter">` → `<PageHeader eyebrow="Área do profissional" title="Meu perfil" description="..." />` → loading/error states (`professional-loading`/`form-error`, matching every other professional page) → a `.panel` with: photo circle (current `photoUrl` or initials fallback, matching the Totem carousel's initials logic conceptually but a local implementation — do not import from `features/totem/`), "Trocar foto"/"Remover foto" buttons (disabled while `uploading`), read-only `Name`/`Profession` (plain text, not inputs), editable `whatsApp`/`description` as `.field-input`s inside a form, a "Salvar" `.primary-button` (disabled while `saving` or if nothing changed). "Trocar foto" opens a native `<input type="file" accept="image/png,image/jpeg,image/webp">`, and on file selection opens `ProfessionalPhotoCropper`; its `onCropped(blob)` calls `professionalProfileApi.uploadPhoto(blob, concurrencyToken)` and updates local state from the response. "Remover foto" calls `professionalProfileApi.deletePhoto(concurrencyToken)` directly (no crop step). On `RESOURCE_MODIFIED` from any call, reload via `professionalProfileApi.get()` and show a conflict message (same idiom as `Settings.tsx`/`ProfessionalAvailability.tsx`).
 
-- [ ] **Step 12: Run and confirm pass**
+- [ ] **Step 13: Run and confirm pass**
 
 Run: `npx vitest run src/pages/professional/ProfessionalProfile.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 13: Wire the route**
+- [ ] **Step 14: Wire the route**
 
 ```tsx
 // recepcaototem/ClientApp/src/App.tsx
@@ -1249,15 +1431,15 @@ Expected: PASS.
 ```
 Remove the `ProfessionalPlaceholder title="Meu perfil"` route and its now-unused import if `ProfessionalPlaceholder` is no longer referenced anywhere (it still is, by Reservas/Atendimentos/Locações/Financeiro until Tasks 8-12 land — keep the import until the last of those tasks removes the final usage). Apply the identical route swap in `recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx` to keep the dev router in sync (per this repo's existing convention, confirmed during research).
 
-- [ ] **Step 14: Full frontend gates**
+- [ ] **Step 15: Full frontend gates**
 
 Run: `npx vitest run && npx tsc -b && npx vite build && node scripts/verify-production-bundle.mjs`
 Expected: PASS.
 
-- [ ] **Step 15: Commit**
+- [ ] **Step 16: Commit**
 
 ```bash
-git add recepcaototem/ClientApp/src/api/modules.ts recepcaototem/ClientApp/src/api/modules.professionalProfile.test.ts recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.tsx recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.test.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.test.tsx recepcaototem/ClientApp/src/App.tsx recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx recepcaototem/ClientApp/src/styles.css
+git add recepcaototem/ClientApp/package.json recepcaototem/ClientApp/package-lock.json recepcaototem/ClientApp/src/api/modules.ts recepcaototem/ClientApp/src/api/modules.professionalProfile.test.ts recepcaototem/ClientApp/src/features/professionals/cropToBlob.ts recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.tsx recepcaototem/ClientApp/src/features/professionals/ProfessionalPhotoCropper.test.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalProfile.test.tsx recepcaototem/ClientApp/src/App.tsx recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx recepcaototem/ClientApp/src/styles.css
 git commit -m "feat(ui): add professional profile photo editor"
 ```
 
@@ -1439,22 +1621,138 @@ git commit -m "feat(ui): complete professional attendances page"
 ### Task 10: Agenda profissional (Hoje/Semana views)
 
 **Files:**
+- Modify: `recepcaototem/Features/Reservations/ReservationContracts.cs` (add `CustomerName` to `ReservationResponse`, additive)
+- Modify: `recepcaototem/Features/Reservations/ReservationMappings.cs` (thread the new field through `ToResponse`)
+- Modify: `recepcaototem/Features/Reservations/ProfessionalReservationEndpoints.cs` (`List`/`Detail` join `Customer` by `Reservation.CustomerId`)
+- Modify: `tests/GestaoPredio.IntegrationTests/ProfessionalReservationTests.cs` (add coverage for the new field, both present and absent)
+- Modify: `recepcaototem/ClientApp/src/api/modules.ts` (add `customerName: string | null` to `ReservationDto`)
 - Create: `recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.tsx` (moved out of `ProfessionalHome.tsx`, then extended)
 - Create: `recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.test.tsx`
 - Modify: `recepcaototem/ClientApp/src/pages/professional/ProfessionalHome.tsx` (remove the old inline `ProfessionalAgenda` export)
 - Modify: `recepcaototem/ClientApp/src/App.tsx`, `recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx` (update the import source for `ProfessionalAgenda`)
 
-**Design decision (resolving spec §6's deferred customer-name question):** do not extend `ReservationResponse` with a new `CustomerName` field — no backend change in this task. Per the spec's own "alternativa sem mudança de contrato": show `Visit.VisitorName` when a matching `Visit` exists (joined by `reservation.id === visit.reservationId`, the same correlation already used by `ProfessionalHome.tsx`'s existing `deriveAgendaStatus` helper), and the generic label `"Cliente"` when only a `Reservation` exists with no linked `Visit` yet. This keeps Task 10 purely additive/frontend and avoids reopening backend/migration scope for a cosmetic label.
+**Design decision (revised — real data, no functional fallback to a generic label):** the previous version of this plan used `"Cliente"` as a hard-coded functional fallback whenever no `Visit.VisitorName` was available. That is a workaround, not a domain rule, and is removed. Real inspection of the DTOs confirms a genuine, minimal, additive path to the real name:
+
+- `Reservation.CustomerId` is `Guid?` (`src/GestaoPredio.Domain/Reservations/Reservation.cs:16`) — **already exists**, no migration.
+- `Customer.Name` is `string` (`src/GestaoPredio.Domain/Customers/Customer.cs:15`) — **already exists**.
+- `ReservationResponse` (`recepcaototem/Features/Reservations/ReservationContracts.cs`) currently has **no** customer field at all — confirmed by this branch's own backend research for this plan. This is the real gap, and it is closed here by an additive projection, not a migration: a `LEFT JOIN` from `Reservation.CustomerId` to `Customer.Id` in the query that already exists in `ProfessionalReservationEndpoints.List`/`Detail` (`recepcaototem/Features/Reservations/ProfessionalReservationEndpoints.cs:59-101`), producing `Customer.Name` when a customer is linked.
+- Not every reservation has a `CustomerId` (it is nullable — e.g. a reservation created without a self-service customer account). For those, this task does **not** invent a label. Priority order, all backed by real recorded data:
+  1. `Customer.Name` via the reservation's own `CustomerId`, when present (the most authoritative source — the actual account tied to the booking).
+  2. `Visit.VisitorName`, when a `Visit` already exists for that reservation but it has no linked `Customer` (the name actually captured at check-in — real data, not a guess).
+  3. If neither exists, the Agenda shows an explicit, honest absence marker (`"—"` / `aria-label="Cliente não identificado"`) — **this is not a functional workaround**, it is the correct representation of "no name has been recorded for this booking yet," which is a real and expected state (e.g. a future reservation with no linked account and no check-in yet), not a defect to be hidden behind a fake label.
 
 **Interfaces:**
-- Consumes: `professionalReservationsApi.list({ from, to, orderBy: 'asc', status: 'all', page, pageSize })`, `professionalVisitsApi.list({ from, to, status: 'all', page, pageSize })` (both already exist), the existing `deriveAgendaStatus`/`timeLabel`/`shortDateLabel`/`todayWindow` helpers currently private to `ProfessionalHome.tsx` (move them alongside the relocated component, or export them from `ProfessionalHome.tsx` if `ProfessionalDashboard` still needs them — check before deleting; `ProfessionalDashboard` has its own separate fetch/derivation logic per research, so these helpers may be safely moved wholesale).
-- Produces: nothing new consumed elsewhere (leaf page), but this task changes the import path other files use for `ProfessionalAgenda` — `App.tsx` and `dev/DevelopmentApp.tsx` must both update from `'../pages/professional/ProfessionalHome'` to `'../pages/professional/ProfessionalAgenda'` for this one named export.
+- Consumes (backend, existing): `Reservation.CustomerId` (`src/GestaoPredio.Domain/Reservations/Reservation.cs:16`), `Customer.Name`/`Customer.Id` (`src/GestaoPredio.Domain/Customers/Customer.cs`), `ApplicationDbContext.Customers` (confirm this `DbSet<Customer>` exists under this exact name before writing the join — it is expected given the existing customer self-service booking flow, but verify rather than assume).
+- Produces (backend, new, additive — consumed by the frontend types below):
+```csharp
+// ReservationContracts.cs — CustomerName appended as the LAST positional parameter with a default,
+// so every one of the 9 existing ToResponse(...) call sites across ProfessionalReservationEndpoints.cs,
+// ReservationEndpoints.cs, and ReservationDecisionEndpoints.cs keeps compiling unchanged.
+public sealed record ReservationResponse(
+    Guid Id, Guid RoomId, string RoomName, Guid ProfessionalId, string ProfessionalName,
+    Guid? OriginalReservationId, string Kind, string Status, DateTimeOffset StartAt, DateTimeOffset EndAt,
+    DateTimeOffset RequestedAt, DateTimeOffset? DecidedAt, string? RejectionReason,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string ConcurrencyToken,
+    string? CustomerName = null);
+```
+- Consumes (frontend): `professionalReservationsApi.list({ from, to, orderBy: 'asc', status: 'all', page, pageSize })`, `professionalVisitsApi.list({ from, to, status: 'all', page, pageSize })` (both already exist), the existing `deriveAgendaStatus`/`timeLabel`/`shortDateLabel`/`todayWindow` helpers currently private to `ProfessionalHome.tsx` (move them alongside the relocated component, or export them from `ProfessionalHome.tsx` if `ProfessionalDashboard` still needs them — check before deleting; `ProfessionalDashboard` has its own separate fetch/derivation logic per research, so these helpers may be safely moved wholesale).
+- Produces (frontend): nothing new consumed elsewhere (leaf page), but this task changes the import path other files use for `ProfessionalAgenda` — `App.tsx` and `dev/DevelopmentApp.tsx` must both update from `'../pages/professional/ProfessionalHome'` to `'../pages/professional/ProfessionalAgenda'` for this one named export.
 
-- [ ] **Step 1: Confirm the safety net — run the existing `ProfessionalAgenda`-adjacent tests before moving anything**
+- [ ] **Step 1: Inspect the real DTOs before writing any code — confirm the join is genuinely possible**
+
+Read, in full: `src/GestaoPredio.Domain/Reservations/Reservation.cs` (confirm `CustomerId` is a real, mapped, nullable `Guid` property — not just a constructor parameter that gets dropped), `src/GestaoPredio.Domain/Customers/Customer.cs` (confirm `Name`/`Id` are real mapped properties), `recepcaototem/Features/Reservations/ReservationContracts.cs` and `ReservationMappings.cs` (confirm there really is no customer field today, and get the exact current `ToResponse` signature to extend), and `recepcaototem/Features/Reservations/ProfessionalReservationEndpoints.cs:59-101` (the exact `List`/`Detail` query shape to add the join to). Also confirm `ApplicationDbContext` exposes a `DbSet<Customer> Customers` (grep for `DbSet<Customer>`). If any of these assumptions turns out to be wrong when actually reading the code (e.g. `CustomerId` turns out to not be persisted, or `ApplicationDbContext` has no `Customers` set reachable from this project), **STOP and report** — that would mean the customer name is not actually retrievable without a real schema change, which is exactly the "lacuna de contrato" scenario the user asked to be stopped on, not implemented around.
+
+- [ ] **Step 2: Write the failing backend test for the additive field**
+
+Add to `tests/GestaoPredio.IntegrationTests/ProfessionalReservationTests.cs` (read the file first for its exact existing helpers for creating a reservation with/without a linked customer):
+```csharp
+[Fact]
+public async Task Reservation_response_includes_customer_name_when_a_customer_is_linked()
+{
+    var (client, professional) = await CreateProfessionalAsync(); // reuse this file's existing helper
+    var reservation = await CreateReservationForCustomerAsync(professional.Id, customerName: "Ana Beatriz"); // adapt to this file's real helper names — do not invent ones that don't exist
+    var response = await client.GetAsync($"/api/professional/reservations/{reservation.Id}");
+    var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+    Assert.Equal("Ana Beatriz", body.GetProperty("customerName").GetString());
+}
+
+[Fact]
+public async Task Reservation_response_has_null_customer_name_when_no_customer_is_linked()
+{
+    var (client, professional) = await CreateProfessionalAsync();
+    var reservation = await CreateReservationWithoutCustomerAsync(professional.Id); // adapt to whatever this file's real "admin-created, no customer" helper is called
+    var response = await client.GetAsync($"/api/professional/reservations/{reservation.Id}");
+    var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+    Assert.True(body.GetProperty("customerName").ValueKind is JsonValueKind.Null);
+}
+```
+
+- [ ] **Step 3: Run and confirm failure**
+
+Run: `dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalReservationTests"`
+Expected: FAIL — `customerName` does not exist in the response body today.
+
+- [ ] **Step 4: Implement the additive DTO field and the join**
+
+```csharp
+// ReservationContracts.cs — append CustomerName with a default, per the Interfaces block above.
+```
+```csharp
+// ReservationMappings.cs — extend ToResponse with an optional trailing parameter:
+public static ReservationResponse ToResponse(this Reservation reservation, string roomName, string professionalName, string? customerName = null) =>
+    new(reservation.Id, reservation.RoomId, roomName, reservation.ProfessionalId, professionalName,
+        reservation.OriginalReservationId, reservation.Kind.ToString().ToUpperInvariant(),
+        reservation.Status.ToString().ToUpperInvariant(), reservation.StartAt, reservation.EndAt,
+        reservation.RequestedAt, reservation.DecidedAt, reservation.RejectionReason,
+        reservation.CreatedAt, reservation.UpdatedAt, ConcurrencyToken.Encode(reservation.Version), customerName);
+    // adjust field access/casing to whatever the real existing ToResponse body already does — this is
+    // illustrative of the one added parameter, not a full rewrite of already-correct mapping logic.
+```
+```csharp
+// ProfessionalReservationEndpoints.cs — List, add a LEFT JOIN (only here and in Detail; every other
+// ToResponse call site in the codebase is left completely untouched, per the additive-parameter design):
+var query =
+    from reservation in reservations
+    join room in db.Rooms.AsNoTracking() on reservation.RoomId equals room.Id
+    join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
+    join customer in db.Customers.AsNoTracking() on reservation.CustomerId equals (Guid?)customer.Id into customerGroup
+    from customer in customerGroup.DefaultIfEmpty()
+    select new { Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name, CustomerName = customer != null ? customer.Name : null };
+// ...
+rows.Select(row => row.Reservation.ToResponse(row.RoomName, row.ProfessionalName, row.CustomerName)).ToArray()
+```
+Apply the identical join shape to `Detail`.
+
+- [ ] **Step 5: Run and confirm pass**
+
+Run: `dotnet test recepcaototem.sln --filter "FullyQualifiedName~ProfessionalReservationTests"`
+Expected: PASS.
+
+- [ ] **Step 6: Full backend regression**
+
+Run: `dotnet test recepcaototem.sln`
+Expected: PASS — in particular, every other `ToResponse` call site (admin `ReservationEndpoints.cs`, `ReservationDecisionEndpoints.cs`) compiles and behaves unchanged, since the new parameter is optional and defaults to `null`.
+
+- [ ] **Step 7: Backend commit**
+
+```bash
+git add recepcaototem/Features/Reservations/ReservationContracts.cs recepcaototem/Features/Reservations/ReservationMappings.cs recepcaototem/Features/Reservations/ProfessionalReservationEndpoints.cs tests/GestaoPredio.IntegrationTests/ProfessionalReservationTests.cs
+git commit -m "feat(reservations): project the linked customer's real name for professional-facing responses"
+```
+
+- [ ] **Step 8: Confirm the safety net — run the existing `ProfessionalAgenda`-adjacent tests before moving anything**
 
 Search for any existing test importing `ProfessionalAgenda` from `ProfessionalHome` (none were found by this branch's research, but re-confirm with `Grep` for `ProfessionalAgenda` across `*.test.tsx` before proceeding, since a stale/missed test would need updating in this same step rather than silently breaking).
 
-- [ ] **Step 2: Write the failing test for the Hoje/Semana views**
+- [ ] **Step 9: Add `customerName` to the frontend `ReservationDto` type, and backfill Task 8's fixtures**
+
+```ts
+// recepcaototem/ClientApp/src/api/modules.ts — inside the existing ReservationDto interface
+customerName: string | null
+```
+This is a required field on the TypeScript type (the wire contract always includes the key, since the backend field defaults to `null` rather than being omitted). Task 8 (`ProfessionalReservations.test.tsx`) already committed reservation fixture literals before this field existed — run `npx tsc -b` now, before writing any further code in this task, and add `customerName: null` (or a real value, if more realistic for that test's scenario) to every reservation fixture object `tsc -b` flags as missing the property. Commit this small fixture fix together with this task's own changes, not as a separate task.
+
+- [ ] **Step 10: Write the failing test for the Hoje/Semana views, using only real data (no generic-label assertion)**
 
 ```tsx
 // recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.test.tsx
@@ -1469,25 +1767,54 @@ vi.mock('../../api/modules', async (orig) => ({
   professionalVisitsApi: { list: vi.fn() },
 }))
 
-beforeEach(() => {
+const baseReservation = {
+  id: 'r1', roomId: 'room1', roomName: 'Sala 1', professionalId: 'p1', professionalName: 'Maria',
+  originalReservationId: null, kind: 'NEW' as const, status: 'APPROVED' as const, startAt: '2026-09-12T13:00:00Z',
+  endAt: '2026-09-12T14:00:00Z', requestedAt: '2026-09-01T00:00:00Z', decidedAt: '2026-09-01T00:00:00Z',
+  rejectionReason: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', concurrencyToken: 'tok',
+}
+
+test('Hoje view shows the real linked customer name when present', async () => {
   vi.mocked(professionalReservationsApi.list).mockResolvedValue({
-    items: [{ id: 'r1', roomId: 'room1', roomName: 'Sala 1', professionalId: 'p1', professionalName: 'Maria',
-      originalReservationId: null, kind: 'NEW', status: 'APPROVED', startAt: '2026-09-12T13:00:00Z',
-      endAt: '2026-09-12T14:00:00Z', requestedAt: '2026-09-01T00:00:00Z', decidedAt: '2026-09-01T00:00:00Z',
-      rejectionReason: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', concurrencyToken: 'tok' }],
-    page: 1, pageSize: 50, totalCount: 1,
+    items: [{ ...baseReservation, customerName: 'Ana Beatriz' }], page: 1, pageSize: 50, totalCount: 1,
   })
   vi.mocked(professionalVisitsApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 50, totalCount: 0 })
-})
-
-test('Hoje view shows Agendado for a reservation with no matching visit and Cliente as the generic name', async () => {
   render(<ProfessionalAgenda />)
   expect(await screen.findByText('Sala 1')).toBeInTheDocument()
-  expect(screen.getByText('Cliente')).toBeInTheDocument()
+  expect(screen.getByText('Ana Beatriz')).toBeInTheDocument()
   expect(screen.getByText('Agendado')).toBeInTheDocument()
 })
 
+test('Hoje view falls back to the Visit.visitorName when the reservation has no linked customer but a visit already exists', async () => {
+  vi.mocked(professionalReservationsApi.list).mockResolvedValue({
+    items: [{ ...baseReservation, customerName: null }], page: 1, pageSize: 50, totalCount: 1,
+  })
+  vi.mocked(professionalVisitsApi.list).mockResolvedValue({
+    items: [{ id: 'v1', professionalId: 'p1', professionalName: 'Maria', roomId: 'room1', roomName: 'Sala 1',
+      reservationId: 'r1', visitorName: 'João Silva', status: 'WAITING', arrivedAt: '2026-09-12T12:55:00Z',
+      serviceStartedAt: null, endedAt: null, cancelledAt: null, createdAt: '2026-09-12T12:55:00Z',
+      updatedAt: '2026-09-12T12:55:00Z', concurrencyToken: 'tok2', history: [] }],
+    page: 1, pageSize: 50, totalCount: 1,
+  })
+  render(<ProfessionalAgenda />)
+  expect(await screen.findByText('João Silva')).toBeInTheDocument()
+})
+
+test('Hoje view shows an explicit absence marker, never a fabricated name, when neither a customer nor a visit is linked yet', async () => {
+  vi.mocked(professionalReservationsApi.list).mockResolvedValue({
+    items: [{ ...baseReservation, customerName: null }], page: 1, pageSize: 50, totalCount: 1,
+  })
+  vi.mocked(professionalVisitsApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 50, totalCount: 0 })
+  render(<ProfessionalAgenda />)
+  expect(await screen.findByLabelText('Cliente não identificado')).toBeInTheDocument()
+  expect(screen.queryByText('Cliente')).not.toBeInTheDocument() // the old generic-label workaround must never reappear
+})
+
 test('switching to Semana view re-fetches with a week-wide range', async () => {
+  vi.mocked(professionalReservationsApi.list).mockResolvedValue({
+    items: [{ ...baseReservation, customerName: 'Ana Beatriz' }], page: 1, pageSize: 50, totalCount: 1,
+  })
+  vi.mocked(professionalVisitsApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 50, totalCount: 0 })
   render(<ProfessionalAgenda />)
   await screen.findByText('Sala 1')
   fireEvent.click(screen.getByRole('button', { name: /semana/i }))
@@ -1495,21 +1822,21 @@ test('switching to Semana view re-fetches with a week-wide range', async () => {
 })
 ```
 
-- [ ] **Step 3: Run and confirm failure**
+- [ ] **Step 11: Run and confirm failure**
 
 Run: `npx vitest run src/pages/professional/ProfessionalAgenda.test.tsx`
-Expected: FAIL — module not found (still defined inside `ProfessionalHome.tsx`).
+Expected: FAIL — module not found (still defined inside `ProfessionalHome.tsx`), and even once moved, the generic-`"Cliente"` behavior is not yet replaced.
 
-- [ ] **Step 4: Move and extend**
+- [ ] **Step 12: Move and extend**
 
-Move `ProfessionalAgenda` and the helpers it needs (`timeLabel`, `shortDateLabel`, `deriveAgendaStatus`, `agendaStatusClass`) out of `ProfessionalHome.tsx` into the new `ProfessionalAgenda.tsx` file. Add a `view: 'today' | 'week'` local state with two buttons; `today` computes `from`/`to` as the current civil day (reuse the existing `todayWindow()` helper — move it too, or duplicate the tiny date-math if `ProfessionalDashboard` still needs its own copy; check first), `week` computes `from`/`to` spanning the current week, grouped by day in the render. Join `Reservation`s to `Visit`s by `visit.reservationId === reservation.id`; when found, derive status from the `Visit`, else `"Agendado"`/`"Cancelado"` from the `Reservation` alone (exact mapping table already specified in spec §6). Customer-name column: `visit?.visitorName ?? 'Cliente'`.
+Move `ProfessionalAgenda` and the helpers it needs (`timeLabel`, `shortDateLabel`, `deriveAgendaStatus`, `agendaStatusClass`) out of `ProfessionalHome.tsx` into the new `ProfessionalAgenda.tsx` file. Add a `view: 'today' | 'week'` local state with two buttons; `today` computes `from`/`to` as the current civil day (reuse the existing `todayWindow()` helper — move it too, or duplicate the tiny date-math if `ProfessionalDashboard` still needs its own copy; check first), `week` computes `from`/`to` spanning the current week, grouped by day in the render. Join `Reservation`s to `Visit`s by `visit.reservationId === reservation.id`; when found, derive status from the `Visit`, else `"Agendado"`/`"Cancelado"` from the `Reservation` alone (exact mapping table already specified in spec §6). Customer-name column, in priority order: `reservation.customerName ?? matchedVisit?.visitorName ?? null`; when the resolved value is `null`, render an explicit `<span aria-label="Cliente não identificado">—</span>` instead of any text implying a real name — never the string `"Cliente"`.
 
-- [ ] **Step 5: Run and confirm pass**
+- [ ] **Step 13: Run and confirm pass**
 
 Run: `npx vitest run src/pages/professional/ProfessionalAgenda.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 6: Update import sites**
+- [ ] **Step 14: Update import sites**
 
 ```tsx
 // recepcaototem/ClientApp/src/App.tsx and src/dev/DevelopmentApp.tsx
@@ -1517,17 +1844,17 @@ import { ProfessionalAgenda } from './pages/professional/ProfessionalAgenda' // 
 ```
 Remove `ProfessionalAgenda` from `ProfessionalHome.tsx`'s exports.
 
-- [ ] **Step 7: Regression — run `ProfessionalDashboard.test.tsx`/`ProfessionalShell.test.tsx`**
+- [ ] **Step 15: Regression — run `ProfessionalDashboard.test.tsx`/`ProfessionalShell.test.tsx`**
 
 Run: `npx vitest run src/pages/professional/`
 Expected: PASS — confirms the extraction didn't break `ProfessionalDashboard`'s independent fetch logic or `ProfessionalShell`'s outlet context.
 
-- [ ] **Step 8: Full frontend gates + commit**
+- [ ] **Step 16: Full frontend gates + commit**
 
 Run: `npx vitest run && npx tsc -b && npx vite build && node scripts/verify-production-bundle.mjs`
 ```bash
-git add recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.test.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalHome.tsx recepcaototem/ClientApp/src/App.tsx recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx
-git commit -m "feat(ui): add Hoje/Semana views to the professional agenda"
+git add recepcaototem/ClientApp/src/api/modules.ts recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalAgenda.test.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalHome.tsx recepcaototem/ClientApp/src/pages/professional/ProfessionalReservations.test.tsx recepcaototem/ClientApp/src/App.tsx recepcaototem/ClientApp/src/dev/DevelopmentApp.tsx
+git commit -m "feat(ui): show the real customer name in the professional agenda with Hoje/Semana views"
 ```
 
 ---
@@ -1832,9 +2159,13 @@ Document, in the final report (not in a new file — this plan does not create a
 
 ## Self-Review
 
-1. **Spec coverage:** every spec section maps to a task — §5 Dashboard (no task, explicitly "nenhuma mudança funcional", covered by Task 14's visual pass only); §6 Agenda → Task 10; §7 Reservas → Task 8; §8 Atendimentos → Task 9; §9 Locações → Task 11; §10 Financeiro → Task 12; §11 Disponibilidade → Task 13; §12 Meu Perfil (read+write) → Tasks 2, 7; §13 Foto → Tasks 3, 4, 5, 6; §14 DTOs → Tasks 2, 5; §15 Rate limiting → Task 5; §16 Erros → enforced throughout via Global Constraints; §17 Segurança → enforced throughout; §18 Migration → Global Constraints + Task 15 Step 5; §19 Crop → Task 7; §20 Responsividade → Task 14; §21 Testes → distributed across every task's own test steps; §22 Rollout → Task 15 (documented, not executed); §23 Critérios de aceite → covered by the union of all tasks + Task 15's homologation walk.
-2. **Placeholder scan:** no `TODO`/`TBD`/"adicionar testes depois" left in this document — every task shows the actual test code (or, where a project-specific helper name is genuinely unknown until the implementer opens the referenced sibling file, an explicit instruction to read that exact file first and substitute the real name, never a vague "figure it out"). The two library decisions the spec deferred (image processing, frontend crop) are resolved with a named package/approach and an explicit rejection rationale, not left open.
-3. **Type/name consistency check:** `ProfessionalProfileResponse`/`ProfessionalProfileUpdateRequest` (Task 2) are the exact same names/shapes consumed by Task 5 (self-serve endpoints build the same anonymous shape matching §14's contract) and Task 7 (`ProfessionalProfileDto` on the frontend mirrors the same fields). `PhotoMutationOutcome`/`ProfessionalPhotoMutation.PutAsync`/`DeleteAsync` (Task 3) gain the `IImageNormalizer imageNormalizer` parameter in Task 4 and that exact updated signature is what Task 5's new endpoints call — Task 5's code block already includes the extra parameter. `IImageNormalizer`/`NormalizedImage` (Task 4) are not referenced again until Task 5's DI-injected handler parameter, consistent. `professionalProfileApi`/`professionalFinanceApi` (Tasks 7, 12) match the exact `PagedResponse<T>` generic already used by every other `professional*Api` module.
-4. **Migration check:** no task in this plan adds an EF Core migration; Global Constraints states this explicitly twice (top-level and Task 4's package-add is the only new external dependency in the whole plan, and it is a NuGet package, not a schema change); Task 15 Step 5 verifies this at the end.
+1. **Spec coverage:** every spec section maps to a task — §5 Dashboard (no task, explicitly "nenhuma mudança funcional", covered by Task 14's visual pass only); §6 Agenda → Task 10 (backend `CustomerName` projection + frontend Hoje/Semana views); §7 Reservas → Task 8; §8 Atendimentos → Task 9; §9 Locações → Task 11; §10 Financeiro → Task 12; §11 Disponibilidade → Task 13; §12 Meu Perfil (read+write) → Tasks 2, 7; §13 Foto → Tasks 3, 4, 5, 6; §14 DTOs → Tasks 2, 5; §15 Rate limiting → Task 5; §16 Erros → enforced throughout via Global Constraints; §17 Segurança → enforced throughout; §18 Migration → Global Constraints + Task 15 Step 5; §19 Crop → Task 7 (revised to `react-easy-crop`); §20 Responsividade → Task 14; §21 Testes → distributed across every task's own test steps; §22 Rollout → Task 15 (documented, not executed); §23 Critérios de aceite → covered by the union of all tasks + Task 15's homologation walk.
+2. **Placeholder scan:** no `TODO`/`TBD`/"adicionar testes depois" left in this document — every task shows the actual test code (or, where a project-specific helper name is genuinely unknown until the implementer opens the referenced sibling file, an explicit instruction to read that exact file first and substitute the real name, never a vague "figure it out"). Both library decisions (image processing, frontend crop) now carry an explicit pre-install gate (exact version, license, compatibility) instead of treating installation as automatic — a failed gate stops the task and asks for a decision, it does not silently substitute another library.
+3. **Type/name consistency check:** `ProfessionalProfileResponse`/`ProfessionalProfileUpdateRequest` (Task 2) are the exact same names/shapes consumed by Task 5 (self-serve endpoints build the same anonymous shape matching §14's contract) and Task 7 (`ProfessionalProfileDto` on the frontend mirrors the same fields). `PhotoMutationOutcome`/`ProfessionalPhotoMutation.PutAsync`/`DeleteAsync` (Task 3) gain the `IImageNormalizer imageNormalizer` parameter in Task 4 and that exact updated signature is what Task 5's new endpoints call — Task 5's code block already includes the extra parameter. `IImageNormalizer`/`NormalizedImage` (Task 4) are not referenced again until Task 5's DI-injected handler parameter, consistent. `professionalProfileApi`/`professionalFinanceApi` (Tasks 7, 12) match the exact `PagedResponse<T>` generic already used by every other `professional*Api` module. `ReservationResponse.CustomerName`/`ReservationDto.customerName` (Task 10) are additive on both sides of the wire — Task 10 also explicitly backfills Task 8's already-committed reservation fixtures so the new required TS field doesn't break `tsc -b` retroactively, since Task 8 runs earlier in the sequence than Task 10.
+4. **Migration check:** no task in this plan adds an EF Core migration. Task 10's `CustomerName` addition is a projection over an already-existing, already-persisted `Reservation.CustomerId`/`Customer.Name` — confirmed by direct inspection in Task 10 Step 1, with an explicit instruction to STOP and report if that inspection turns out to contradict this assumption. Global Constraints states the no-migration rule twice; Task 15 Step 5 verifies it at the end across the whole accumulated diff.
 5. **No parallel photo infrastructure check:** Task 3 extracts existing logic (does not duplicate it); Task 4 adds exactly one new interface (`IImageNormalizer`) for the one genuinely new capability (image resizing/re-encoding), which is explicitly called out in the spec (§13.3) as the sole real gap; no new storage abstraction, no new entity, no new purpose constant beyond the existing `PrivateFilePurposes.ProfessionalPhoto`.
 6. **No invented buttons/actions:** every action button specified in Tasks 8, 9, 11, 12 is explicitly tied to an existing backend endpoint (Reservas: remarcar/cancelar only, no aprovar/recusar; Atendimentos: iniciar/encerrar/cancelar only, no corrigir; Locações/Financeiro: zero write actions, confirmed by explicit negative test assertions in each task's Step 1).
+7. **No invented data (Task 10):** the old `"Cliente"` generic-label fallback is removed entirely. The Agenda now shows, in order, the real `Customer.Name` linked to the reservation, then the real `Visit.VisitorName` captured at check-in, and only when neither exists an explicit, honestly-labeled absence marker (`aria-label="Cliente não identificado"`) — never text that could be mistaken for a real name. Task 10 Step 10 includes an explicit regression assertion (`expect(screen.queryByText('Cliente')).not.toBeInTheDocument()`) so the removed workaround cannot silently creep back in.
+8. **Task 3 characterization discipline:** no artificial failing test was added for the pure refactor — Task 3 Step 0 requires enumerating every existing test covering upload validation, persistence, photo replacement (`PhotoFileId` change), cleanup, delete, and concurrency conflict *before* touching any code, adding a characterization test for any row found uncovered, and recording the exact baseline pass count that Step 4 must reproduce identically after the extraction.
+9. **Dependency chain re-check (Tasks 3 → 4 → 5 → 6 → 7):** Task 3 produces `ProfessionalPhotoMutation.PutAsync`/`DeleteAsync` returning `PhotoMutationOutcome`, consumed unchanged in shape by Task 4 (which only adds one parameter, `IImageNormalizer`) and by Task 5 (which calls the Task-4-updated signature directly, already shown with the extra parameter in Task 5's own code block). Task 6 (Totem cache-busting) has no dependency on Tasks 3-5 at all — it only reads `Professional.PhotoFileId`, which existed before this plan — so its position in the sequence is not a correctness dependency, only a narrative one. Task 7 depends on Task 2 (`GET`/`PUT /api/professional/me`) and Task 5 (`POST`/`DELETE /api/professional/me/photo`) for its `professionalProfileApi` calls — no part of Task 7 calls an endpoint that isn't already defined by the time Task 7 runs, confirmed by re-reading Task 7's `Interfaces` block against Tasks 2 and 5's `Produces` blocks side by side.
+10. **`git diff --check`:** run once this plan document itself is finalized (see final report) — this is a Markdown-only change in this revision, so no source-file whitespace is at risk, but the check is still run as instructed.
