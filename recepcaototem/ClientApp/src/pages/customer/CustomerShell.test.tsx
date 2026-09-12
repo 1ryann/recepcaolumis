@@ -83,12 +83,11 @@ test('clicking the overlay closes the drawer', async () => {
   expect(screen.queryByRole('button', { name: /fechar menu/i })).not.toBeInTheDocument()
 })
 
-test('shows the greeting, subtitle and profile once loaded', async () => {
+test('shows the profile chip once loaded, with no greeting heading', async () => {
   renderShell()
-  expect(await screen.findByText(/Olá, Marina!/i)).toBeInTheDocument()
-  expect(screen.getByText('Seu bem-estar em um só lugar.')).toBeInTheDocument()
-  expect(screen.getAllByText('Marina Alves').length).toBeGreaterThan(0)
+  expect(await screen.findByText('Marina Alves')).toBeInTheDocument()
   expect(screen.getByText('MA')).toBeInTheDocument()
+  expect(screen.queryByText(/Olá,/i)).not.toBeInTheDocument()
 })
 
 test('logging out calls session.logout', async () => {

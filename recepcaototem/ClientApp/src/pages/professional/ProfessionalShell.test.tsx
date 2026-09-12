@@ -67,17 +67,12 @@ test('nav has exactly the real professional routes, in a nav landmark', async ()
   ])
 })
 
-test('topbar shows the PROFISSIONAL eyebrow', async () => {
+test('topbar shows the loaded profile name in the profile chip, never a hardcoded name, and no greeting heading', async () => {
   renderShell()
-  await screen.findByText('conteúdo do painel')
-  expect(screen.getByText('PROFISSIONAL')).toBeInTheDocument()
-})
-
-test('greets the professional using the loaded profile name, never a hardcoded name', async () => {
-  renderShell()
-  expect(await screen.findByText('Olá, Helena!')).toBeInTheDocument()
+  expect((await screen.findAllByText('Helena Souza Ramos')).length).toBeGreaterThan(0)
   expect(screen.queryByText(/Dra\. Helena/i)).not.toBeInTheDocument()
-  expect(screen.getByText('Seu espaço, sua agenda, mais possibilidades.')).toBeInTheDocument()
+  expect(screen.queryByText(/Olá,/i)).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
 })
 
 test('has a mobile menu toggle with an accessible label that opens the drawer', async () => {

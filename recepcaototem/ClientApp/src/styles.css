@@ -1090,6 +1090,28 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-content .empty-state { color: #9a9a9a; }
 .professional-content .pagination { color: #9a9a9a; }
 
+/* Fixes a light-token leak: .page-header/.page-eyebrow (styles.css ~line 183/901-905)
+   fall back to the shared light-theme dark-gray text color, which is unreadable on the
+   professional area's dark background. Mirrors the existing .admin-content override
+   (styles.css ~line 884-888) for the same shared classes. */
+.professional-content .page-header { position: relative; margin-bottom: 31px; }
+.professional-content .page-header::after { content: ""; position: absolute; left: 0; bottom: -15px; width: 68px; height: 1px; background: var(--lumis-border-strong); opacity: .6; }
+.professional-content .page-eyebrow { color: var(--lumis-muted); letter-spacing: .21em; }
+.professional-content .page-header h1 { color: var(--lumis-text); font-weight: 560; }
+.professional-content .page-header p { color: var(--lumis-muted); }
+/* Atendimentos' section titles (Aguardando/Em atendimento/Encerrados hoje) are plain
+   <h2> elements inside .table-toolbar with no color override, so they were inheriting
+   body's light-theme #3d3d3d — unreadable on this dark surface. */
+.professional-content .table-toolbar h2 { color: var(--lumis-text); }
+
+/* Atendimentos (ProfessionalVisits) — the 3 status sections (Aguardando/Em atendimento/
+   Encerrados hoje) stack vertically; give them a consistent gap, matching the existing
+   .professional-agenda-list convention, and cap the shared .empty-state's global 220px
+   min-height (styles.css ~line 201, sized for full-page empty lists) down to a size
+   proportionate to these compact inline sections. */
+.professional-visits-list { display: grid; gap: 10px; }
+.professional-visits-list .empty-state { min-height: 80px; }
+
 .professional-content .field-label { color: var(--lumis-muted); }
 .professional-content .field-input { color: var(--lumis-text-dim); background: rgba(255,255,255,.04); border-color: var(--lumis-border); }
 .professional-content .field-input::placeholder { color: #767676; }
@@ -2362,11 +2384,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .customer-topbar .menu-trigger { display: none; color: var(--lumis-text-dim); }
 .customer-topbar .menu-trigger:hover { color: var(--lumis-text); background: rgba(255,255,255,.08); }
-.customer-topbar-heading { flex: 1; min-width: 0; }
-.customer-topbar-heading .eyebrow { color: var(--lumis-muted); }
-.customer-topbar-heading h1 { margin: 0; color: var(--lumis-text); font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.03em; }
-.customer-topbar-heading p { margin: 5px 0 0; color: var(--lumis-muted); font-size: 12px; }
-.customer-topbar-meta { display: flex; align-items: center; gap: 14px; }
+.customer-topbar-meta { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 .customer-topbar-date { color: var(--lumis-muted); font-size: 11px; text-transform: capitalize; }
 .customer-topbar-profile { display: flex; align-items: center; gap: 9px; }
 .customer-topbar-profile strong { color: var(--lumis-text-dim); font-size: 12px; }
@@ -2549,11 +2567,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .professional-topbar .menu-trigger { display: none; color: var(--lumis-text-dim); }
 .professional-topbar .menu-trigger:hover { color: var(--lumis-text); background: rgba(255,255,255,.08); }
-.professional-topbar-heading { flex: 1; min-width: 0; }
-.professional-topbar-heading .eyebrow { color: var(--lumis-muted); }
-.professional-topbar-heading h1 { margin: 0; color: var(--lumis-text); font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.03em; }
-.professional-topbar-heading p { margin: 5px 0 0; color: var(--lumis-muted); font-size: 12px; }
-.professional-topbar-meta { display: flex; align-items: center; gap: 14px; }
+.professional-topbar-meta { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 .professional-topbar-date { color: var(--lumis-muted); font-size: 11px; text-transform: capitalize; }
 .professional-topbar-profile { display: flex; align-items: center; gap: 9px; }
 .professional-topbar-profile strong { color: var(--lumis-text-dim); font-size: 12px; }

@@ -38,7 +38,6 @@ export function ProfessionalShell() {
   }, [])
   const logout = async () => { await session.logout(); navigate('/login', { replace: true }) }
   const name = profile?.name || session.user?.displayName || 'Profissional'
-  const firstName = name.split(/\s+/)[0]
   const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
   const todayLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
   const closeMenu = () => setOpen(false)
@@ -67,11 +66,6 @@ export function ProfessionalShell() {
         <div className="professional-main">
           <header className="professional-topbar">
             <button className="menu-trigger icon-button" type="button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={20} /></button>
-            <div className="professional-topbar-heading">
-              <span className="eyebrow">PROFISSIONAL</span>
-              <h1>Olá, {firstName}!</h1>
-              <p>Seu espaço, sua agenda, mais possibilidades.</p>
-            </div>
             <div className="professional-topbar-meta">
               <span className="professional-topbar-date">{todayLabel}</span>
               <div className="professional-topbar-profile"><span className="professional-avatar">{initials}</span><strong>{name}</strong></div>

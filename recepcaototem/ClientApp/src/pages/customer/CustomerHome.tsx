@@ -47,11 +47,6 @@ function CustomerShell() {
         <div className="customer-main">
           <header className="customer-topbar">
             <button className="menu-trigger icon-button" type="button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={20} /></button>
-            <div className="customer-topbar-heading">
-              <span className="eyebrow">Área do cliente</span>
-              <h1>Olá, {firstName}!</h1>
-              <p>Seu bem-estar em um só lugar.</p>
-            </div>
             <div className="customer-topbar-meta">
               <span className="customer-topbar-date">{todayLabel}</span>
               <div className="customer-topbar-profile"><span className="customer-avatar">{initials}</span><strong>{name}</strong></div>

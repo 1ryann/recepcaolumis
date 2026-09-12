@@ -86,6 +86,7 @@ export function ProfessionalVisits() {
     {loading ? <div className="empty-state" role="status">Carregando atendimentos…</div>
       : <>
         {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="professional-visits-list">
         {sections.map(section => {
           const result = results[section.key]
           return <section className="panel table-panel professional-section" key={section.key}>
@@ -110,6 +111,7 @@ export function ProfessionalVisits() {
               </tr>)}</tbody></table></div>}
           </section>
         })}
+        </div>
       </>}
   </div>
 }
