@@ -5,6 +5,7 @@ import { professionalReservationsApi, type PagedResponse, type ReservationDto, t
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
 import { ProfessionalFilterBar } from '../../components/ProfessionalFilterBar'
 import { Modal } from '../../components/Modal'
+import { zoneLocalToIso } from './dateHelpers'
 
 const pageSize = 20
 const empty: PagedResponse<ReservationDto> = { items: [], page: 1, pageSize, totalCount: 0 }
@@ -16,10 +17,7 @@ const statusTones: Record<ReservationStatus, 'pending' | 'approved' | 'rejected'
 }
 const emptyForm = { startAt: '', endAt: '' }
 
-const reservationLocalToIso = (value: string) => {
-  const local = value.length === 16 ? `${value}:00` : value
-  return new Date(`${local}-04:00`).toISOString()
-}
+const reservationLocalToIso = (value: string) => zoneLocalToIso(value)
 const toInputDate = (value?: string | null) => value
   ? new Date(value).toLocaleString('sv-SE', { timeZone: 'America/Porto_Velho' }).replace(' ', 'T').slice(0, 16)
   : ''

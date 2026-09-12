@@ -1,6 +1,7 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { professionalReservationsApi, professionalVisitsApi, type ReservationDto, type VisitDto } from '../../api/modules'
+import { zoneDateKey } from './dateHelpers'
 
 function todayWindow() {
   const start = new Date()
@@ -24,14 +25,14 @@ function deriveAgendaStatus(reservationItem: ReservationDto, visits: VisitDto[])
   const matched = visits.find((item) => item.reservationId === reservationItem.id)
   if (!matched) return 'Agendado'
   if (matched.status === 'CANCELLED') return 'Cancelado'
-  if (matched.status === 'ENDED') return 'Concluído'
+  if (matched.status === 'ENDED') return 'Encerrado'
   if (matched.status === 'IN_SERVICE') return 'Em atendimento'
   if (matched.status === 'WAITING') return 'Aguardando'
   return 'Agendado'
 }
 
 function agendaStatusClass(label: string) {
-  if (label === 'Concluído') return 'status-approved'
+  if (label === 'Encerrado') return 'status-approved'
   if (label === 'Em atendimento') return 'status-approved'
   if (label === 'Aguardando') return 'status-pending'
   if (label === 'Cancelado') return 'status-cancelled'
@@ -78,7 +79,7 @@ export function ProfessionalAgenda() {
     const sorted = [...reservations].sort((a, b) => a.startAt.localeCompare(b.startAt))
     const byDay = new Map<string, ReservationDto[]>()
     for (const item of sorted) {
-      const key = new Date(item.startAt).toISOString().slice(0, 10)
+      const key = zoneDateKey(new Date(item.startAt))
       const bucket = byDay.get(key)
       if (bucket) bucket.push(item)
       else byDay.set(key, [item])

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { professionalVisitsApi, type PagedResponse, type VisitDto, type VisitStatus } from '../../api/modules'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { todayZoneDateKey, zoneDayBoundary } from './dateHelpers'
 
 const pageSize = 50
 const empty: PagedResponse<VisitDto> = { items: [], page: 1, pageSize, totalCount: 0 }
@@ -15,12 +16,7 @@ const statusTones: Record<VisitStatus, 'waiting' | 'in-service' | 'inactive' | '
 const formatDate = (value: string) => new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Porto_Velho',
 }).format(new Date(value))
-const todayBoundary = (end = false) => {
-  const now = new Date()
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Porto_Velho' }))
-  const value = local.toISOString().slice(0, 10)
-  return new Date(`${value}T${end ? '23:59:59' : '00:00:00'}-04:00`).toISOString()
-}
+const todayBoundary = (end = false) => zoneDayBoundary(todayZoneDateKey(), end)
 
 type Section = { key: VisitStatus; title: string }
 const sections: Section[] = [

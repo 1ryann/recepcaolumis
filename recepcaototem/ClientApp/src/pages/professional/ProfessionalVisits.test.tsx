@@ -34,3 +34,18 @@ test('Iniciar atendimento calls start with the concurrency token', async () => {
   fireEvent.click(await screen.findByRole('button', { name: /iniciar atendimento/i }))
   await waitFor(() => expect(professionalVisitsApi.start).toHaveBeenCalledWith('v1', 'tok-1'))
 })
+
+test('"Encerrados hoje" queries the zone calendar day even at 23:30 local time, not the UTC day', async () => {
+  // 2026-09-12T23:30 in America/Porto_Velho (UTC-4) is 2026-09-13T03:30Z: a
+  // buggy UTC-based day computation would derive 2026-09-13 as "today" here.
+  vi.setSystemTime(new Date('2026-09-13T03:30:00Z'))
+  try {
+    render(<ProfessionalVisits />)
+    await waitFor(() => expect(professionalVisitsApi.list).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ENDED', from: '2026-09-12T04:00:00.000Z', to: '2026-09-13T03:59:59.000Z' }),
+      expect.anything(),
+    ))
+  } finally {
+    vi.useRealTimers()
+  }
+})
