@@ -37,3 +37,13 @@ test('saves WhatsApp/description via PUT and reflects the returned profile', asy
   }))
   expect(await screen.findByDisplayValue('+5511988887777')).toBeInTheDocument()
 })
+
+test('the photo <img> is cache-busted with the current concurrencyToken so a replacement photo is not stale', async () => {
+  vi.mocked(professionalProfileApi.get).mockResolvedValue({
+    name: 'Maria Clara', profession: 'Psicóloga', description: 'Atendimento humanizado.',
+    whatsApp: '+5511999998888', hasPhoto: true, photoUrl: '/api/professional/me/photo', concurrencyToken: 'tok-9',
+  })
+  render(<ProfessionalProfile />)
+  const img = await screen.findByAltText('Foto de Maria Clara')
+  expect(img).toHaveAttribute('src', '/api/professional/me/photo?v=tok-9')
+})

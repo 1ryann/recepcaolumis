@@ -109,7 +109,7 @@ export function ProfessionalProfile() {
           <div className="professional-profile-photo">
             <div className="professional-profile-photo-frame">
               {profile.hasPhoto && profile.photoUrl
-                ? <img src={profile.photoUrl} alt={`Foto de ${profile.name}`} />
+                ? <img src={`${profile.photoUrl}?v=${profile.concurrencyToken}`} alt={`Foto de ${profile.name}`} />
                 : <span aria-hidden="true">{initials(profile.name)}</span>}
             </div>
             <label className="secondary-button">

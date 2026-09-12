@@ -170,6 +170,56 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
         Assert.Equal(1, await dbVerify.AuditEntries.CountAsync(x => x.Action == "PROFESSIONAL_PHOTO_REPLACED"));
     }
 
+    [Fact]
+    public async Task Storage_failure_while_staging_the_normalized_image_is_not_reported_as_an_invalid_photo()
+    {
+        await factory.ResetAsync();
+        var admin = await factory.CreateUserAsync("photo-restage-failure@lumis.test", Password, [SystemRoles.Administrador]);
+        var professional = Professional.Create("Restage", "Fisio", "65999999999", DateTimeOffset.UtcNow);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Professionals.Add(professional);
+            await db.SaveChangesAsync();
+        }
+        string token;
+        await using (var scope = factory.Services.CreateAsyncScope())
+            token = ConcurrencyToken.Encode((await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .Professionals.AsNoTracking().SingleAsync()).Version);
+
+        await using var child = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IPrivateFileStorage>();
+            services.AddSingleton<IPrivateFileStorage>(provider =>
+            {
+                var options = provider.GetRequiredService<IOptions<PrivateFileStorageOptions>>().Value;
+                return new ThrowOnSecondStageStorage(new FileSystemPrivateFileStorage(options));
+            });
+        }));
+        using var client = child.CreateClient(new() { BaseAddress = new Uri("https://localhost"), HandleCookies = true });
+        var csrf = await GetCsrfAsync(client);
+        using (var login = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email = admin.Email, password = Password })
+        })
+        {
+            login.Headers.Add("X-CSRF-TOKEN", csrf);
+            Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(login)).StatusCode);
+        }
+
+        var response = await ProfessionalPhotoTests.PutPhotoAsync(client, professional.Id, token,
+            TestImageData.Png(), "replacement.png", "image/png", await GetCsrfAsync(client));
+
+        // A disk-full/permission/IO failure while re-staging the normalized image is not the
+        // caller's fault: it must not be misreported as INVALID_PROFESSIONAL_PHOTO (400).
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("INVALID_PROFESSIONAL_PHOTO", body);
+        await using var verify = factory.Services.CreateAsyncScope();
+        var dbVerify = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Null((await dbVerify.Professionals.AsNoTracking().SingleAsync()).PhotoFileId);
+    }
+
     private async Task LoginAsync(HttpClient client, string email)
     {
         await factory.CreateUserAsync(email, Password, [SystemRoles.Administrador]);
@@ -219,6 +269,23 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
         public Task<Stream?> OpenReadAsync(string storageKey, CancellationToken ct) => inner.OpenReadAsync(storageKey, ct);
         public Task<bool> DeleteAsync(string storageKey, CancellationToken ct) =>
             storageKey == failedKey ? Task.FromResult(false) : inner.DeleteAsync(storageKey, ct);
+        public Task DiscardAsync(StagedPrivateFile staged, CancellationToken ct) => inner.DiscardAsync(staged, ct);
+    }
+
+    // The mutation stages the raw upload once (in ReadUploadAsync) and stages again after
+    // normalization; this simulates an IO failure hitting only that second, post-normalization stage.
+    private sealed class ThrowOnSecondStageStorage(IPrivateFileStorage inner) : IPrivateFileStorage
+    {
+        private int _stageCalls;
+        public Task<StagedPrivateFile> StageAsync(Stream source, long maximumBytes, CancellationToken ct) =>
+            Interlocked.Increment(ref _stageCalls) == 2
+                ? throw new IOException("Simulated disk failure while staging the normalized image.")
+                : inner.StageAsync(source, maximumBytes, ct);
+        public Task<string> CommitAsync(StagedPrivateFile staged, CancellationToken ct) => inner.CommitAsync(staged, ct);
+        public Task<Stream> OpenStagedReadAsync(StagedPrivateFile staged, CancellationToken ct) =>
+            inner.OpenStagedReadAsync(staged, ct);
+        public Task<Stream?> OpenReadAsync(string storageKey, CancellationToken ct) => inner.OpenReadAsync(storageKey, ct);
+        public Task<bool> DeleteAsync(string storageKey, CancellationToken ct) => inner.DeleteAsync(storageKey, ct);
         public Task DiscardAsync(StagedPrivateFile staged, CancellationToken ct) => inner.DiscardAsync(staged, ct);
     }
 }
