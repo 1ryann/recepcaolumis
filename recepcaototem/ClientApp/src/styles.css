@@ -2539,6 +2539,13 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-kpi-card strong { margin-top: 2px; overflow: hidden; color: var(--lumis-text); font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
 .professional-kpi-card span { margin-top: 2px; color: var(--lumis-muted); font-size: 11px; }
 
+/* Financeiro summary strip reuses .professional-kpi-card/.professional-kpi-icon but only
+   has 2 stats, so it gets its own 2-column grid instead of the 4-column default. The
+   existing .professional-kpi-grid responsive breakpoints below (1080/1024/640/560px)
+   still win the cascade at narrower widths and step it down to 1-up on mobile, since
+   they're declared later in this file and match the element's other class. */
+.finance-summary-grid { grid-template-columns: repeat(2, 1fr); }
+
 .professional-dashboard-columns { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
 .professional-agenda-today-panel,
 .professional-side-panel {

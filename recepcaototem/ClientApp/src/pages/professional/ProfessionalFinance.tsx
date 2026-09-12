@@ -1,3 +1,4 @@
+import { CalendarClock, Wallet } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { professionalFinanceApi, type FinancialChargeDto, type FinancialChargeStatus, type PagedResponse } from '../../api/modules'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
@@ -53,16 +54,16 @@ export function ProfessionalFinance() {
 
   return <div className="page-enter">
     <PageHeader title="Financeiro" description="Consulte suas cobranças e vencimentos." />
-    <section className="summary-strip">
-      <div className="summary-card">
-        <span>Valor em aberto</span>
-        <strong>{formatCurrency(openAmount)}</strong>
-      </div>
-      <div className="summary-card">
-        <span>Próximo vencimento</span>
-        <strong>{nextDueDate ? formatDate(nextDueDate) : '—'}</strong>
-      </div>
-    </section>
+    <div className="professional-kpi-grid finance-summary-grid">
+      <article className="professional-kpi-card">
+        <span className="professional-kpi-icon"><Wallet size={20} /></span>
+        <div><small>Valor em aberto</small><strong>{formatCurrency(openAmount)}</strong></div>
+      </article>
+      <article className="professional-kpi-card">
+        <span className="professional-kpi-icon"><CalendarClock size={20} /></span>
+        <div><small>Próximo vencimento</small><strong>{nextDueDate ? formatDate(nextDueDate) : '—'}</strong></div>
+      </article>
+    </div>
     <section className="panel table-panel">
       {loading ? <div className="empty-state" role="status">Carregando financeiro…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void load()}>Tentar novamente</button></EmptyState>
