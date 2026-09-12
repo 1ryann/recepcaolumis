@@ -190,7 +190,7 @@ a { color: inherit; }
 .occupancy-card { padding: 19px 20px; color: white; background: linear-gradient(135deg, #0c3b48, #125668); border-radius: 17px; box-shadow: 0 12px 25px rgba(11,59,73,.14); }.occupancy-card > div:first-child { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }.occupancy-card > div span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: rgba(255,255,255,.1); }.occupancy-card p { margin: 0; color: #bed3d7; font-size: 11px; }.occupancy-card strong { font-size: 24px; }.occupancy-bar { height: 5px; overflow: hidden; margin: 15px 0 9px; border-radius: 8px; background: rgba(255,255,255,.15); }.occupancy-bar i { display: block; height: 100%; border-radius: 8px; background: #6fc4ac; }.occupancy-card > small { color: #9ebcc3; font-size: 9px; }
 
 /* Status */
-.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 99px; font-size: 9px; font-weight: 800; white-space: nowrap; }.status-badge i { width: 6px; height: 6px; border-radius: 50%; }.status-paid,.status-active,.status-occupied { color: #297762; background: #e5f3ee; }.status-paid i,.status-active i,.status-occupied i { background: #48a88d; }.status-pending { color: #9a6a2a; background: #fff2dc; }.status-pending i { background: #d99a45; }.status-overdue { color: #a34848; background: #fce8e8; }.status-overdue i { background: #dc6969; }.status-inactive,.status-available { color: #687d84; background: #eaf0f1; }.status-inactive i,.status-available i { background: #8fa4aa; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 99px; font-size: 9px; font-weight: 800; white-space: nowrap; }.status-badge i { width: 6px; height: 6px; border-radius: 50%; }.status-paid,.status-active,.status-occupied { color: #297762; background: #e5f3ee; }.status-paid i,.status-active i,.status-occupied i { background: #48a88d; }.status-pending { color: #9a6a2a; background: #fff2dc; }.status-pending i { background: #d99a45; }.status-overdue { color: #a34848; background: #fce8e8; }.status-overdue i { background: #dc6969; }.status-inactive,.status-available { color: #687d84; background: #eaf0f1; }.status-inactive i,.status-available i { background: #8fa4aa; }.status-waiting { color: #2f6690; background: #e3eefb; }.status-waiting i { background: #5b9bd5; }.status-in-service { color: #1f7a72; background: #dff3f0; }.status-in-service i { background: #35a89a; }
 
 /* Rooms */
 .room-summary { display: flex; align-items: center; gap: 19px; margin: -5px 0 20px; color: var(--muted); font-size: 10px; }.room-summary span { display: flex; align-items: center; gap: 7px; }.room-summary b { margin-left: auto; color: #849398; font-weight: 650; }.legend-dot { width: 8px; height: 8px; border-radius: 50%; }.legend-dot.occupied { background: #4aaa90; }.legend-dot.available { background: #a4b7bc; }
@@ -1122,11 +1122,32 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-profile-form { display: grid; gap: 16px; max-width: 480px; }
 .professional-content .professional-profile-photo-frame { background: rgba(255,255,255,.06); }
 .professional-content .professional-profile-facts p { color: var(--lumis-text-dim); }
+/* Task 14: at narrow widths the photo row's two buttons ("Trocar foto"/"Remover foto")
+   don't fit beside the 88px photo frame on one line, forcing the whole page to scroll
+   horizontally. Wrap instead, matching ProfessionalFilterBar's own flex-wrap fix (Task 1). */
+@media (max-width: 480px) {
+  .professional-profile-photo { flex-wrap: wrap; }
+  .professional-profile-facts { grid-template-columns: 1fr; }
+}
+/* The native file input (label wraps it to trigger the picker) has its own intrinsic
+   width from the browser's "Escolher arquivo / Nenhum arquivo escolhido" chrome, which
+   was pushing the page wider than the viewport on narrow screens. Hide it — the label
+   click still opens the file picker — matching the existing .photo-upload label input
+   convention used by the admin/customer photo uploaders. */
+.professional-profile-photo input[type="file"] { display: none; }
 
 /* ProfessionalPhotoCropper — react-easy-crop's <Cropper> owns all drag/zoom/pinch
    interaction; this only sizes and frames the stage it renders into. */
 .professional-photo-crop-stage { position: relative; width: 100%; height: 320px; overflow: hidden; border-radius: 14px; background: #1b1b1b; }
 .professional-content .professional-photo-crop-stage { background: #141414; }
+/* Task 14: the shared .primary-button/.secondary-button/.ghost-button base is 42px tall —
+   2px under the 44px touch-target minimum (crop modal's "Salvar foto"/"Cancelar", and every
+   table-row action button: "Iniciar/Encerrar atendimento", "Cancelar", "Solicitar
+   remarcação/cancelamento"). Scoped to the professional area only, not raised globally,
+   following the same per-surface override pattern as .customer-qr-generated/.customer-dashboard-grid. */
+.professional-content .primary-button,
+.professional-content .secondary-button,
+.professional-content .ghost-button { min-height: 44px; }
 
 /* ProfessionalAvailability (AvailabilityEditor/ExceptionsEditor/OperatingHoursEditor) —
    these components are shared with the Admin Configurações page (Settings.tsx), which
