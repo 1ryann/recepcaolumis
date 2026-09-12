@@ -253,12 +253,6 @@ export function ProfessionalDashboard() {
   )
 }
 
-export function ProfessionalAgenda() {
-  const { reservations, loading, error } = useProfessionalContext()
-  const sorted = [...reservations].filter((item) => item.status !== 'CANCELLED').sort((a, b) => a.startAt.localeCompare(b.startAt))
-  return <section className="professional-section page-enter"><div className="page-header"><div><span className="page-eyebrow">Agenda</span><h1>Seus próximos horários</h1><p>Uma visão simples dos compromissos que dependem de você.</p></div></div>{error && <div className="form-error" role="alert">{error}</div>}{loading ? <div className="professional-loading">Carregando agenda…</div> : sorted.length === 0 ? <div className="professional-empty panel"><CalendarDays size={25} /><span>Nenhum compromisso encontrado.</span></div> : <div className="professional-agenda-list">{sorted.map((item) => <article className="professional-agenda-row panel" key={item.id}><div className="professional-agenda-date"><strong>{new Date(item.startAt).toLocaleDateString('pt-BR', { day: '2-digit' })}</strong><span>{new Date(item.startAt).toLocaleDateString('pt-BR', { month: 'short' })}</span></div><div><strong>{new Date(item.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — {new Date(item.endAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong><span>{item.roomName}</span></div><b className={`customer-status status-${item.status.toLowerCase()}`}>{item.status}</b></article>)}</div>}</section>
-}
-
 export function ProfessionalPlaceholder({ title }: { title: string }) { return <section className="professional-section page-enter"><span className="page-eyebrow">Área do profissional</span><h1>{title}</h1><div className="professional-empty panel"><Activity size={25} /><strong>Estamos preparando esta área</strong><span>O dashboard e a agenda já estão disponíveis.</span><Link className="secondary-button" to="/profissional">Voltar ao dashboard</Link></div></section> }
 
 function useProfessionalContext() { return useOutletContext<ProfessionalContext>() }

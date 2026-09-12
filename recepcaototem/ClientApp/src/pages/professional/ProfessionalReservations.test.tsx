@@ -13,7 +13,7 @@ const reservation = {
   originalReservationId: null, kind: 'NEW' as const, status: 'APPROVED' as const,
   startAt: '2026-09-15T13:00:00Z', endAt: '2026-09-15T14:00:00Z', requestedAt: '2026-09-10T00:00:00Z',
   decidedAt: '2026-09-10T00:00:00Z', rejectionReason: null, createdAt: '2026-09-10T00:00:00Z',
-  updatedAt: '2026-09-10T00:00:00Z', concurrencyToken: 'tok-1',
+  updatedAt: '2026-09-10T00:00:00Z', concurrencyToken: 'tok-1', customerName: null,
 }
 
 beforeEach(() => {

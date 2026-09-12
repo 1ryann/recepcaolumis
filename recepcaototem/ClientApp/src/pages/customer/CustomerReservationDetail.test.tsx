@@ -27,6 +27,7 @@ const approvedReservation: ReservationDto = {
   requestedAt: '2026-09-10T09:00:00Z',
   decidedAt: '2026-09-10T10:00:00Z',
   rejectionReason: null,
+  customerName: null,
   createdAt: '2026-09-10T09:00:00Z',
   updatedAt: '2026-09-10T10:00:00Z',
   concurrencyToken: 'v1',

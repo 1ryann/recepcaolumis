@@ -22,6 +22,7 @@ const reservation = {
   status: 'PENDING' as const, startAt: '2026-09-07T10:00:00Z', endAt: '2026-09-07T11:00:00Z',
   requestedAt: '2026-09-06T10:00:00Z', decidedAt: null, rejectionReason: null,
   createdAt: '2026-09-06T10:00:00Z', updatedAt: '2026-09-06T10:00:00Z', concurrencyToken: 'rv1',
+  customerName: null,
 }
 const page = { items: [reservation], page: 1, pageSize: 20, totalCount: 1 }
 const rooms = { items: [{ id: 'room-1', name: 'Sala Norte', isActive: true }], page: 1, pageSize: 100, totalCount: 1 }

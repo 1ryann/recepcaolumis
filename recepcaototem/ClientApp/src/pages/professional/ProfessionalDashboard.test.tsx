@@ -20,6 +20,7 @@ const reservation = (overrides: Partial<ReservationDto>): ReservationDto => ({
   startAt: '2026-09-11T13:00:00Z', endAt: '2026-09-11T14:00:00Z',
   requestedAt: '2026-09-01T00:00:00Z', decidedAt: null, rejectionReason: null,
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', concurrencyToken: 'v1',
+  customerName: null,
   ...overrides,
 })
 

@@ -320,6 +320,7 @@ export interface ReservationDto {
   createdAt: string
   updatedAt: string
   concurrencyToken: string
+  customerName: string | null
 }
 export interface ReservationPeriodInput { startAt: string, endAt: string }
 export interface ReservationInput extends ReservationPeriodInput { roomId: string, professionalId: string }

@@ -36,6 +36,7 @@ function makeReservation(overrides: Partial<ReservationDto>): ReservationDto {
     createdAt: '2026-09-10T09:00:00Z',
     updatedAt: '2026-09-10T10:00:00Z',
     concurrencyToken: 'v1',
+    customerName: null,
     ...overrides,
   }
 }
