@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { expect, test, vi, beforeEach } from 'vitest'
 import { professionalFinanceApi } from '../../api/modules'
 import { ProfessionalFinance } from './ProfessionalFinance'
@@ -19,9 +19,27 @@ beforeEach(() => {
   })
 })
 
-test('shows a summary of open amount and a table with computed OVERDUE status, no write actions', async () => {
+test('shows a summary of open amount and a table with a pt-BR status label, no write actions', async () => {
   render(<ProfessionalFinance />)
-  expect(await screen.findByText('OVERDUE')).toBeInTheDocument()
+  expect(await screen.findByText('Em atraso')).toBeInTheDocument()
+  expect(screen.queryByText('OVERDUE')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /marcar como pago/i })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /excluir/i })).not.toBeInTheDocument()
+})
+
+test('shows pagination controls and requests the next page when there are more charges than one page', async () => {
+  vi.mocked(professionalFinanceApi.list).mockResolvedValue({
+    items: [{ id: 'c1', leaseId: 'l1', professionalId: 'p1', tenantId: 't1',
+      referencePeriodStart: '2026-09-01T00:00:00Z', referencePeriodEnd: '2026-09-30T00:00:00Z',
+      dueDate: '2026-09-05', calculatedAmount: 1800, finalAmount: 1800, status: 'OVERDUE',
+      calculationDetails: '', adjustmentReason: null, cancellationReason: null, paidAt: null,
+      createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', concurrencyToken: 'tok' }],
+    page: 1, pageSize: 20, totalCount: 45,
+  })
+  render(<ProfessionalFinance />)
+  expect(await screen.findByText('Página 1 de 3')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /próxima/i }))
+  await waitFor(() => expect(professionalFinanceApi.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ page: 2 }), expect.anything(),
+  ))
 })
