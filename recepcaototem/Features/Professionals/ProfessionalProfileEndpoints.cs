@@ -1,8 +1,12 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Abstractions;
+using GestaoPredio.Application.Files;
 using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Infrastructure.Files;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
 
@@ -73,6 +77,53 @@ public static class ProfessionalProfileEndpoints
             return id is null ? Results.NotFound() : await ProfessionalPhotoEndpoints.Get(
                 id.Value, context, db, storage, loggerFactory, cancellationToken);
         });
+        group.MapPost("/photo", async (
+            HttpRequest request, HttpContext context, ApplicationDbContext db, IPrivateFileStorage storage,
+            IProfessionalPhotoValidator validator, IImageNormalizer imageNormalizer,
+            IOptions<PrivateFileStorageOptions> storageOptions, ProfessionalPhotoUploadRateLimiter rateLimiter,
+            TimeProvider timeProvider, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        {
+            var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            using var lease = await rateLimiter.AcquireAsync(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown", userId, cancellationToken);
+            if (!lease.IsAcquired) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
+            var professional = await db.Professionals
+                .SingleOrDefaultAsync(p => p.ApplicationUserId == userId && p.IsActive, cancellationToken);
+            if (professional is null)
+                return Results.NotFound(new { code = "PROFESSIONAL_PROFILE_NOT_LINKED", message = "O perfil profissional não está vinculado corretamente." });
+
+            var outcome = await ProfessionalPhotoMutation.PutAsync(professional, request, context, db, storage,
+                validator, imageNormalizer, storageOptions, timeProvider, loggerFactory, cancellationToken);
+            if (!outcome.Succeeded) return outcome.ErrorResult!;
+            return Results.Ok(new
+            {
+                hasPhoto = true,
+                photoUrl = "/api/professional/me/photo",
+                concurrencyToken = ConcurrencyToken.Encode(professional.Version)
+            });
+        }).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapDelete("/photo", async (
+            [FromBody] ProfessionalPhotoDeleteRequest request, HttpContext context, ApplicationDbContext db,
+            IPrivateFileStorage storage, TimeProvider timeProvider, ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var professional = await db.Professionals
+                .SingleOrDefaultAsync(p => p.ApplicationUserId == userId && p.IsActive, cancellationToken);
+            if (professional is null)
+                return Results.NotFound(new { code = "PROFESSIONAL_PROFILE_NOT_LINKED", message = "O perfil profissional não está vinculado corretamente." });
+
+            var outcome = await ProfessionalPhotoMutation.DeleteAsync(professional, request.ConcurrencyToken,
+                context, db, storage, timeProvider, loggerFactory, cancellationToken);
+            if (!outcome.Succeeded) return outcome.ErrorResult!;
+            return Results.Ok(new
+            {
+                hasPhoto = false,
+                photoUrl = (string?)null,
+                concurrencyToken = ConcurrencyToken.Encode(professional.Version)
+            });
+        }).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 }
