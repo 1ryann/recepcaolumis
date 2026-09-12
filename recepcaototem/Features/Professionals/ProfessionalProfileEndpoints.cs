@@ -46,16 +46,13 @@ public static class ProfessionalProfileEndpoints
             if (professional.Version != expectedVersion)
                 return ProfessionalEndpoints.Modified();
 
-            if (!WhatsAppNormalizer.TryNormalize(request.WhatsApp, out var canonicalWhatsApp))
-                return Results.BadRequest(new ApiError("INVALID_PROFESSIONAL", "Os dados do profissional são inválidos."));
-            var description = request.Description?.Trim();
-            if (description is { Length: > 500 } || (description is not null && (description.Contains('<') || description.Contains('>'))))
+            if (!WhatsAppNormalizer.TryNormalize(request.WhatsApp, out var canonicalWhatsApp) ||
+                !ProfessionalInput.TryDescription(request.Description, out var description))
                 return Results.BadRequest(new ApiError("INVALID_PROFESSIONAL", "Os dados do profissional são inválidos."));
 
             var now = timeProvider.GetUtcNow();
             db.Entry(professional).Property(x => x.Version).OriginalValue = expectedVersion;
-            professional.Update(professional.Name, professional.Profession, canonicalWhatsApp, now,
-                string.IsNullOrWhiteSpace(description) ? null : description);
+            professional.Update(professional.Name, professional.Profession, canonicalWhatsApp, now, description);
             db.AuditEntries.Add(ProfessionalEndpoints.CreateAudit(context, professional.Id, "PROFESSIONAL_PROFILE_UPDATED", now));
 
             try { await db.SaveChangesAsync(cancellationToken); }

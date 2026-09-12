@@ -52,7 +52,7 @@ internal static partial class ProfessionalInput
         return true;
     }
 
-    private static bool TryDescription(string? value, out string? normalized)
+    internal static bool TryDescription(string? value, out string? normalized)
     {
         normalized = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         return normalized is null || normalized.Length <= 500 && !normalized.Contains('<') && !normalized.Contains('>');
