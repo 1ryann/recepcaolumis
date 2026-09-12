@@ -25,7 +25,8 @@ internal static class ReservationMappings
     public static ReservationResponse ToResponse(
         this Reservation reservation,
         string roomName,
-        string professionalName) => new(
+        string professionalName,
+        string? customerName = null) => new(
             reservation.Id,
             reservation.RoomId,
             roomName,
@@ -41,5 +42,6 @@ internal static class ReservationMappings
             reservation.RejectionReason,
             reservation.CreatedAt,
             reservation.UpdatedAt,
-            ConcurrencyToken.Encode(reservation.Version));
+            ConcurrencyToken.Encode(reservation.Version),
+            customerName);
 }

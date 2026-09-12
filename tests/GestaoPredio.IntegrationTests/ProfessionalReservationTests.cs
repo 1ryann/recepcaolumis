@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
@@ -168,6 +170,58 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
             value.ProfessionalId == seeded.OwnerProfessionalId));
         Assert.False(await verificationDb.AuditEntries.AnyAsync(value =>
             value.Action == AuditActions.ReservationRequested));
+    }
+
+    [Fact]
+    public async Task Reservation_response_includes_customer_name_when_a_customer_is_linked()
+    {
+        await factory.ResetAsync();
+        var seeded = await SeedLinkedProfessionalsAsync();
+        var now = DateTimeOffset.UtcNow;
+        var customer = Customer.Create("Ana Beatriz", "+5565977777777", now);
+        var reservation = Reservation.CreateApproved(seeded.OwnerRoomId, seeded.OwnerProfessionalId,
+            now.AddDays(1), now.AddDays(1).AddHours(1), "admin", now, customer.Id);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AddRange(customer, reservation);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(seeded.OwnerEmail);
+
+        var detailResponse = await factory.Client.GetAsync($"/api/professional/reservations/{reservation.Id}");
+        detailResponse.EnsureSuccessStatusCode();
+        var detailBody = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Ana Beatriz", detailBody.GetProperty("customerName").GetString());
+
+        var listResponse = await factory.Client.GetAsync("/api/professional/reservations");
+        listResponse.EnsureSuccessStatusCode();
+        var listBody = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var item = listBody.GetProperty("items").EnumerateArray()
+            .Single(element => element.GetProperty("id").GetGuid() == reservation.Id);
+        Assert.Equal("Ana Beatriz", item.GetProperty("customerName").GetString());
+    }
+
+    [Fact]
+    public async Task Reservation_response_has_null_customer_name_when_no_customer_is_linked()
+    {
+        await factory.ResetAsync();
+        var seeded = await SeedLinkedProfessionalsAsync();
+        var now = DateTimeOffset.UtcNow;
+        var reservation = Reservation.CreateApproved(seeded.OwnerRoomId, seeded.OwnerProfessionalId,
+            now.AddDays(1), now.AddDays(1).AddHours(1), "admin", now);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Reservations.Add(reservation);
+            await db.SaveChangesAsync();
+        }
+        await LoginAsync(seeded.OwnerEmail);
+
+        var response = await factory.Client.GetAsync($"/api/professional/reservations/{reservation.Id}");
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(body.GetProperty("customerName").ValueKind is JsonValueKind.Null);
     }
 
     private async Task<SeededResources> SeedLinkedProfessionalsAsync()

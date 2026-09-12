@@ -36,4 +36,5 @@ public sealed record ReservationResponse(
     string? RejectionReason,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    string ConcurrencyToken);
+    string ConcurrencyToken,
+    string? CustomerName = null);

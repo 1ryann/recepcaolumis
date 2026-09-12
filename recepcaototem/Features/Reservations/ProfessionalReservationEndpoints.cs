@@ -69,7 +69,13 @@ public static class ProfessionalReservationEndpoints
             from reservation in reservations
             join room in db.Rooms.AsNoTracking() on reservation.RoomId equals room.Id
             join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
-            select new { Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name };
+            join customer in db.Customers.AsNoTracking() on reservation.CustomerId equals (Guid?)customer.Id into customerGroup
+            from customer in customerGroup.DefaultIfEmpty()
+            select new
+            {
+                Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name,
+                CustomerName = customer != null ? customer.Name : null
+            };
         var totalCount = await query.CountAsync(cancellationToken);
         var ordered = actualOrderBy == "asc"
             ? query.OrderBy(row => row.Reservation.StartAt).ThenBy(row => row.Reservation.Id)
@@ -77,7 +83,7 @@ public static class ProfessionalReservationEndpoints
         var rows = await ordered
             .Skip((actualPage - 1) * actualSize).Take(actualSize).ToListAsync(cancellationToken);
         return Results.Ok(new PagedResponse<ReservationResponse>(
-            rows.Select(row => row.Reservation.ToResponse(row.RoomName, row.ProfessionalName)).ToArray(),
+            rows.Select(row => row.Reservation.ToResponse(row.RoomName, row.ProfessionalName, row.CustomerName)).ToArray(),
             actualPage, actualSize, totalCount));
     }
 
@@ -94,11 +100,17 @@ public static class ProfessionalReservationEndpoints
                 .Where(value => value.ProfessionalId == professionalId.Value && value.Id == id)
             join room in db.Rooms.AsNoTracking() on reservation.RoomId equals room.Id
             join professional in db.Professionals.AsNoTracking() on reservation.ProfessionalId equals professional.Id
-            select new { Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name })
+            join customer in db.Customers.AsNoTracking() on reservation.CustomerId equals (Guid?)customer.Id into customerGroup
+            from customer in customerGroup.DefaultIfEmpty()
+            select new
+            {
+                Reservation = reservation, RoomName = room.Name, ProfessionalName = professional.Name,
+                CustomerName = customer != null ? customer.Name : null
+            })
             .SingleOrDefaultAsync(cancellationToken);
         return row is null
             ? Results.NotFound()
-            : Results.Ok(row.Reservation.ToResponse(row.RoomName, row.ProfessionalName));
+            : Results.Ok(row.Reservation.ToResponse(row.RoomName, row.ProfessionalName, row.CustomerName));
     }
 
     private static async Task<IResult> RequestNew(
