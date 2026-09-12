@@ -1110,6 +1110,24 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-content .professional-empty,
 .professional-content .professional-loading { color: var(--lumis-muted); }
 
+/* Meu Perfil (ProfessionalProfile.tsx) — photo circle, read-only name/profession facts,
+   editable WhatsApp/description form, scoped under .professional-content like every
+   other professional-area page. */
+.professional-profile-panel { display: grid; gap: 20px; padding: 22px; }
+.professional-profile-photo { display: flex; align-items: center; gap: 14px; }
+.professional-profile-photo-frame { width: 88px; height: 88px; overflow: hidden; display: grid; place-items: center; flex: none; color: var(--brand); border-radius: 50%; background: #dfeaea; font-size: 26px; font-weight: 800; }
+.professional-profile-photo-frame img { width: 100%; height: 100%; object-fit: cover; }
+.professional-profile-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.professional-profile-facts p { margin: 4px 0 0; color: var(--ink); font-size: 14px; font-weight: 600; }
+.professional-profile-form { display: grid; gap: 16px; max-width: 480px; }
+.professional-content .professional-profile-photo-frame { background: rgba(255,255,255,.06); }
+.professional-content .professional-profile-facts p { color: var(--lumis-text-dim); }
+
+/* ProfessionalPhotoCropper — react-easy-crop's <Cropper> owns all drag/zoom/pinch
+   interaction; this only sizes and frames the stage it renders into. */
+.professional-photo-crop-stage { position: relative; width: 100%; height: 320px; overflow: hidden; border-radius: 14px; background: #1b1b1b; }
+.professional-content .professional-photo-crop-stage { background: #141414; }
+
 /* LUMIS admin dashboard — dark surfaces for KPI cards and panels, replacing the
    light .panel/.metric-card convention on this page only (other admin pages
    keep the existing quiet-light rhythm). */

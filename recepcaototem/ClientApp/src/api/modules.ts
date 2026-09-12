@@ -836,6 +836,25 @@ export const professionalRegistrationApi = {
   },
 }
 
+export interface ProfessionalProfileDto {
+  name: string; profession: string; description: string | null; whatsApp: string
+  hasPhoto: boolean; photoUrl: string | null; concurrencyToken: string
+}
+export interface ProfessionalProfileUpdateInput { whatsApp: string; description: string | null; concurrencyToken: string }
+export const professionalProfileApi = {
+  get(signal?: AbortSignal) { return apiClient.get<ProfessionalProfileDto>('/api/professional/me', { signal }) },
+  update(input: ProfessionalProfileUpdateInput) { return apiClient.put<ProfessionalProfileDto>('/api/professional/me', input) },
+  uploadPhoto(file: Blob, concurrencyToken: string) {
+    const form = new FormData()
+    form.append('concurrencyToken', concurrencyToken)
+    form.append('file', file, file instanceof File ? file.name : 'photo.png')
+    return apiClient.postMultipart<{ hasPhoto: boolean; photoUrl: string | null; concurrencyToken: string }>('/api/professional/me/photo', form)
+  },
+  deletePhoto(concurrencyToken: string) {
+    return apiClient.delete<{ hasPhoto: boolean; photoUrl: string | null; concurrencyToken: string }>('/api/professional/me/photo', { concurrencyToken })
+  },
+}
+
 export const receptionApi = {
   overview(signal?: AbortSignal) {
     return apiClient.get<ReceptionOverviewDto>('/api/reception/overview', { signal })
