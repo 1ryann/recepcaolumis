@@ -26,6 +26,7 @@ import { ProfessionalApplicationStatus } from '../pages/professional/Professiona
 import { ProfessionalAvailability } from '../pages/professional/ProfessionalAvailability'
 import { ProfessionalProfile } from '../pages/professional/ProfessionalProfile'
 import { ProfessionalReservations } from '../pages/professional/ProfessionalReservations'
+import { ProfessionalVisits } from '../pages/professional/ProfessionalVisits'
 import { ProfessionalApplications } from '../pages/admin/ProfessionalApplications'
 import { DevelopmentAppStore } from './DevelopmentAppStore'
 
@@ -56,7 +57,7 @@ export default function DevelopmentApp() {
             <Route index element={<ProfessionalDashboard />} />
             <Route path="agenda" element={<ProfessionalAgenda />} />
             <Route path="reservas" element={<ProfessionalReservations />} />
-            <Route path="atendimentos" element={<ProfessionalPlaceholder title="Atendimentos" />} />
+            <Route path="atendimentos" element={<ProfessionalVisits />} />
             <Route path="disponibilidade" element={<ProfessionalAvailability />} />
             <Route path="locacoes" element={<ProfessionalPlaceholder title="Locações" />} />
             <Route path="financeiro" element={<ProfessionalPlaceholder title="Financeiro" />} />
