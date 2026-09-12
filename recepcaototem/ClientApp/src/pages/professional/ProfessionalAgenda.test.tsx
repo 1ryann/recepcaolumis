@@ -66,3 +66,27 @@ test('switching to Semana view re-fetches with a week-wide range', async () => {
   fireEvent.click(screen.getByRole('button', { name: /semana/i }))
   await vi.waitFor(() => expect(professionalReservationsApi.list).toHaveBeenCalledTimes(2))
 })
+
+test('Semana view day heading reflects the Porto Velho calendar day even when the browser runs in a different timezone', async () => {
+  // 2026-09-12T03:30:00Z is 2026-09-11 23:30 in Porto Velho (UTC-4) but already 2026-09-12
+  // in a far-east timezone (UTC+14) — a real day-boundary divergence, not a contrived one.
+  const boundaryInstant = '2026-09-12T03:30:00Z'
+  const originalTz = process.env.TZ
+  process.env.TZ = 'Pacific/Kiritimati'
+  try {
+    const expectedHeading = new Date(boundaryInstant).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'short', timeZone: 'America/Porto_Velho',
+    })
+    vi.mocked(professionalReservationsApi.list).mockResolvedValue({
+      items: [{ ...baseReservation, startAt: boundaryInstant, endAt: '2026-09-12T04:30:00Z', customerName: 'Ana Beatriz' }],
+      page: 1, pageSize: 50, totalCount: 1,
+    })
+    vi.mocked(professionalVisitsApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 50, totalCount: 0 })
+    render(<ProfessionalAgenda />)
+    await screen.findByText('Sala 1')
+    fireEvent.click(screen.getByRole('button', { name: /semana/i }))
+    expect(await screen.findByText(expectedHeading)).toBeInTheDocument()
+  } finally {
+    process.env.TZ = originalTz
+  }
+})

@@ -1,7 +1,7 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { professionalReservationsApi, professionalVisitsApi, type ReservationDto, type VisitDto } from '../../api/modules'
-import { zoneDateKey } from './dateHelpers'
+import { PROFESSIONAL_TIME_ZONE, zoneDateKey } from './dateHelpers'
 
 function todayWindow() {
   const start = new Date()
@@ -40,7 +40,7 @@ function agendaStatusClass(label: string) {
 }
 
 function timeLabel(value: string) { return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }
-function shortDateLabel(value: string) { return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) }
+function shortDateLabel(value: string) { return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: PROFESSIONAL_TIME_ZONE }) }
 
 // Priority order for the name shown against each appointment, all backed by real recorded data:
 //   1. Customer.Name via the reservation's own linked customer, when present.
