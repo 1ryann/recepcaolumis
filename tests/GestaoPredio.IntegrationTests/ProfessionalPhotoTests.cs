@@ -181,6 +181,32 @@ public sealed class ProfessionalPhotoTests(ModulesApiFactory factory)
         Assert.Single(Directory.EnumerateFiles(Path.Combine(factory.PrivateFilesRoot, "files")));
     }
 
+    [Fact]
+    public async Task Stale_token_on_delete_returns_conflict_and_leaves_photo_intact()
+    {
+        await PrepareAdminAsync("photo-delete-race@lumis.test");
+        var professional = await CreateProfessionalAsync();
+        var uploaded = (await (await PutPhotoWithCsrfAsync(professional, TestImageData.Png(), "photo.png", "image/png"))
+            .Content.ReadFromJsonAsync<ProfessionalPayload>())!;
+
+        var bumped = await factory.PutWithCsrfAsync($"/api/admin/professionals/{uploaded.Id}", new
+        {
+            name = "Ana Renamed", profession = "Fisio", whatsApp = "65999999999",
+            concurrencyToken = uploaded.ConcurrencyToken
+        });
+        Assert.Equal(HttpStatusCode.OK, bumped.StatusCode);
+
+        var stale = await factory.DeleteWithCsrfAsync($"/api/admin/professionals/{uploaded.Id}/photo",
+            new { concurrencyToken = uploaded.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Equal("RESOURCE_MODIFIED", (await stale.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.NotNull((await db.Professionals.AsNoTracking().SingleAsync()).PhotoFileId);
+        Assert.Equal(1, await db.PrivateFiles.CountAsync());
+    }
+
     private async Task PrepareAdminAsync(string email)
     {
         await factory.ResetAsync();
