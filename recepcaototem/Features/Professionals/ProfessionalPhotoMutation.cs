@@ -87,12 +87,24 @@ internal static class ProfessionalPhotoMutation
         }
 
         NormalizedImage normalized;
-        await using (var validatedContent = await storage.OpenStagedReadAsync(upload.Staged, cancellationToken))
+        StagedPrivateFile normalizedStaged;
+        try
         {
-            normalized = await imageNormalizer.NormalizeAsync(validatedContent, cancellationToken);
+            await using (var validatedContent = await storage.OpenStagedReadAsync(upload.Staged, cancellationToken))
+            {
+                normalized = await imageNormalizer.NormalizeAsync(validatedContent, cancellationToken);
+            }
+            normalizedStaged = await storage.StageAsync(normalized.Content,
+                storageOptions.Value.ProfessionalPhotoMaxBytes, cancellationToken);
         }
-        var normalizedStaged = await storage.StageAsync(normalized.Content,
-            storageOptions.Value.ProfessionalPhotoMaxBytes, cancellationToken);
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // ValidateAsync only sniffs headers/chunks; it does not fully decode pixel data, so a
+            // header-valid-but-not-genuinely-decodable image can still reach here and blow up
+            // inside NormalizeAsync's real decode. Treat that exactly like any other invalid photo.
+            await DiscardSafely(storage, upload.Staged);
+            return PhotoMutationOutcome.Failed(InvalidPhoto());
+        }
         await DiscardSafely(storage, upload.Staged); // the original, pre-normalization staged file is no longer needed
 
         string newStorageKey;

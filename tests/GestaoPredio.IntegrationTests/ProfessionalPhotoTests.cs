@@ -122,6 +122,30 @@ public sealed class ProfessionalPhotoTests(ModulesApiFactory factory)
         Assert.Equal(512, image.Height);
     }
 
+    // Header/chunk sniffing (IProfessionalPhotoValidator) does not fully decode pixel data, so a
+    // header-valid-but-not-genuinely-decodable image can pass ValidateAsync and only fail once
+    // ImageSharpImageNormalizer actually tries to decode it. This must surface as the same
+    // 400 INVALID_PROFESSIONAL_PHOTO as any other invalid photo, not an unhandled 500, and must
+    // not leak the staged upload.
+    [Fact]
+    public async Task Photo_that_passes_sniffing_but_fails_real_decode_is_rejected_without_leaking_staged_file()
+    {
+        await PrepareAdminAsync("photo-undecodable@lumis.test");
+        var professional = await CreateProfessionalAsync();
+
+        var response = await PutPhotoWithCsrfAsync(professional, TestImageData.SniffValidButUndecodableWebP(),
+            "photo.webp", "image/webp");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("INVALID_PROFESSIONAL_PHOTO", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(factory.PrivateFilesRoot, ".staging")));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(factory.PrivateFilesRoot, "files")));
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(0, await db.PrivateFiles.CountAsync());
+        Assert.Null((await db.Professionals.AsNoTracking().SingleAsync()).PhotoFileId);
+    }
+
     [Fact]
     public async Task Oversized_upload_is_rejected_without_artifacts()
     {

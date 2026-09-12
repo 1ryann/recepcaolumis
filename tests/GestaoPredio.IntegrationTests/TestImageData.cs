@@ -56,6 +56,31 @@ internal static class TestImageData
         return stream.ToArray();
     }
 
+    /// <summary>
+    /// A WebP payload that passes this repo's own header/chunk-sniffing <c>WebPParser</c> (used by
+    /// <c>IProfessionalPhotoValidator</c>) but is NOT a genuinely decodable image: its VP8L
+    /// "huffman code lengths" payload is synthetic/truncated, so a real pixel decoder (ImageSharp's
+    /// <c>Image.LoadAsync</c>) throws <c>ImageFormatException: Error building huffman table</c> when
+    /// asked to actually decode it. This is exactly the gap between lightweight validation and real
+    /// decoding that <c>ImageSharpImageNormalizer</c> exposed once photo uploads started being
+    /// normalized — used to construct a test for the discard-on-normalize-failure path.
+    /// </summary>
+    public static byte[] SniffValidButUndecodableWebP()
+    {
+        byte[] payload = [0x2f, 0x00, 0x00, 0x00, 0x00, 0x00];
+        using var stream = new MemoryStream();
+        stream.Write("RIFF"u8);
+        Span<byte> size = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)(4 + 8 + payload.Length));
+        stream.Write(size);
+        stream.Write("WEBP"u8);
+        stream.Write("VP8L"u8);
+        BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)payload.Length);
+        stream.Write(size);
+        stream.Write(payload);
+        return stream.ToArray();
+    }
+
     private static void WriteChunk(Stream stream, string type, byte[] data)
     {
         Span<byte> value = stackalloc byte[4];
