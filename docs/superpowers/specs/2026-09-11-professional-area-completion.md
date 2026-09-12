@@ -4,6 +4,8 @@
 
 **Branch:** `codex/reception-backend` (worktree `.worktrees/reception-backend`). HEAD no momento da escrita: `f88fcc2c79f0da898ae06b135b4e232d7f165398`.
 
+**Revisão formal (2026-09-12):** todos os contratos, DTOs, códigos de erro e status HTTP citados neste documento foram reconferidos linha a linha contra o código real (não só contra o relatório de investigação inicial). Correções feitas nesta revisão: `PROFESSIONAL_PROFILE_NOT_LINKED` é `404`, não `403`; toda mutação nova precisa de `.AddEndpointFilter<AntiforgeryFilter>()` (convenção universal do projeto, ausente na primeira versão); o código de conflito de concorrência é `409 RESOURCE_MODIFIED` (nomeado explicitamente, antes só "formato já existente"); `DELETE /api/professional/me/photo` reaproveita literalmente o record `ProfessionalPhotoDeleteRequest` já existente; adicionada nota de implementação sobre `Professional.Update` não ter um método de atualização parcial. Nenhuma dessas correções muda a arquitetura ou a decisão de reutilização já aprovada — são precisão de contrato.
+
 **Escopo:** finalizar a Área do Profissional — Dashboard, Agenda, Disponibilidade, Atendimentos, Reservas, Locações, Financeiro, Meu Perfil — substituindo todos os placeholders "Estamos preparando esta área" por páginas reais sobre dados reais, e adicionar o autoatendimento de perfil + foto do profissional (WhatsApp, descrição, foto).
 
 **Princípio arquitetural (não negociável):** reutilizar o backend existente sempre que possível. Nova infraestrutura só para lacunas reais. A inspeção abaixo mostra que a maior parte do que este documento precisa **já existe e funciona** — o trabalho novo é menor do que o pedido original presumia.
@@ -204,7 +206,7 @@ Nomes de status a exibir ao usuário (rótulo, não o enum): `WAITING` → "Agua
 
 ## 11. Disponibilidade
 
-**Backend:** nenhuma mudança — módulo já completo (`INHERIT_GLOBAL`/`CUSTOM`, múltiplos intervalos por dia, `effectiveDays`, exceções somente redutoras, fail-closed sem `OperatingHours` — tudo já implementado, ver spec original `2026-09-07-professional-availability-design.md`).
+**Backend:** nenhuma mudança — módulo já completo (`INHERIT_GLOBAL`/`CUSTOM`, múltiplos intervalos por dia, `effectiveDays`, exceções somente redutoras, fail-closed sem `OperatingHours` — tudo já implementado, ver spec original `2026-09-07-professional-availability-design.md`). Rotas reais confirmadas: `GET`/`PUT /api/professional/availability` e `GET`/`POST /exceptions`, `PUT`/`DELETE /exceptions/{id}` (`recepcaototem/Features/Availability/ProfessionalAvailabilityEndpoints.cs:21-27`, todas `RequireAuthorization("Professional")`, mutações com `AntiforgeryFilter`) — este é exatamente o padrão self-serve (própria identidade autenticada, sem receber `professionalId` no corpo/rota) que os novos endpoints de perfil/foto em §12-13 replicam.
 
 **Frontend:** `ProfessionalAvailability.tsx` já é real e funcional (`AvailabilityEditor` + `ExceptionsEditor`, com tratamento de conflito de concorrência). Trabalho desta fase é só de **coerência visual** com o shell profissional — garantir que usa os mesmos tokens `--lumis-*`/classes `professional-*` que as demais páginas, sem redesenhar a lógica de edição.
 
@@ -245,6 +247,8 @@ ProfessionalProfileResponse(
 ```
 PUT /api/professional/me
 Auth: "Professional"
+Filtro: .AddEndpointFilter<AntiforgeryFilter>()  — obrigatório; toda mutação (POST/PUT/DELETE) do sistema já
+  segue esta convenção sem exceção (confirmado em Reservations, Visits, Availability, Finance admin, Photo admin).
 ```
 
 Request (`IStrictModuleRequest` — rejeita qualquer campo além destes três):
@@ -261,9 +265,11 @@ Nunca aceita `ProfessionalId`, `Name`, `Profession`, `PhotoFileId`, ou qualquer 
 
 Validação: reutilizar exatamente `WhatsAppNormalizer.TryNormalize` e a mesma regra de `Description` (≤500, sem `<`/`>`) já aplicada em `Professional.NormalizeDescription`/`ProfessionalInput.TryValidate`. Falha de validação → `400 INVALID_PROFESSIONAL` (mesmo código já usado pelo endpoint admin — não introduzir `INVALID_WHATSAPP`/`DESCRIPTION_TOO_LONG` como códigos novos).
 
-Concorrência: mesmo padrão de `ConcurrencyToken.TryDecode` + `db.Entry(professional).Property(x => x.Version).OriginalValue` já usado em `ProfessionalPhotoEndpoints`/`ProfessionalReservationEndpoints` — token inválido/expirado → `409` (mesmo formato de conflito já usado nesses endpoints, ex. `ProfessionalEndpoints.Modified()`).
+Concorrência: mesmo padrão de `ConcurrencyToken.TryDecode` + `db.Entry(professional).Property(x => x.Version).OriginalValue` já usado em `ProfessionalPhotoEndpoints`/`ProfessionalReservationEndpoints` — token inválido/expirado → `400 INVALID_CONCURRENCY_TOKEN` (`ProfessionalEndpoints.InvalidToken()`); versão desatualizada → `409 RESOURCE_MODIFIED` (`ProfessionalEndpoints.Modified()`, confirmado em `ProfessionalEndpoints.cs:203-205`) — os dois códigos exatos já existentes, reaproveitados tal e qual.
 
 Resolução do profissional atual: mesmo padrão `ApplicationUserId == userId && IsActive` já usado nos outros 5 lugares (§1.2) — sem introduzir um sexto padrão diferente.
+
+Nota de implementação: o domínio **não tem** um método de atualização parcial — `Professional.Update(name, profession, whatsApp, occurredAt, description?)` (`Professional.cs:39-42`) sempre recebe os quatro campos juntos. O handler do `PUT` deve chamar `professional.Update(professional.Name, professional.Profession, whatsAppNormalizado, now, description)` — passando `Name`/`Profession` atuais inalterados — em vez de propor um novo método de domínio só para os dois campos editáveis.
 
 ---
 
@@ -275,7 +281,7 @@ Resolução do profissional atual: mesmo padrão `ApplicationUserId == userId &&
 - Entidade `PrivateFile` (`Id`, `StorageKey`, `MimeType`, `Length`, `Purpose`, `CreatedAt`) — já existe, `Purpose` já restrito a `PrivateFilePurposes.ProfessionalPhoto`.
 - `IPrivateFileStorage` (`StageAsync`/`CommitAsync`/`OpenStagedReadAsync`/`OpenReadAsync`/`DeleteAsync`/`DiscardAsync`) + implementação `FileSystemPrivateFileStorage` — já implementa exatamente o ciclo de vida seguro pedido (stage em `.staging/`, commit atômico via `File.Move` para `files/{guid-hex}`, nunca apaga o arquivo antigo antes do novo estar persistido).
 - Config `Storage__PrivateFilesPath` (seção `Storage`, já em uso em produção/Railway Volume) e `Storage__ProfessionalPhotoMaxBytes` (default 5 MiB, teto rígido 10 MiB em `PrivateFileStorageOptions.MaximumProfessionalPhotoBytes`) — já batem com o limite de 5 MB pedido.
-- Validador `ProfessionalPhotoValidator`/`IProfessionalPhotoValidator` — já rejeita por magic-bytes reais (não confia em extensão/Content-Type), já valida dimensões (1-4096 px, até 16.777.216 px totais) para `.jpg/.jpeg/.png/.webp`.
+- Validador `ProfessionalPhotoValidator`/`IProfessionalPhotoValidator` (`src/GestaoPredio.Infrastructure/Files/ProfessionalPhotoValidator.cs`) — exige que extensão do nome de arquivo, `Content-Type` declarado no multipart e os magic bytes efetivamente lidos concordem entre si (nenhum dos três é aceito isoladamente); dimensões (1-4096 px por lado, até 16.777.216 px totais — `ImageDimensions.IsSafe`) já são verificadas dentro de cada parser (`JpegParser`/`PngParser`/`WebPParser`) para `.jpg/.jpeg/.png/.webp`.
 - Endpoints admin `PUT`/`DELETE`/`GET /api/admin/professionals/{id}/photo` (`ProfessionalPhotoEndpoints.cs`) — já fazem staging→validação→commit→transação DB→cleanup do arquivo antigo, com rollback seguro em qualquer falha antes do commit.
 - Endpoint público `GET /api/totem/professionals/{id}/photo` (`AllowAnonymous`) — já existe, já retorna 404 quando não há foto/profissional inativo/purpose divergente, 503 só para falha real de storage.
 - `TotemProfessionalCardDto`/`TotemProfessionalCard` — **já tem o campo `photoUrl`** (aditivo, já implementado na spec `2026-09-09`). O carrossel já faz fallback para iniciais em `photoUrl == null` ou `onError`. **Este requisito do pedido original já está pronto**, nada a fazer no Totem além do ajuste de cache (§13.5).
@@ -290,11 +296,13 @@ Novas rotas (mesmo prefixo `/api/professional/me` já estabelecido pelo `GET` ex
 POST   /api/professional/me/photo      Content-Type: multipart/form-data
 DELETE /api/professional/me/photo
 Auth: "Professional" (ambas)
+Filtro: .AddEndpointFilter<AntiforgeryFilter>() em ambas — mesma convenção universal do resto do sistema
+  (confirmado nas mutações admin de foto, Reservations, Visits, Availability).
 ```
 
 `POST` — mesmas duas partes multipart já usadas pelo admin (`file`, `concurrencyToken`), mesmo parsing manual via `MultipartReader` (`ReadUploadAsync`, reaproveitado). **Não recebe `professionalId` em nenhum lugar** (nem rota, nem body, nem query) — o profissional é sempre resolvido pela identidade autenticada, igual ao padrão de `GET /api/professional/me`.
 
-`DELETE` — mesmo padrão, corpo só com `concurrencyToken` (JSON, `ProfessionalConcurrencyRequest` já existe implicitamente no formato usado por Visits/Reservations — reaproveitar o mesmo shape).
+`DELETE` — mesmo padrão, corpo só com `concurrencyToken`. Reutilizar literalmente o record já existente `ProfessionalPhotoDeleteRequest(string? ConcurrencyToken) : IStrictModuleRequest` (`ProfessionalPhotoEndpoints.cs:16`) como tipo do body — não criar um segundo tipo equivalente.
 
 ### 13.3 Novo de verdade: normalização para WebP 512×512
 
@@ -341,15 +349,17 @@ GET /api/professional/me  →  ProfessionalProfileResponse
 
 PUT /api/professional/me  ←  ProfessionalProfileUpdateRequest : IStrictModuleRequest
   { whatsApp, description, concurrencyToken }
-  → 200 ProfessionalProfileResponse (atualizado) | 400 INVALID_PROFESSIONAL | 409 (conflito de concorrência, formato já existente)
+  → 200 ProfessionalProfileResponse (atualizado)
+  | 400 INVALID_PROFESSIONAL | 400 INVALID_CONCURRENCY_TOKEN | 404 PROFESSIONAL_PROFILE_NOT_LINKED | 409 RESOURCE_MODIFIED
 
 POST /api/professional/me/photo   (multipart: file, concurrencyToken)
   → 200 { hasPhoto: true, photoUrl, concurrencyToken }
-  | 400 INVALID_PROFESSIONAL_PHOTO | 401 | 403 PROFESSIONAL_PROFILE_NOT_LINKED | 409 | 429 | 503 PHOTO_UNAVAILABLE
+  | 400 INVALID_PROFESSIONAL_PHOTO | 400 INVALID_CONCURRENCY_TOKEN | 401 | 404 PROFESSIONAL_PROFILE_NOT_LINKED
+  | 409 RESOURCE_MODIFIED | 429 | 503 PHOTO_UNAVAILABLE
 
 DELETE /api/professional/me/photo  ←  { concurrencyToken }
   → 200 { hasPhoto: false, photoUrl: null, concurrencyToken }
-  | 400 | 401 | 403 | 409
+  | 400 INVALID_CONCURRENCY_TOKEN | 401 | 404 PROFESSIONAL_PROFILE_NOT_LINKED | 409 RESOURCE_MODIFIED
 
 GET /api/professional/leases?page&pageSize&status?   (extensão aditiva do endpoint real)
 
@@ -381,8 +391,9 @@ Atende "≈10 uploads / 10 minutos / profissional" com o mesmo mecanismo já usa
 | `INVALID_PROFESSIONAL` | `ProfessionalEndpoints.cs:207-208` | `PUT /api/professional/me` com WhatsApp/descrição inválidos |
 | `INVALID_PROFESSIONAL_PHOTO` | `ProfessionalPhotoEndpoints.cs:20` | Upload de foto inválida/corrompida/oversized (self-serve reaproveita o mesmo código do admin) |
 | `PHOTO_UNAVAILABLE` | `ProfessionalPhotoEndpoints.cs:21` / `ProfessionalPhotoStreaming.cs:57` | Falha real de storage em leitura ou escrita |
-| `INVALID_CONCURRENCY_TOKEN` | `ProfessionalEndpoints.cs:200-201` | Token malformado em qualquer mutação desta spec |
-| `PROFESSIONAL_PROFILE_NOT_LINKED` | `ProfessionalProfileEndpoints.cs:25` (já existe) | Usuário com role profissional sem vínculo — reaproveitado por todos os endpoints novos `/api/professional/me*` |
+| `INVALID_CONCURRENCY_TOKEN` | `ProfessionalEndpoints.cs:200-201` | Token malformado em qualquer mutação desta spec (`400`) |
+| `RESOURCE_MODIFIED` | `ProfessionalEndpoints.cs:203-205` | Versão desatualizada em qualquer mutação desta spec (`409`) |
+| `PROFESSIONAL_PROFILE_NOT_LINKED` | `ProfessionalProfileEndpoints.cs:25` (já existe, `404`) | Usuário com role profissional sem vínculo — reaproveitado por todos os endpoints novos `/api/professional/me*` |
 | 429 (sem corpo específico definido ainda) | Padrão dos demais rate limiters do projeto | Excesso de upload |
 
 Nenhum código novo é necessário. Não introduzir `INVALID_IMAGE`, `IMAGE_TOO_LARGE`, `INVALID_WHATSAPP`, `DESCRIPTION_TOO_LONG`, `STORAGE_ERROR`, `PROFILE_NOT_FOUND` como estava no rascunho original — todos têm equivalente real acima.
@@ -391,9 +402,10 @@ Nenhum código novo é necessário. Não introduzir `INVALID_IMAGE`, `IMAGE_TOO_
 
 ## 17. Segurança e concorrência
 
-- Toda rota de perfil/foto exige `"Professional"` (policy real, string literal, mesmo padrão de todo o resto do sistema — não introduzir uma classe de constantes nova só para isto).
+- Toda rota de perfil/foto exige `"Professional"` (policy real, string literal, mesmo padrão de todo o resto do sistema — não introduzir uma classe de constantes nova só para isto). Toda mutação (`PUT`/`POST`/`DELETE`) leva `.AddEndpointFilter<AntiforgeryFilter>()`, sem exceção — mesma convenção universal já usada em Reservations/Visits/Availability/Finance-admin/Photo-admin.
 - Nenhum endpoint aceita `professionalId` vindo do cliente para determinar de quem é a foto/perfil — sempre resolvido por `ApplicationUserId` da identidade autenticada, replicando o padrão já usado 5 vezes no código.
-- Admin nunca ganha rota de escrita de foto de outro profissional além da já existente `/api/admin/professionals/{id}/photo` (mantida como está — é a via administrativa, separada da self-serve; a spec não retira essa capacidade do admin, só não permite que ela seja usada para "enviar/trocar/remover" a foto de um profissional **pelo profissional errado**, o que já não é possível pois cada via checa sua própria autorização).
+- **Admin não ganha nenhuma permissão nova.** A rota administrativa `/api/admin/professionals/{id}/photo` (`RequireAuthorization("Operations")`) continua existindo exatamente como está, e permanece a **única** via pela qual um administrador manipula foto — ela não é estendida, não muda de policy, não passa a aceitar mais nada. As novas rotas `/api/professional/me/photo` (`RequireAuthorization("Professional")`) são um caminho **inteiramente separado em autorização**: só reaproveitam, internamente, a função/helper de mutação (`ProfessionalPhotoMutation`, §13.2) — isto é, o **código** de staging/validação/transação é compartilhado, mas as **policies continuam distintas** (`Operations` vs `Professional`) e nenhuma delas herda a autorização da outra. Um profissional autenticado nunca alcança a rota admin (não tem a role/claims exigidas por `Operations`), e o admin nunca alcança a rota self-serve como "profissional" de si mesmo salvo se também possuir um vínculo `Professional` próprio — cenário já coberto pela resolução normal de identidade, não uma brecha nova.
+- Totem permanece **somente leitura**: `GET /api/totem/professionals` e `GET /api/totem/professionals/{id}/photo` continuam `AllowAnonymous()`, sem nenhum novo verbo de escrita nesta spec.
 - Concorrência: `ConcurrencyToken`/`Professional.Version` já garante que um upload concorrente não pode fazer o banco apontar para um arquivo removido — o `db.Entry(professional).Property(x => x.Version).OriginalValue` já existente falha a transação se a versão mudou entre o `GET` e o `PUT`/upload, forçando novo carregamento no frontend.
 - Frontend desabilita "Salvar foto" enquanto uma requisição de upload está em voo (estado local simples, sem necessidade de lock server-side adicional — o servidor já é a proteção real via `ConcurrencyToken`).
 - Mecanismos de concorrência existentes de Reservations/Visits/Leases/Finance (todos já usam o mesmo `ConcurrencyToken`/`Version`) permanecem inalterados — nenhuma mudança nesta spec os toca.
@@ -438,7 +450,7 @@ Crop com touch: usar os mesmos handlers de ponteiro unificados (`onPointerDown`/
 
 - Profissional A não consegue ler/alterar perfil ou foto de B (403/404, nunca vaza dado de B).
 - `POST /api/professional/me/photo` sem autenticação → 401.
-- Usuário autenticado sem vínculo profissional → `403 PROFESSIONAL_PROFILE_NOT_LINKED`.
+- Usuário autenticado sem vínculo profissional → `404 PROFESSIONAL_PROFILE_NOT_LINKED` (confirmado: `Results.NotFound()`, não `403`, em `ProfessionalProfileEndpoints.cs:25`).
 - Arquivo > 5 MB rejeitado (`INVALID_PROFESSIONAL_PHOTO`).
 - Imagem falsa/corrompida (magic bytes inválidos) rejeitada.
 - `.jpg`/`.png`/`.webp` válidos aceitos.
