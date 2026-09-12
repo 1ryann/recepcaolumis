@@ -26,6 +26,7 @@ import { ProfessionalRegistration } from './pages/professional/ProfessionalRegis
 import { ProfessionalApplicationStatus } from './pages/professional/ProfessionalApplicationStatus'
 import { ProfessionalAvailability } from './pages/professional/ProfessionalAvailability'
 import { ProfessionalProfile } from './pages/professional/ProfessionalProfile'
+import { ProfessionalReservations } from './pages/professional/ProfessionalReservations'
 import { ProfessionalApplications } from './pages/admin/ProfessionalApplications'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./dev/DevelopmentApp')) : null
@@ -55,7 +56,7 @@ function ProductionApp() {
    <Route path="/profissional" element={<ProfessionalShell />}>
     <Route index element={<ProfessionalDashboard />} />
     <Route path="agenda" element={<ProfessionalAgenda />} />
-    <Route path="reservas" element={<ProfessionalPlaceholder title="Reservas" />} />
+    <Route path="reservas" element={<ProfessionalReservations />} />
     <Route path="atendimentos" element={<ProfessionalPlaceholder title="Atendimentos" />} />
     <Route path="disponibilidade" element={<ProfessionalAvailability />} />
     <Route path="locacoes" element={<ProfessionalPlaceholder title="Locações" />} />
