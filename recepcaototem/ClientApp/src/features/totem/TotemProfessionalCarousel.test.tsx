@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -17,11 +17,8 @@ const people: TotemProfessionalCardDto[] = [
 ]
 
 beforeEach(() => {
-  // jsdom has no layout; stub the geometry / pointer-capture the carousel touches.
+  // jsdom has no layout; stub the scrolling API the carousel uses.
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { value: vi.fn(), writable: true })
-  Object.defineProperty(HTMLElement.prototype, 'scrollBy', { value: vi.fn(), writable: true })
-  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', { value: vi.fn(), writable: true })
-  Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', { value: vi.fn(), writable: true })
 })
 
 test('renders one option per professional with status text + colour class (not colour alone)', () => {
@@ -66,71 +63,97 @@ test('missing photo shows initials; broken photo falls back to initials', () => 
   expect(screen.getByText('BL')).toBeInTheDocument()
 })
 
-test('mouse drag scrolls and suppresses the click-select', () => {
-  const onActiveChange = vi.fn()
-  render(<TotemProfessionalCarousel professionals={people} onActiveChange={onActiveChange} />)
-  const viewport = screen.getByRole('listbox')
-  fireEvent.pointerDown(viewport, { pointerType: 'mouse', pointerId: 1, clientX: 300 })
-  fireEvent.pointerMove(viewport, { pointerType: 'mouse', pointerId: 1, clientX: 120 })
-  fireEvent.pointerUp(viewport, { pointerType: 'mouse', pointerId: 1, clientX: 120 })
-  onActiveChange.mockClear()
-  fireEvent.click(screen.getAllByRole('option')[2])   // click right after a drag
-  expect(onActiveChange).not.toHaveBeenCalled()
-})
-
-test('a touch swipe moves the active card left and right (no arrows needed)', () => {
-  const onActiveChange = vi.fn()
-  render(<TotemProfessionalCarousel professionals={people} onActiveChange={onActiveChange} />)
-  const viewport = screen.getByRole('listbox')
-  onActiveChange.mockClear() // ignore the initial emit
-
-  // finger drags left across the strip -> next professional
-  fireEvent.pointerDown(viewport, { pointerType: 'touch', pointerId: 1, clientX: 300 })
-  fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 1, clientX: 230 })
-  fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 1, clientX: 180 })
-  fireEvent.pointerUp(viewport, { pointerType: 'touch', pointerId: 1, clientX: 180 })
-  expect(onActiveChange).toHaveBeenLastCalledWith(people[1])
-  expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true')
-
-  // finger drags right -> previous professional
-  fireEvent.pointerDown(viewport, { pointerType: 'touch', pointerId: 2, clientX: 180 })
-  fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 2, clientX: 300 })
-  fireEvent.pointerUp(viewport, { pointerType: 'touch', pointerId: 2, clientX: 300 })
-  expect(onActiveChange).toHaveBeenLastCalledWith(people[0])
-})
-
-test('a long touch fling can jump more than one card', () => {
-  const onActiveChange = vi.fn()
-  render(<TotemProfessionalCarousel professionals={people} onActiveChange={onActiveChange} />)
-  const viewport = screen.getByRole('listbox')
-  onActiveChange.mockClear()
-  fireEvent.pointerDown(viewport, { pointerType: 'touch', pointerId: 1, clientX: 500 })
-  fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 1, clientX: 60 })
-  fireEvent.pointerUp(viewport, { pointerType: 'touch', pointerId: 1, clientX: 60 })
-  expect(onActiveChange).toHaveBeenLastCalledWith(people[2]) // 440px net ≈ 2 cards
-})
-
-test('card disables native touch panning, text-selection and long-press callout so a real finger cannot hand the gesture to the browser instead of the custom drag', () => {
-  // jsdom does not enforce touch-action / user-select gesture arbitration (a real touch
-  // that lands on the card can trigger native text-selection / callout regardless of what
-  // the JS pointer handlers do), so this pins the actual shipped stylesheet rule instead of
-  // simulating the gesture — see BlurFade.test.tsx for the same established idiom.
+test('viewport and cards permit native horizontal and vertical gestures', () => {
   const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
-  const match = css.match(/\.totem-carousel-card\s*\{([^}]*)\}/)
-  expect(match).not.toBeNull()
-  const body = match![1]
-  expect(body).toMatch(/touch-action:\s*none/)
-  expect(body).toMatch(/user-select:\s*none/)
-  expect(body).toMatch(/-webkit-touch-callout:\s*none/)
+  for (const selector of ['viewport', 'card']) {
+    const rule = css.match(new RegExp('\\.totem-carousel-' + selector + '\\s*\\{([^}]*)\\}'))
+    expect(rule).not.toBeNull()
+    expect(rule![1]).toMatch(/touch-action:\s*pan-x pan-y\s*;/)
+  }
+  const source = readFileSync(resolve(process.cwd(),
+    'src/features/totem/TotemProfessionalCarousel.tsx'), 'utf8')
+  expect(source).not.toMatch(/onPointerDown|onPointerMove|onPointerEnd|setPointerCapture|releasePointerCapture|didDragRef/)
 })
 
-test('a tiny touch drag stays a tap and does not change the card', () => {
-  const onActiveChange = vi.fn()
-  render(<TotemProfessionalCarousel professionals={people} onActiveChange={onActiveChange} />)
+test('onScroll finds the nearest centre without scrolling back', () => {
+  let frame: FrameRequestCallback = () => {}
+  const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { frame = cb; return 1 })
+  const emit = vi.fn()
+  const view = render(<TotemProfessionalCarousel professionals={people} onActiveChange={emit} />)
   const viewport = screen.getByRole('listbox')
-  onActiveChange.mockClear()
-  fireEvent.pointerDown(viewport, { pointerType: 'touch', pointerId: 1, clientX: 300 })
-  fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 1, clientX: 297 })
-  fireEvent.pointerUp(viewport, { pointerType: 'touch', pointerId: 1, clientX: 297 })
-  expect(onActiveChange).not.toHaveBeenCalled()
+  Object.defineProperty(viewport, 'clientWidth', { value: 400, configurable: true })
+  screen.getAllByRole('option').forEach((card, index) => {
+    Object.defineProperty(card, 'offsetLeft', { value: 100 + index * 220, configurable: true })
+    Object.defineProperty(card, 'offsetWidth', { value: 200, configurable: true })
+  })
+  viewport.scrollLeft = 220
+  emit.mockClear()
+  vi.mocked(viewport.scrollTo).mockClear()
+  fireEvent.scroll(viewport)
+  act(() => frame(0))
+  expect(emit).toHaveBeenLastCalledWith(people[1])
+  expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true')
+  expect(viewport.scrollTo).not.toHaveBeenCalled()
+  view.unmount()
+  raf.mockRestore()
+})
+
+test('onScroll ignores zero geometry', () => {
+  let frame: FrameRequestCallback = () => {}
+  const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { frame = cb; return 1 })
+  const emit = vi.fn()
+  const view = render(<TotemProfessionalCarousel professionals={people} onActiveChange={emit} />)
+  const viewport = screen.getByRole('listbox')
+  emit.mockClear()
+  fireEvent.scroll(viewport)
+  act(() => frame(0))
+  expect(emit).not.toHaveBeenCalled()
+  view.unmount()
+  raf.mockRestore()
+})
+
+test('onScroll coalesces scroll events before its animation frame', () => {
+  const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
+  const view = render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} />)
+  const viewport = screen.getByRole('listbox')
+  fireEvent.scroll(viewport)
+  fireEvent.scroll(viewport)
+  expect(raf).toHaveBeenCalledTimes(1)
+  view.unmount()
+  raf.mockRestore()
+})
+
+test('unmount cancels a pending scroll animation frame', () => {
+  const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 41)
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+  const view = render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} />)
+  fireEvent.scroll(screen.getByRole('listbox'))
+  view.unmount()
+  expect(cancel).toHaveBeenCalledWith(41)
+  raf.mockRestore()
+  cancel.mockRestore()
+})
+
+test('Home, End, and ArrowLeft respect carousel boundaries', () => {
+  const emit = vi.fn()
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={emit} />)
+  const viewport = screen.getByRole('listbox')
+  fireEvent.keyDown(viewport, { key: 'ArrowLeft' })
+  expect(emit).toHaveBeenCalledTimes(1)
+  fireEvent.keyDown(viewport, { key: 'End' })
+  expect(emit).toHaveBeenLastCalledWith(people[2])
+  fireEvent.keyDown(viewport, { key: 'ArrowRight' })
+  expect(emit).toHaveBeenCalledTimes(2)
+  fireEvent.keyDown(viewport, { key: 'Home' })
+  expect(emit).toHaveBeenLastCalledWith(people[0])
+})
+
+test('side click centres and active click continues', () => {
+  const emit = vi.fn(), next = vi.fn()
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={emit} onContinue={next} />)
+  fireEvent.click(screen.getAllByRole('option')[1])
+  expect(emit).toHaveBeenLastCalledWith(people[1])
+  expect(next).not.toHaveBeenCalled()
+  fireEvent.click(screen.getAllByRole('option')[1])
+  expect(next).toHaveBeenCalledTimes(1)
 })

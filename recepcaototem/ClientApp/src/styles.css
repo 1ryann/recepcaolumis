@@ -1820,16 +1820,10 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   /* Edge padding so the first / last card can still settle dead-centre. */
   padding-inline: max(12px, calc(50% - (clamp(200px, 22vw, 264px) / 2)));
   outline: none;
-  /* The component captures the pointer and drives the drag + snap in JS (a `filter`ed
-     BlurFade ancestor breaks native touch-scroll of a nested scroller on mobile), so the
-     browser must not also try to pan this element. The screen is `overflow: hidden`, so
-     no page scroll is lost. */
-  touch-action: none;
+  touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
-  cursor: grab;
 }
 .totem-carousel-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
-.totem-carousel-viewport:active { cursor: grabbing; }
 .totem-carousel-viewport:focus-visible { box-shadow: 0 0 0 2px #f2f2f2; border-radius: 22px; }
 
 .totem-carousel-card {
@@ -1849,13 +1843,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   cursor: pointer;
   transform: scale(.92);
   transition: transform .22s ease, opacity .22s ease, border-color .22s ease, background-color .22s ease, color .22s ease;
-  /* The viewport's touch-action: none is not enough on its own: this button contains
-     selectable text (name/profession/status), and a real finger holding still for a
-     moment before dragging can let the browser start native text-selection or (iOS) the
-     long-press callout, which competes with — and can cancel — the custom pointer-drag
-     that TotemProfessionalCarousel.tsx drives via scrollLeft. Declaring touch-action:none
-     here too removes any ambiguity about which element's value governs the touch. */
-  touch-action: none;
+  touch-action: pan-x pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -1873,7 +1861,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 /* Coverflow depth: `data-offset` (set in TotemProfessionalCarousel.tsx, clamped to ±2) is
    the card's distance from the centred/active one. This only ever adds a `transform` +
    `opacity` on top of the existing flex/scroll-snap layout — it has no effect on where a
-   card sits or how the drag/swipe math above works. Kept modest on purpose (a few degrees
+   card sits. Kept modest on purpose (a few degrees
    of tilt, not a full rotation) per "não exagerar perspectiva/rotação". */
 .totem-carousel-card[data-offset="-1"],
 .totem-carousel-card[data-offset="1"] {
