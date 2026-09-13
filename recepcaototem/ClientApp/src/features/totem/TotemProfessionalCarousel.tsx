@@ -16,7 +16,12 @@ import { usePrefersReducedMotion } from './magic/usePrefersReducedMotion'
 // the pointer. `onScroll` only *reads* the nearest-centre card to keep `activeIndex` in sync
 // — it never scrolls back, so there is no feedback loop. Status is conveyed as a dot *and* a
 // word (never colour alone); the active card alone wears the BorderBeam, and ProgressiveBlur
-// softens both edges.
+// softens both edges. Each card carries `data-offset` (its distance from the active index,
+// clamped) purely for CSS: `.totem-carousel-card[data-offset="…"]` tilts/scales/dims side
+// cards into a coverflow, with zero effect on the flex/scroll-snap layout that drives the
+// actual positioning and the drag/swipe math above. A tap on a side card brings it to centre
+// (same as before); a second tap on the card that is already centred calls `onContinue`
+// instead of re-centring a card that's already centred.
 
 type ProfessionalStatus = TotemProfessionalCardDto['status']
 
@@ -39,14 +44,24 @@ const SWIPE_COMMIT_PX = 40
 // Rough card + gap width; only used to let a long fling jump more than one card.
 const SWIPE_CARD_PX = 220
 
+// Coverflow depth beyond this many cards from the centre reuses the same tier (the
+// ProgressiveBlur edges and viewport clipping hide them anyway, so there is no need for
+// an unbounded set of per-offset rules).
+const MAX_COVERFLOW_OFFSET = 2
+
 interface TotemProfessionalCarouselProps {
   professionals: TotemProfessionalCardDto[]
   onActiveChange: (professional: TotemProfessionalCardDto) => void
+  // Tapping the card that is ALREADY centred/active continues the flow for that
+  // professional. Tapping a side card only brings it to the centre (see onClick below) —
+  // this is what lets a single card double as both "bring to centre" and "continue".
+  onContinue?: () => void
 }
 
 export function TotemProfessionalCarousel({
   professionals,
   onActiveChange,
+  onContinue,
 }: TotemProfessionalCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const reduced = usePrefersReducedMotion()
@@ -66,6 +81,8 @@ export function TotemProfessionalCarousel({
   activeIndexRef.current = activeIndex
   const onActiveChangeRef = useRef(onActiveChange)
   onActiveChangeRef.current = onActiveChange
+  const onContinueRef = useRef(onContinue)
+  onContinueRef.current = onContinue
 
   const count = professionals.length
 
@@ -252,13 +269,22 @@ export function TotemProfessionalCarousel({
       >
         {professionals.map((professional, index) => {
           const active = index === activeIndex
+          const offset = Math.max(
+            -MAX_COVERFLOW_OFFSET,
+            Math.min(MAX_COVERFLOW_OFFSET, index - activeIndex),
+          )
           return (
             <button
               key={professional.id}
               type="button"
               role="option"
               aria-selected={active}
-              aria-label={`${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}`}
+              aria-label={
+                active
+                  ? `${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}, toque para continuar`
+                  : `${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}`
+              }
+              data-offset={offset}
               className={`totem-carousel-card${active ? ' is-active' : ''}`}
               ref={(element) => {
                 cardRefs.current[index] = element
@@ -266,6 +292,12 @@ export function TotemProfessionalCarousel({
               onClick={() => {
                 if (didDragRef.current) {
                   didDragRef.current = false
+                  return
+                }
+                // The centred card is already where it needs to be: a second tap on it
+                // continues the flow instead of re-centring it (which would be a no-op).
+                if (active) {
+                  onContinueRef.current?.()
                   return
                 }
                 setActive(index)
@@ -278,6 +310,9 @@ export function TotemProfessionalCarousel({
                 <i className="totem-carousel-status-dot" aria-hidden="true" />
                 {STATUS_LABEL[professional.status]}
               </span>
+              {active && onContinue && (
+                <span className="totem-carousel-hint" aria-hidden="true">Toque para continuar</span>
+              )}
               <BorderBeam active={active} />
             </button>
           )

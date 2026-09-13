@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from 'vitest'
 
-// Regression guard: the `.totem-back` ("← Voltar") control is used on both
-// /totem/profissionais (inside .totem-professionals) and /totem/check-in
-// (inside .totem-kiosk). It must resolve its colours from tokens that exist
-// in *both* contexts — the global --lumis-* tokens declared once on :root —
-// so it never renders unstyled on either page. Read the stylesheet as text
-// (vitest does not transform CSS, so `?raw` yields nothing here).
+// Regression guard: the `.totem-back` ("← Voltar") control is used on /totem/check-in
+// (inside .totem-kiosk) and by TotemHandoff. /totem/profissionais dropped its own back
+// button in favour of the LUMIS logo doubling as the way home, but the class itself is
+// still shared, so it must keep resolving its colours from tokens that exist wherever it
+// is used — the global --lumis-* tokens declared once on :root — so it never renders
+// unstyled. Read the stylesheet as text (vitest does not transform CSS, so `?raw` yields
+// nothing here).
 const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
 const backRule = styles.match(/\.totem-back\s*\{[^}]*\}/)?.[0] ?? ''
 const backHover = styles.match(/\.totem-back:hover\s*\{[^}]*\}/)?.[0] ?? ''

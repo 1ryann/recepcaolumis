@@ -56,14 +56,14 @@ test('loading shows the kiosk layout with skeleton cards', () => {
   expect(screen.getAllByTestId('totem-skeleton-card').length).toBeGreaterThan(0)
 })
 
-test('Continuar creates a handoff and navigates to /totem/handoff with the 7-field state', async () => {
+test('tapping the already-centred card creates a handoff and navigates to /totem/handoff with the 7-field state', async () => {
   vi.mocked(totemApi.professionals).mockResolvedValue(people)
   vi.mocked(totemApi.createHandoff).mockResolvedValue(handoff)
   renderAt()
   await screen.findByRole('listbox')
-  const continuar = screen.getByRole('button', { name: /continuar/i })
-  await waitFor(() => expect(continuar).toBeEnabled())
-  fireEvent.click(continuar)
+  const activeCard = screen.getAllByRole('option')[0]
+  await waitFor(() => expect(activeCard).toHaveAttribute('aria-selected', 'true'))
+  fireEvent.click(activeCard)
 
   await waitFor(() => expect(totemApi.createHandoff).toHaveBeenCalledWith('a'))
   await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith('/totem/handoff', {
@@ -85,21 +85,38 @@ test('a createHandoff rejection shows an inline alert and does not navigate', as
   vi.mocked(totemApi.createHandoff).mockRejectedValue(new Error('boom'))
   renderAt()
   await screen.findByRole('listbox')
-  const continuar = screen.getByRole('button', { name: /continuar/i })
-  await waitFor(() => expect(continuar).toBeEnabled())
-  fireEvent.click(continuar)
+  const activeCard = screen.getAllByRole('option')[0]
+  await waitFor(() => expect(activeCard).toHaveAttribute('aria-selected', 'true'))
+  fireEvent.click(activeCard)
 
   expect(await screen.findByRole('alert')).toBeInTheDocument()
   expect(navigateSpy).not.toHaveBeenCalledWith('/totem/handoff', expect.anything())
   noClienteNav()
 })
 
-test('Voltar navigates to /totem', async () => {
+test('tapping a side card only brings it to the centre — it does not create a handoff', async () => {
   vi.mocked(totemApi.professionals).mockResolvedValue(people)
   renderAt()
   await screen.findByRole('listbox')
-  fireEvent.click(screen.getByRole('button', { name: /voltar/i }))
+  const sideCard = screen.getAllByRole('option')[1]
+  fireEvent.click(sideCard)
+  await waitFor(() => expect(sideCard).toHaveAttribute('aria-selected', 'true'))
+  expect(totemApi.createHandoff).not.toHaveBeenCalled()
+})
+
+test('the LUMIS logo navigates back to /totem', async () => {
+  vi.mocked(totemApi.professionals).mockResolvedValue(people)
+  renderAt()
+  await screen.findByRole('listbox')
+  fireEvent.click(screen.getByRole('button', { name: /voltar ao início/i }))
   expect(navigateSpy).toHaveBeenCalledWith('/totem')
+})
+
+test('"Alugar sala" renders as a disabled visual-only CTA (no public rental-inquiry destination exists yet)', async () => {
+  vi.mocked(totemApi.professionals).mockResolvedValue(people)
+  renderAt()
+  await screen.findByRole('listbox')
+  expect(screen.getByRole('button', { name: /alugar sala/i })).toBeDisabled()
 })
 
 test('empty -> message + Tentar novamente + Tenho código', async () => {

@@ -1848,7 +1848,17 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   background: rgba(255, 255, 255, .03);
   cursor: pointer;
   transform: scale(.92);
-  transition: transform .22s ease, border-color .22s ease, background-color .22s ease, color .22s ease;
+  transition: transform .22s ease, opacity .22s ease, border-color .22s ease, background-color .22s ease, color .22s ease;
+  /* The viewport's touch-action: none is not enough on its own: this button contains
+     selectable text (name/profession/status), and a real finger holding still for a
+     moment before dragging can let the browser start native text-selection or (iOS) the
+     long-press callout, which competes with — and can cancel — the custom pointer-drag
+     that TotemProfessionalCarousel.tsx drives via scrollLeft. Declaring touch-action:none
+     here too removes any ambiguity about which element's value governs the touch. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .totem-carousel-card:hover { border-color: var(--lumis-border-strong); }
 .totem-carousel-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
@@ -1857,6 +1867,35 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   color: var(--lumis-text-dim);
   border-color: var(--lumis-border-strong);
   background: rgba(255, 255, 255, .055);
+  z-index: 2;
+}
+
+/* Coverflow depth: `data-offset` (set in TotemProfessionalCarousel.tsx, clamped to ±2) is
+   the card's distance from the centred/active one. This only ever adds a `transform` +
+   `opacity` on top of the existing flex/scroll-snap layout — it has no effect on where a
+   card sits or how the drag/swipe math above works. Kept modest on purpose (a few degrees
+   of tilt, not a full rotation) per "não exagerar perspectiva/rotação". */
+.totem-carousel-card[data-offset="-1"],
+.totem-carousel-card[data-offset="1"] {
+  transform: perspective(900px) scale(.86);
+  opacity: .82;
+  z-index: 1;
+}
+.totem-carousel-card[data-offset="-1"] { transform: perspective(900px) rotateY(12deg) scale(.86); }
+.totem-carousel-card[data-offset="1"] { transform: perspective(900px) rotateY(-12deg) scale(.86); }
+.totem-carousel-card[data-offset="-2"],
+.totem-carousel-card[data-offset="2"] {
+  opacity: .5;
+}
+.totem-carousel-card[data-offset="-2"] { transform: perspective(900px) rotateY(18deg) scale(.76); }
+.totem-carousel-card[data-offset="2"] { transform: perspective(900px) rotateY(-18deg) scale(.76); }
+
+.totem-carousel-hint {
+  margin-top: 2px;
+  color: var(--lumis-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .02em;
 }
 
 .totem-carousel-photo {
@@ -1957,7 +1996,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   .totem-carousel-arrow,
   .totem-carousel-dot { transition: none; }
   .totem-carousel-card { transform: none; }
-  .totem-carousel-card.is-active { transform: none; }
+  .totem-carousel-card.is-active,
+  .totem-carousel-card[data-offset] { transform: none; opacity: 1; }
 }
 
 /* ==========================================================================
@@ -1990,6 +2030,18 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   padding: clamp(20px, 3.5vw, 44px);
 }
 .totem-professionals-logo { width: clamp(104px, 12vw, 140px); height: auto; display: block; opacity: .96; }
+.totem-professionals-logo-link {
+  display: inline-flex;
+  padding: 4px;
+  margin: -4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  transition: opacity .16s ease;
+}
+.totem-professionals-logo-link:hover { opacity: .82; }
+.totem-professionals-logo-link:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
 .totem-professionals-bar .totem-clock { align-items: flex-end; text-align: right; }
 
 .totem-professionals-inner {
@@ -2007,6 +2059,33 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   gap: clamp(20px, 4vh, 44px);
   text-align: center;
 }
+.totem-professionals-header-row {
+  position: relative;
+  width: 100%;
+}
+.totem-professionals-rent-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: absolute;
+  top: 0;
+  right: clamp(0px, 1vw, 8px);
+  padding: 0 16px;
+  min-height: 44px;
+  color: var(--lumis-text-dim);
+  border: 1px solid var(--lumis-border-strong);
+  border-radius: 12px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background-color .18s ease, border-color .18s ease;
+}
+.totem-professionals-rent-cta:not(:disabled):hover { background: rgba(255, 255, 255, .06); }
+.totem-professionals-rent-cta:not(:disabled):focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+/* Visual-only for now (see the file-level comment in TotemProfessionals.tsx): disabled,
+   not a broken link pretending to work. */
+.totem-professionals-rent-cta:disabled { color: var(--lumis-muted); opacity: .55; cursor: not-allowed; }
 .totem-professionals-title {
   margin: 0;
   font-size: clamp(26px, 3.6vw, 42px);
@@ -2090,6 +2169,10 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 @media (max-width: 720px) {
   .totem-professionals-skeletons { gap: 12px; }
   .totem-skeleton-card { flex-basis: clamp(150px, 62vw, 220px); }
+  /* Not enough width for the title and the CTA side by side without crowding or
+     overlapping wrapped title text — stack the CTA below it instead. */
+  .totem-professionals-header-row { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .totem-professionals-rent-cta { position: static; }
 }
 @media (prefers-reduced-motion: reduce) {
   .totem-skeleton-card { animation: none; background: var(--lumis-surface-2); }

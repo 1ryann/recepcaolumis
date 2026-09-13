@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { TotemProfessionalCarousel } from './TotemProfessionalCarousel'
 import type { TotemProfessionalCardDto } from '../../api/modules'
 
@@ -106,6 +108,20 @@ test('a long touch fling can jump more than one card', () => {
   fireEvent.pointerMove(viewport, { pointerType: 'touch', pointerId: 1, clientX: 60 })
   fireEvent.pointerUp(viewport, { pointerType: 'touch', pointerId: 1, clientX: 60 })
   expect(onActiveChange).toHaveBeenLastCalledWith(people[2]) // 440px net ≈ 2 cards
+})
+
+test('card disables native touch panning, text-selection and long-press callout so a real finger cannot hand the gesture to the browser instead of the custom drag', () => {
+  // jsdom does not enforce touch-action / user-select gesture arbitration (a real touch
+  // that lands on the card can trigger native text-selection / callout regardless of what
+  // the JS pointer handlers do), so this pins the actual shipped stylesheet rule instead of
+  // simulating the gesture — see BlurFade.test.tsx for the same established idiom.
+  const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+  const match = css.match(/\.totem-carousel-card\s*\{([^}]*)\}/)
+  expect(match).not.toBeNull()
+  const body = match![1]
+  expect(body).toMatch(/touch-action:\s*none/)
+  expect(body).toMatch(/user-select:\s*none/)
+  expect(body).toMatch(/-webkit-touch-callout:\s*none/)
 })
 
 test('a tiny touch drag stays a tap and does not change the card', () => {
