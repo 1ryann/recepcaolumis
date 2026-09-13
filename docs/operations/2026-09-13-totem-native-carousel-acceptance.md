@@ -54,9 +54,9 @@ reproduzia o bug.
 
 Estes resultados são automação local no checkout identificado acima e não
 substituem a matriz física. A primeira tentativa sandbox da suíte focada falhou
-ao carregar o Vite com `spawn EPERM`; a repetição local fora do sandbox foi
-necessária e passou. Não houve mudança de código, dependência ou ambiente para
-obter esses resultados.
+ao carregar o Vite com `spawn EPERM`; a repetição passou somente fora da
+fronteira de execução do sandbox. Código da aplicação, dependências e
+configuração do projeto não foram alterados para obter esses resultados.
 
 | Comando | Resultado fresco |
 | --- | --- |
@@ -65,6 +65,28 @@ obter esses resultados.
 | `npx tsc -b` | PASS — saída vazia, exit 0. |
 | `npm run build` | PASS — 1.936 módulos transformados. Permanece o aviso existente de bundle JavaScript `index-DbiRxaCJ.js` com 517,47 kB após minificação. |
 | `npm run verify:production-bundle` | PASS — nenhum marcador de AppStore ou mock storage de desenvolvimento emitido. |
+
+## Smoke local de seleção e handoff
+
+Este smoke foi executado em `http://127.0.0.1:5174/totem/profissionais` contra
+o checkout candidato `c76c2be20edf5d3d6b122b76a9ba9c38de92c28a`. É automação
+de navegador local, não toque físico. A sessão isolada
+`task3-smoke-16b416e3e795` interceptou somente as APIs locais públicas do
+Totem para fornecer três cartões determinísticos e respostas de CSRF/handoff;
+nenhum backend, dado remoto ou código de produção foi modificado.
+
+| Etapa | Resultado observado |
+| --- | --- |
+| Carregamento | `GET /api/totem/professionals` interceptado retornou Ana Smoke (`smoke-ana`), Bruno Smoke (`smoke-bruno`) e Carla Smoke (`smoke-carla`). |
+| Clique lateral | Clique em Bruno Smoke, inicialmente lateral, manteve a rota `/totem/profissionais`, marcou Bruno como `aria-selected="true"`, `data-offset="0"` e `is-active`; o log de rede tinha **nenhuma** requisição `booking-handoffs`. |
+| Ativação central | Segundo clique em Bruno Smoke já centralizado fez `POST /api/totem/booking-handoffs` com corpo exato `{"professionalId":"smoke-bruno"}` e resposta fixture `smoke-handoff-001`. |
+| Transição e QR | A rota tornou-se `/totem/handoff`; a página mostrou `Continue no seu celular`, `Bruno Smoke`, `Psicólogo` e o QR. A captura retida é `visual/task-3-local-handoff-smoke.png`; comandos, fixtures e saída estão em `visual/task-3-local-handoff-smoke.log`. |
+
+As requisições de polling subsequentes usaram o fixture PENDING
+`/api/totem/booking-handoffs/smoke-handoff-001/status` com
+`{"statusToken":"smoke-status-token"}`. Esse smoke evidencia a passagem pela
+seleção e handoff no navegador em execução; não substitui qualquer linha da
+matriz **NÃO EXECUTADO / ACEITE FÍSICO PENDENTE**.
 
 ## Evidência automatizada de navegador e layout
 
