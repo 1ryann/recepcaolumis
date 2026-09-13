@@ -1800,6 +1800,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
    Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
    ========================================================================== */
 .totem-carousel {
+  --totem-card-width: clamp(280px, 28vw, 320px);
+  --totem-stage-height: clamp(480px, 54vh, 540px);
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -1809,16 +1811,17 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-carousel-viewport {
   display: flex;
   gap: clamp(14px, 2.4vw, 28px);
-  align-items: stretch;
+  align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding-block: clamp(16px, 3vh, 40px);
+  padding-block: clamp(24px, 5vh, 48px) clamp(18px, 3vh, 32px);
+  min-height: var(--totem-stage-height);
   /* Edge padding so the first / last card can still settle dead-centre. */
-  padding-inline: max(12px, calc(50% - (clamp(200px, 22vw, 264px) / 2)));
+  padding-inline: max(12px, calc(50% - (var(--totem-card-width) / 2)));
   outline: none;
   touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
@@ -1828,11 +1831,13 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 .totem-carousel-card {
   position: relative;
-  flex: 0 0 clamp(200px, 22vw, 264px);
+  flex: 0 0 var(--totem-card-width);
+  min-height: clamp(360px, 39vh, 400px);
   scroll-snap-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: clamp(20px, 2.4vw, 30px);
   color: var(--lumis-muted);
@@ -1851,6 +1856,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-carousel-card:hover { border-color: var(--lumis-border-strong); }
 .totem-carousel-card:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
 .totem-carousel-card.is-active {
+  min-height: clamp(420px, 43vh, 450px);
   transform: scale(1.06);
   color: var(--lumis-text-dim);
   border-color: var(--lumis-border-strong);
@@ -1887,8 +1893,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 
 .totem-carousel-photo {
-  width: clamp(84px, 9vw, 120px);
-  height: clamp(84px, 9vw, 120px);
+  width: clamp(112px, 12vw, 148px);
+  height: clamp(112px, 12vw, 148px);
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--lumis-border-soft);
@@ -1974,8 +1980,19 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-carousel-dot.is-active { background: #f2f2f2; transform: scale(1.35); }
 
 @media (max-width: 560px) {
-  .totem-carousel-card { flex-basis: clamp(180px, 74vw, 240px); }
-  .totem-carousel-viewport { padding-inline: max(12px, calc(50% - (clamp(180px, 74vw, 240px) / 2))); }
+  .totem-carousel {
+    --totem-card-width: min(76vw, 320px);
+    --totem-stage-height: calc(var(--totem-card-width) * 1.6);
+  }
+  .totem-carousel-card {
+    flex-basis: var(--totem-card-width);
+    min-height: calc(var(--totem-card-width) * 1.2);
+  }
+  .totem-carousel-card.is-active { min-height: calc(var(--totem-card-width) * 1.4); }
+  .totem-carousel-viewport {
+    gap: 0;
+    padding-inline: max(12px, calc(50% - (var(--totem-card-width) / 2)));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2039,12 +2056,13 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 4vw, 48px) clamp(28px, 6vh, 64px);
+  padding-inline: clamp(16px, 4vw, 48px);
+  padding-block: clamp(24px, 5vh, 48px) clamp(12px, 2vh, 24px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(20px, 4vh, 44px);
+  gap: clamp(24px, 4vh, 44px);
   text-align: center;
 }
 .totem-professionals-header-row {
@@ -2161,6 +2179,9 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
      overlapping wrapped title text — stack the CTA below it instead. */
   .totem-professionals-header-row { display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .totem-professionals-rent-cta { position: static; }
+}
+@media (max-width: 560px) {
+  .totem-professionals-inner { padding-inline: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .totem-skeleton-card { animation: none; background: var(--lumis-surface-2); }

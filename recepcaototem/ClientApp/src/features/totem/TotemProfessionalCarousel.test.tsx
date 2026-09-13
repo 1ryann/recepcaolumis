@@ -75,6 +75,14 @@ test('viewport and cards permit native horizontal and vertical gestures', () => 
   expect(source).not.toMatch(/onPointerDown|onPointerMove|onPointerEnd|setPointerCapture|releasePointerCapture|didDragRef/)
 })
 
+test('cards and edge padding share a responsive width', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+  expect(css).toContain('--totem-card-width:')
+  expect(css).toMatch(/flex:\s*0 0 var\(--totem-card-width\)/)
+  expect(css).toContain('calc(50% - (var(--totem-card-width) / 2))')
+  expect(css).toMatch(/min-height:\s*var\(--totem-stage-height\)/)
+})
+
 test('onScroll finds the nearest centre without scrolling back', () => {
   let frame: FrameRequestCallback = () => {}
   const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { frame = cb; return 1 })
