@@ -10,6 +10,64 @@ namespace GestaoPredio.IntegrationTests;
 public sealed class MigrationSafetyTests
 {
     [Fact]
+    public void Room_rental_migration_contains_exactly_two_new_tables_and_only_the_allowed_changes()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var assembly = db.GetService<IMigrationsAssembly>();
+        var metadata = Assert.Single(assembly.Migrations,
+            x => x.Key.EndsWith("_RoomPhotosAndRentalInquiries", StringComparison.Ordinal));
+        Assert.True(string.CompareOrdinal(metadata.Key, "20260910215630_TotemBookingHandoff") > 0);
+        var migration = assembly.CreateMigration(metadata.Value, "Npgsql.EntityFrameworkCore.PostgreSQL");
+        var newTables = new[] { "RoomPhotos", "RoomRentalInquiries" };
+        Assert.Equal(newTables, migration.UpOperations.OfType<CreateTableOperation>().Select(x => x.Name).Order().ToArray());
+        var drop = Assert.Single(migration.UpOperations.OfType<DropCheckConstraintOperation>());
+        Assert.Equal("PrivateFiles", drop.Table);
+        Assert.Equal("CK_PrivateFiles_Purpose", drop.Name);
+        var purpose = Assert.Single(migration.UpOperations.OfType<AddCheckConstraintOperation>(), x => x.Table == "PrivateFiles");
+        Assert.Equal("CK_PrivateFiles_Purpose", purpose.Name);
+        Assert.Equal("\"Purpose\" IN ('PROFESSIONAL_PHOTO', 'ROOM_PHOTO')", purpose.Sql);
+        Assert.All(migration.UpOperations, operation =>
+        {
+            switch (operation)
+            {
+                case CreateTableOperation table: Assert.Contains(table.Name, newTables); break;
+                case CreateIndexOperation index: Assert.Contains(index.Table, newTables); break;
+                case AddForeignKeyOperation foreignKey: Assert.Contains(foreignKey.Table, newTables); break;
+                case AddCheckConstraintOperation check when check.Table != "PrivateFiles": Assert.Contains(check.Table, newTables); break;
+                default: Assert.True(ReferenceEquals(operation, drop) || ReferenceEquals(operation, purpose),
+                    $"Unexpected migration operation: {operation.GetType().Name}"); break;
+            }
+            Assert.False(operation.IsDestructiveChange);
+        });
+        var inquiry = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>(), x => x.Name == "RoomRentalInquiries");
+        Assert.Equal(ReferentialAction.NoAction, Assert.Single(inquiry.ForeignKeys, x => x.PrincipalTable == "Leases").OnDelete);
+        Assert.Equal(newTables, migration.DownOperations.OfType<DropTableOperation>().Select(x => x.Name).Order().ToArray());
+        Assert.All(migration.DownOperations, operation => Assert.Contains(operation.GetType(),
+            new[] { typeof(DropTableOperation), typeof(DropCheckConstraintOperation), typeof(AddCheckConstraintOperation) }));
+        var restoredPurpose = Assert.Single(migration.DownOperations.OfType<AddCheckConstraintOperation>());
+        Assert.Equal("PrivateFiles", restoredPurpose.Table);
+        Assert.Equal("CK_PrivateFiles_Purpose", restoredPurpose.Name);
+        Assert.Equal("\"Purpose\" = 'PROFESSIONAL_PHOTO'", restoredPurpose.Sql);
+    }
+
+    [Fact]
+    public void Room_rental_SQL_preserves_existing_columns_and_history()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var sql = db.GetService<IMigrator>().GenerateScript("TotemBookingHandoff", "RoomPhotosAndRentalInquiries",
+            MigrationsSqlGenerationOptions.Idempotent);
+        foreach (var forbidden in new[] { "DROP TABLE", "DROP COLUMN", "ALTER COLUMN", "TRUNCATE ", "DELETE FROM",
+                     "ALTER TABLE \"Rooms\"", "ALTER TABLE \"Leases\"", "ALTER TABLE \"Professionals\"", "ALTER DATABASE", "UPDATE " })
+            Assert.DoesNotContain(forbidden, sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE \"RoomPhotos\"", sql);
+        Assert.Contains("CREATE TABLE \"RoomRentalInquiries\"", sql);
+        Assert.Contains("CREATE UNIQUE INDEX \"UX_RoomPhotos_Room_Cover\" ON \"RoomPhotos\" (\"RoomId\") WHERE \"IsCover\"", sql);
+        Assert.Contains("CREATE INDEX \"IX_RoomRentalInquiries_Status_CreatedAt\" ON \"RoomRentalInquiries\" (\"Status\", \"CreatedAt\") WHERE \"Status\" = 'NEW'", sql);
+        Assert.Contains("ALTER TABLE \"PrivateFiles\" DROP CONSTRAINT \"CK_PrivateFiles_Purpose\"", sql);
+        Assert.Contains("CHECK (\"Purpose\" IN ('PROFESSIONAL_PHOTO', 'ROOM_PHOTO'))", sql);
+    }
+
+    [Fact]
     public void PostgreSQL_model_snapshot_is_loaded_for_future_migrations()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);

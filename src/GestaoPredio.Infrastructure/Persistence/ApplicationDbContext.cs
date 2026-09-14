@@ -20,6 +20,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
  public DbSet<Professional> Professionals => Set<Professional>();
  public DbSet<Room> Rooms => Set<Room>();
+ public DbSet<RoomPhoto> RoomPhotos => Set<RoomPhoto>();
+ public DbSet<RoomRentalInquiry> RoomRentalInquiries => Set<RoomRentalInquiry>();
  public DbSet<PrivateFile> PrivateFiles => Set<PrivateFile>();
  public DbSet<Tenant> Tenants => Set<Tenant>();
  public DbSet<Lease> Leases => Set<Lease>();
@@ -48,6 +50,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
    .HasSchema("extensions");
   builder.ApplyConfiguration(new ProfessionalConfiguration());
   builder.ApplyConfiguration(new RoomConfiguration());
+  builder.ApplyConfiguration(new RoomPhotoConfiguration());
+  builder.ApplyConfiguration(new RoomRentalInquiryConfiguration());
   builder.ApplyConfiguration(new PrivateFileConfiguration());
   builder.ApplyConfiguration(new TenantConfiguration());
   builder.ApplyConfiguration(new LeaseConfiguration());

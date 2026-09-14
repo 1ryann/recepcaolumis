@@ -138,7 +138,8 @@ public sealed class ModuleModelTests
         AssertColumn(entity, "MimeType", "character varying(20)", 20);
         AssertColumn(entity, "Purpose", "character varying(50)", 50);
         Assert.Equal("bigint", entity.FindProperty("Length")!.GetColumnType());
-        Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "\"Purpose\" = 'PROFESSIONAL_PHOTO'");
+        Assert.Contains(entity.GetCheckConstraints(), check => check.Name == "CK_PrivateFiles_Purpose"
+            && check.Sql == "\"Purpose\" IN ('PROFESSIONAL_PHOTO', 'ROOM_PHOTO')");
         Assert.Contains(entity.GetCheckConstraints(), check => check.Sql == "\"Length\" > 0");
         AssertIndex(entity, "UX_PrivateFiles_StorageKey", true, null, "StorageKey");
     }
