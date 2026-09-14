@@ -23,7 +23,7 @@ public sealed class PrivateFile
             throw new ArgumentOutOfRangeException(nameof(length));
         }
 
-        if (!StringComparer.Ordinal.Equals(purpose, PrivateFilePurposes.ProfessionalPhoto))
+        if (purpose is not (PrivateFilePurposes.ProfessionalPhoto or PrivateFilePurposes.RoomPhoto))
         {
             throw new ArgumentException("A finalidade do arquivo não é permitida.", nameof(purpose));
         }

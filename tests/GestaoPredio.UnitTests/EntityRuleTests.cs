@@ -180,6 +180,24 @@ public sealed class EntityRuleTests
         Assert.DoesNotContain(typeof(PrivateFile).GetProperties(), property => property.Name is "FileName" or "Path" or "Bytes");
     }
 
+    [Fact]
+    public void Room_photo_purpose_is_allowed()
+    {
+        var file = PrivateFile.Create("room-photo-test", "image/webp", 123, "ROOM_PHOTO", DateTimeOffset.UtcNow);
+
+        Assert.Equal("ROOM_PHOTO", file.Purpose);
+    }
+
+    [Theory]
+    [InlineData("OTHER")]
+    [InlineData("room_photo")]
+    [InlineData("")]
+    public void Unknown_private_file_purpose_is_rejected(string purpose)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            PrivateFile.Create("test", "image/webp", 123, purpose, DateTimeOffset.UtcNow));
+    }
+
     private static void AssertPropertiesDoNotHavePublicSetters(Type entityType, params string[] propertyNames)
     {
         foreach (var propertyName in propertyNames)
