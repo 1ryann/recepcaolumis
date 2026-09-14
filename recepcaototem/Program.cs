@@ -1,7 +1,10 @@
 using System.Threading.RateLimiting;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using GestaoPredio.Application.Abstractions;
 using GestaoPredio.Application.Files;
 using GestaoPredio.Domain.Security;
+using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Infrastructure.Auditing;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
@@ -54,7 +57,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 builder.Services.AddProblemDetails();
-builder.Services.ConfigureHttpJsonOptions(StrictBody.Configure);
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    StrictBody.Configure(options);
+    options.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter<PublicRoomAvailabilityStatus>(JsonNamingPolicy.SnakeCaseUpper, false));
+});
 var connection = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connection, postgres => postgres.CommandTimeout(5)));
