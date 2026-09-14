@@ -191,6 +191,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
 
     [Theory]
     [InlineData("stage")]
+    [InlineData("stage-cancel")]
     [InlineData("commit")]
     [InlineData("normalize-cancel")]
     [InlineData("database")]
@@ -200,7 +201,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         await PrepareAsync();
         if (failure == "database")
             await Assert.ThrowsAsync<DbUpdateException>(() => UploadAsync(failure: failure));
-        else if (failure == "normalize-cancel")
+        else if (failure is "normalize-cancel" or "stage-cancel")
             await Assert.ThrowsAsync<OperationCanceledException>(() => UploadAsync(failure: failure));
         else
             await Assert.ThrowsAsync<IOException>(() => UploadAsync(failure: failure));
@@ -211,6 +212,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     [InlineData("delete-false")]
     [InlineData("delete-throw")]
     [InlineData("metadata-delete")]
+    [InlineData("metadata-provider")]
     public async Task Cleanup_failure_retains_metadata_and_logs_without_reverting_committed_delete(string failure)
     {
         await PrepareAsync();
@@ -220,7 +222,8 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         await AssertGalleryAsync([], null);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PrivateFiles.CountAsync());
-        Assert.Equal(failure == "metadata-delete" ? 0 : 1, Directory.GetFiles(Path.Combine(factory.PrivateFilesRoot, "files")).Length);
+        Assert.Equal(failure.StartsWith("metadata-", StringComparison.Ordinal) ? 0 : 1,
+            Directory.GetFiles(Path.Combine(factory.PrivateFilesRoot, "files")).Length);
         Assert.Contains("cleanup failed", logs.Text, StringComparison.OrdinalIgnoreCase);
         await AssertAuditsAsync("ROOM_PHOTO_REMOVED", 1);
     }
@@ -273,6 +276,38 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         Assert.Equal(factory.UtcNow, audit.OccurredAt);
     }
 
+    [Fact]
+    public async Task Normalized_webp_exceeding_valid_limit_returns_invalid_photo_without_artifacts()
+    {
+        await PrepareAsync();
+        const long maximumBytes = 100;
+        var bytes = TestImageData.WebP();
+        Assert.InRange(bytes.Length, 1, maximumBytes);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var normalizer = scope.ServiceProvider.GetRequiredService<IImageNormalizer>();
+            await using var source = new MemoryStream(bytes);
+            var normalized = await normalizer.NormalizeAsync(source, default);
+            await using (normalized.Content) Assert.True(normalized.Length > maximumBytes);
+        }
+
+        AssertError(await UploadAsync(variant: "webp", maximumBytes: maximumBytes), 400, "INVALID_ROOM_PHOTO");
+        await AssertEmptyAsync();
+    }
+
+    [Fact]
+    public async Task Metadata_cleanup_cancellation_is_not_swallowed_after_committed_delete()
+    {
+        await PrepareAsync();
+        var photo = Photo(await UploadAsync());
+        await Assert.ThrowsAsync<OperationCanceledException>(() => MutateAsync("delete", photo.Id, failure: "metadata-cancel"));
+        await AssertGalleryAsync([], null);
+        await using var scope = factory.Services.CreateAsyncScope();
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PrivateFiles.CountAsync());
+        Assert.Empty(Directory.GetFiles(Path.Combine(factory.PrivateFilesRoot, "files")));
+        await AssertAuditsAsync("ROOM_PHOTO_REMOVED", 1);
+    }
+
     private async Task PrepareAsync()
     {
         await factory.ResetAsync();
@@ -297,7 +332,8 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, _actorId)], "Test"))
     };
 
-    private async Task<IResult> UploadAsync(string variant = "valid", Guid? roomId = null, string? failure = null, AsyncGate? gate = null)
+    private async Task<IResult> UploadAsync(string variant = "valid", Guid? roomId = null, string? failure = null,
+        AsyncGate? gate = null, long? maximumBytes = null)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var services = scope.ServiceProvider;
@@ -308,11 +344,13 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             "invalid" => new byte[] { 1, 2, 3 },
             "oversized" => new byte[5 * 1024 * 1024 + 1],
             "undecodable" => TestImageData.SniffValidButUndecodableWebP(),
+            "webp" => TestImageData.WebP(),
             _ => TestImageData.Png(800, 600)
         };
         var file = new ByteArrayContent(bytes);
-        file.Headers.ContentType = new MediaTypeHeaderValue(variant == "undecodable" ? "image/webp" : "image/png");
-        if (variant != "missing-file") multipart.Add(file, variant == "wrong-field" ? "other" : "file", variant == "undecodable" ? "photo.webp" : "photo.png");
+        var isWebp = variant is "undecodable" or "webp";
+        file.Headers.ContentType = new MediaTypeHeaderValue(isWebp ? "image/webp" : "image/png");
+        if (variant != "missing-file") multipart.Add(file, variant == "wrong-field" ? "other" : "file", isWebp ? "photo.webp" : "photo.png");
         if (variant == "extra-field") multipart.Add(new StringContent("unexpected"), "concurrencyToken");
         if (variant == "duplicate-file") multipart.Add(new ByteArrayContent(bytes), "file", "other.png");
         context.Request.Body = await multipart.ReadAsStreamAsync();
@@ -323,17 +361,25 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         var storage = new FaultStorage(services.GetRequiredService<IPrivateFileStorage>(), failure);
         ILeaseResourceLock resourceLock = new GestaoPredio.Infrastructure.Leases.PostgreSqlLeaseResourceLock(db);
         if (gate is not null || failure == "lock") resourceLock = new GatedLock(resourceLock, gate, failure == "lock");
+        var options = services.GetRequiredService<IOptions<PrivateFileStorageOptions>>();
+        if (maximumBytes.HasValue) options = Options.Create(new PrivateFileStorageOptions
+        {
+            PrivateFilesPath = options.Value.PrivateFilesPath,
+            ProfessionalPhotoMaxBytes = options.Value.ProfessionalPhotoMaxBytes,
+            RoomPhotoMaxBytes = maximumBytes.Value
+        });
         return await RoomPhotoMutation.UploadAsync(roomId ?? _roomId, context.Request, context, db, storage,
             services.GetRequiredService<IProfessionalPhotoValidator>(),
             failure == "normalize-cancel" ? new CancelNormalizer() : services.GetRequiredService<IImageNormalizer>(),
-            resourceLock, services.GetRequiredService<IOptions<PrivateFileStorageOptions>>(),
+            resourceLock, options,
             services.GetRequiredService<TimeProvider>(), services.GetRequiredService<ILoggerFactory>(), default);
     }
 
     private ApplicationDbContext CreateDb(string? failure)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(factory.ConnectionString);
-        if (failure is "database" or "metadata-delete") options.AddInterceptors(new FailureInterceptor(failure));
+        if (failure == "database" || failure?.StartsWith("metadata-", StringComparison.Ordinal) == true)
+            options.AddInterceptors(new FailureInterceptor(failure));
         return new ApplicationDbContext(options.Options);
     }
 
@@ -411,7 +457,12 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
             if (failure == "database" || eventData.Context!.ChangeTracker.Entries<PrivateFile>().Any(x => x.State == EntityState.Deleted))
-                throw new DbUpdateException("Injected persistence failure");
+                throw failure switch
+                {
+                    "metadata-provider" => new Npgsql.NpgsqlException("Injected provider connection failure"),
+                    "metadata-cancel" => new OperationCanceledException(),
+                    _ => new DbUpdateException("Injected persistence failure")
+                };
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
@@ -441,8 +492,15 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     private sealed class FaultStorage(IPrivateFileStorage inner, string? failure) : IPrivateFileStorage
     {
         private int _stages;
-        public Task<StagedPrivateFile> StageAsync(Stream source, long maximumBytes, CancellationToken ct) =>
-            Interlocked.Increment(ref _stages) == 2 && failure == "stage" ? throw new IOException("Injected stage failure") : inner.StageAsync(source, maximumBytes, ct);
+        public Task<StagedPrivateFile> StageAsync(Stream source, long maximumBytes, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _stages) == 2)
+            {
+                if (failure == "stage") throw new IOException("Injected stage failure");
+                if (failure == "stage-cancel") throw new OperationCanceledException();
+            }
+            return inner.StageAsync(source, maximumBytes, ct);
+        }
         public Task<string> CommitAsync(StagedPrivateFile staged, CancellationToken ct) =>
             failure == "commit" ? throw new IOException("Injected commit failure") : inner.CommitAsync(staged, ct);
         public Task<Stream> OpenStagedReadAsync(StagedPrivateFile staged, CancellationToken ct) => inner.OpenStagedReadAsync(staged, ct);

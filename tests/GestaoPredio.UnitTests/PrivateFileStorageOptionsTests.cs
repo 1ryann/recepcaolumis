@@ -18,6 +18,7 @@ public sealed class PrivateFileStorageOptionsTests : IDisposable
     [InlineData(0, false)]
     [InlineData(10485761, false)]
     [InlineData(5242880, true)]
+    [InlineData(100, true)]
     public void Room_photo_limit_validates_its_own_safe_range(long size, bool valid)
     {
         var privateRoot = Path.Combine(_root, "private");

@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Claims;
 using GestaoPredio.Application.Abstractions;
 using GestaoPredio.Application.Files;
@@ -56,7 +57,8 @@ public static class RoomPhotoMutation
             await using (normalized.Content)
             {
                 normalizedLength = normalized.Length;
-                normalizedStaged = await storage.StageAsync(normalized.Content, maximumBytes, cancellationToken);
+                try { normalizedStaged = await storage.StageAsync(normalized.Content, maximumBytes, cancellationToken); }
+                catch (InvalidDataException) { return InvalidPhoto(); }
             }
         }
         finally { await DiscardSafely(storage, upload.Staged); }
@@ -232,7 +234,7 @@ public static class RoomPhotoMutation
             db.PrivateFiles.Remove(previousFile);
             await db.SaveChangesAsync(CancellationToken.None);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DbUpdateException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DbUpdateException or DbException)
         {
             LogCleanupFailure();
         }
