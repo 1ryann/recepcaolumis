@@ -4,19 +4,19 @@
 
 **Branch:** `codex/reception-backend` (worktree `.worktrees/reception-backend`). HEAD no momento da escrita: `0256854da39e88bf40f7c5d64181088043b9b38a`.
 
-**Revisão pontual (2026-09-13):** ajustes feitos após a primeira aprovação conceitual, antes do `writing-plans`: (1) a troca de mecanismo de touch mantém a lógica de `onScroll`+`requestAnimationFrame` já existente (não era a causa do bug) e **não** introduz `IntersectionObserver`; (2) a regra de disponibilidade agora trata leases `Active` e `Scheduled` como bloqueantes (cobrindo contratos futuros já assinados); (3) `HourlyRate`/`DailyRate` saem dos DTOs públicos — o fluxo público é de interesse, não de preço/contratação; (4) invariantes de capa/ordenação de `RoomPhoto` detalhados explicitamente; (5) o snapshot de disponibilidade no interesse passa a ser estruturado (`status` + `data`), nunca texto localizado persistido; (6) a experiência pós-interesse ganha uma tela própria com QR Code (reaproveitando o padrão de `TotemHandoff.tsx`), não um `window.open` isolado; (7) a configuração do WhatsApp do Financeiro ganha regras explícitas de obrigatoriedade por ambiente. Nenhuma dessas mudanças altera as decisões arquiteturais já aprovadas (Room→RoomPhoto→PrivateFile, RoomRentalInquiry, um único WhatsApp, migration única) — são precisão de contrato e comportamento.
+**Revisão pontual (2026-09-13):** além dos refinamentos de touch, disponibilidade, DTOs públicos, fotos, snapshot estruturado, QR e configuração do WhatsApp, esta revisão conecta `RoomRentalInquiry` ao fluxo real de criação de `Lease`. O Admin reutiliza o modal existente de “Nova locação”; o interesse passa somente de `New` para `Converted`, com `LeaseId` e `ConvertedAt`, na mesma transação que cria a locação. A migration continua única.
 
 **Escopo:**
 1. Reavaliar a arquitetura de touch do carrossel do Totem — trocar o drag customizado (Pointer Events + `scrollLeft` manual) por scroll horizontal **nativo** do navegador com `scroll-snap`, mantendo o efeito visual de coverflow. Motivo: o fix anterior (touch-action/user-select no card) não resolveu em celular físico.
 2. Reforçar a composição visual da tela `/totem/profissionais`: carrossel maior, card central com mais peso visual, palco deslocado para baixo, evitando o grande vazio inferior relatado.
-3. Tornar "Alugar sala" funcional: catálogo público de salas com disponibilidade derivada de `Room`+`Lease`, galeria de fotos por sala, formulário de interesse que persiste e depois abre WhatsApp de um número único do Financeiro (configurado no backend).
+3. Tornar "Alugar sala" funcional: catálogo público de salas com disponibilidade derivada de `Room`+`Lease`, galeria de fotos por sala, formulário de interesse que persiste e continua no WhatsApp do Financeiro, e conversão posterior no Admin pelo formulário real de “Nova locação”.
 
 **Princípio arquitetural (não negociável):** reutilizar o que já existe. A investigação abaixo mostra exatamente o que já existe, o que precisa de extensão aditiva e o que é genuinamente novo — nenhuma tabela, storage ou fluxo paralelo é criado onde algo real já resolve o problema.
 
 **Fora de escopo (explícito, nesta spec):**
 - Qualquer fluxo de pagamento online da locação.
-- CRM de interesses (funil, atribuição, follow-up automatizado) — só a listagem simples pedida.
-- Edição de status do interesse pelo Admin (fica só leitura nesta fase; ver §7.5).
+- CRM de interesses (funil, atribuição, follow-up automatizado) — só detalhes e a transição `New → Converted` produzida pela criação de uma locação.
+- Edição manual ou transições adicionais de status do interesse; `Converted` só pode resultar da criação transacional de `Lease`.
 - Alterar `professionalId`, dados, disponibilidade, handoff, autenticação ou criação de reservas do fluxo de profissionais já existente.
 - Reintroduzir qualquer mock/dado fixo no bundle de produção.
 - CPF/CNPJ no formulário de interesse.
@@ -304,20 +304,24 @@ public sealed class RoomRentalInquiry {
     public string? Note { get; }                                  // observação opcional
     public PublicRoomAvailabilityStatus PresentedAvailabilityStatus { get; } // snapshot ESTRUTURADO, não texto
     public DateOnly? PresentedAvailableFrom { get; }              // snapshot ESTRUTURADO, null quando AvailableNow
-    public RoomRentalInquiryStatus Status { get; }                // New = 1 (único valor nesta fase)
+    public RoomRentalInquiryStatus Status { get; }                // New = 1, Converted = 2
+    public Guid? LeaseId { get; }                                  // null até a conversão
+    public DateTimeOffset? ConvertedAt { get; }                    // null até a conversão
     public DateTimeOffset CreatedAt { get; }
 
     public static RoomRentalInquiry Create(Guid roomId, string fullName, string whatsApp,
         string professionOrCompany, string? note,
         PublicRoomAvailabilityStatus presentedAvailabilityStatus, DateOnly? presentedAvailableFrom,
         DateTimeOffset occurredAt);
+
+    public void Convert(Guid leaseId, DateTimeOffset occurredAt);
 }
 ```
 **Revisão 2026-09-13 — snapshot estruturado, não texto:** a versão anterior desta spec persistia `PresentedAvailability` como `string` já formatada em PT-BR (ex. `"Disponível a partir de 01/10/2026"`). Isto foi corrigido: o snapshot grava **dado**, não **apresentação** — `PresentedAvailabilityStatus` (o mesmo enum `PublicRoomAvailabilityStatus` do §5.2) + `PresentedAvailableFrom` (nullable, populado só quando o status é `AvailableSoon`). O texto em português — "Disponível agora" / "Disponível em breve — a partir de 01/10/2026" — é formatado **só** em três lugares que consomem esses dois campos, nunca persistido: a listagem do Admin (§7.5), a resposta do endpoint de criação (§7.3), e a mensagem do WhatsApp (§8.3). Isto evita, por exemplo, que uma correção futura de formato de data ou uma tradução exijam migrar dados históricos — o dado bruto nunca muda de forma, só a sua apresentação.
 
-**Sem CPF/CNPJ** (explícito no pedido). `Status` existe porque o usuário pediu "status mínimo necessário" — um único valor hoje (`New`), sem endpoint de transição nesta fase (mudar status manualmente não foi pedido; fica de fora, ver escopo). Sem `Version`/concorrência otimista — não há edição concorrente prevista para este registro nesta fase (é escrita única, leitura no Admin).
+**Sem CPF/CNPJ** (explícito no pedido). `Status` possui somente `New` e `Converted`; não há edição manual, CRM ou outros estados. `Convert(leaseId, occurredAt)` exige `leaseId` válido, aceita somente `New`, grava `LeaseId`, `ConvertedAt` normalizado para UTC/microssegundos e muda o status para `Converted`; uma segunda conversão falha. O interesse preserva para auditoria o `RoomId` originalmente solicitado, mesmo que o Admin escolha outra sala no contrato. Sem `Version`: a corrida é resolvida no banco por atualização condicional dentro da transação de criação do Lease (§7.6), não por um formulário genérico de edição.
 
-EF config `RoomRentalInquiryConfiguration.cs`: FK `RoomId → Rooms(Id)` `DeleteBehavior.NoAction` (mesmo padrão de `Lease`/`Reservation` — nunca apagar histórico em cascata por causa de uma sala desativada), índice `IX_RoomRentalInquiries_Room_CreatedAt` para a listagem do Admin ordenada por sala/data.
+EF config `RoomRentalInquiryConfiguration.cs`: FK `RoomId → Rooms(Id)` `DeleteBehavior.NoAction`; FK nullable `LeaseId → Leases(Id)` também `DeleteBehavior.NoAction`; índice `IX_RoomRentalInquiries_Room_CreatedAt` para listagem e índice parcial `IX_RoomRentalInquiries_Status_CreatedAt` sobre `Status = 'NEW'` para a fila operacional. `LeaseId` não precisa de índice único adicional: existe uma única linha de inquiry e a atualização condicional `Status = NEW` impede que ela produza dois contratos; a FK garante que um valor gravado sempre aponte para um Lease existente.
 
 ### 7.2 Validação
 
@@ -359,7 +363,28 @@ Rota nova `/totem/salas` (catálogo, agrupado em "Disponíveis agora" / "Dispon�
 
 ### 7.5 Admin — "Interesses de locação"
 
-Nova aba/rota `/admin/interesses-locacao` (ou seção dentro de `/admin/locacoes` — decisão de implementação; recomendo rota própria para não sobrecarregar a tela de Locações que já lista contratos reais, um conceito diferente). Tabela somente-leitura: Interessado (`FullName`), WhatsApp, Sala (`Room.Name`, link para a sala no Admin), **Disponibilidade apresentada** (`PresentedAvailabilityStatus`/`PresentedAvailableFrom` formatados em PT-BR só nesta tela, nunca lidos como texto pronto do banco — mesma função de formatação usada em §7.3/§8.3, não duplicada), Profissão/Empresa, Data (`CreatedAt`), Status. Sem edição de status nesta fase (campo mostrado, não editável) — reafirma o "não construir CRM complexo" do pedido. `GET /api/admin/room-rental-inquiries` paginado, `RequireAuthorization("Operations")`, mesmo padrão de paginação de `RoomEndpoints.List`.
+A rota própria `/admin/interesses-locacao` mantém os interesses separados dos contratos e oferece listagem paginada mais detalhe, ambos com `RequireAuthorization("Operations")`: `GET /api/admin/room-rental-inquiries` e `GET /api/admin/room-rental-inquiries/{id:guid}`. A resposta inclui interessado, WhatsApp, sala originalmente solicitada, disponibilidade apresentada a partir do snapshot estruturado, profissão/empresa, observação, data, `Status`, `LeaseId` e `ConvertedAt`.
+
+Para `New`, as ações são **Ver detalhes** e **Criar locação**. Para `Converted`, são **Ver detalhes** e **Ver locação**. Não existe botão de editar status. “Criar locação” navega para `/admin/locacoes?inquiryId={id}`; `Leases.tsx` lê o interesse e abre o mesmo modal já usado pelo botão “Nova locação”. “Ver locação” navega para `/admin/locacoes?leaseId={leaseId}` e abre o detalhe já existente. Não há segundo formulário de contrato.
+
+O prefill é deliberadamente restrito:
+- `RoomId` do interesse preenche inicialmente o select de Sala, mas o Admin pode trocá-lo; o `RoomId` original do inquiry nunca é reescrito.
+- O contrato real de `Tenant` contém somente `Name` e `Kind`. Se ainda não existir Tenant, “Novo locatário” recebe apenas `FullName` como nome inicial; o Admin confirma `INDIVIDUAL` ou `LEGAL_ENTITY`. WhatsApp não pertence a Tenant e `ProfessionOrCompany` não vira nome/tipo automaticamente. Depois de criar, o fluxo existente seleciona o novo `tenantId` no modal.
+- `ProfessionalId` nunca é inferido de `ProfessionOrCompany`; o modelo não contém vínculo inequívoco, então o Admin seleciona.
+- Modalidade, valor contratado, vencimento, início da cobrança, início e fim da ocupação não são inferidos do inquiry; o modal preserva seus defaults atuais e todos esses campos continuam sob controle do Admin. A disponibilidade apresentada aparece apenas como contexto e não preenche datas ou condições.
+
+### 7.6 Conversão transacional pelo fluxo real de Lease
+
+O contrato real atual é `POST /api/admin/leases`, protegido por `Operations` + antiforgery, com `CreateLeaseRequest(TenantId, ProfessionalId, RoomId, Mode, ContractedRate, BillingStartAt, BillingDueDay, OccupancyStartAt, OccupancyEndAt)`. O handler já abre uma transação, adquire locks de Tenant/Room/Professional, valida recursos, reconcilia leases vencidos, verifica disponibilidade/conflitos, chama `Lease.Create`, materializa `LeaseOccurrence`, registra `LEASE_CREATED` e salva. Não será criado endpoint paralelo que duplique essas regras.
+
+A extensão mínima adiciona `Guid? RoomRentalInquiryId` ao `CreateLeaseRequest`. Quando ausente, o comportamento atual permanece. Quando presente, o mesmo handler:
+1. verifica que o inquiry existe e está `New`; não exige que o `request.RoomId` seja igual ao `inquiry.RoomId`, pois a troca de sala é permitida;
+2. executa todas as validações e regras existentes e salva o Lease, ocorrências e auditoria dentro da transação já aberta;
+3. ainda na mesma transação, faz atualização condicional do inquiry com predicado `Id = RoomRentalInquiryId AND Status = NEW`, gravando `Status = CONVERTED`, `LeaseId = lease.Id` e `ConvertedAt = now`;
+4. se a atualização afetar zero linhas, faz rollback de toda a transação e responde `409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED`; assim, uma corrida nunca deixa um segundo Lease persistido;
+5. faz commit somente após Lease e inquiry estarem consistentes.
+
+Inquiry inexistente retorna `404`; inquiry já convertido retorna `409` com o mesmo código. A FK `LeaseId → Leases(Id)` impede `Converted` apontando para contrato inexistente. Um CHECK constraint exige `Status = NEW` com `LeaseId`/`ConvertedAt` nulos ou `Status = CONVERTED` com ambos preenchidos, inclusive quando a atualização condicional não passa pelo método de domínio. A resposta do `POST /api/admin/leases` continua `LeaseResponse`, permitindo ao frontend abrir o detalhe criado. Um `AuditEntry` adicional `ROOM_RENTAL_INQUIRY_CONVERTED` registra inquiry e Lease sem duplicar `LEASE_CREATED`.
 
 ---
 
@@ -422,7 +447,7 @@ Nome proposto: `RoomPhotosAndRentalInquiries` (pasta `PostgreSql`, timestamp no 
 Conteúdo:
 1. Alterar `CK_PrivateFiles_Purpose` para `"Purpose" IN ('PROFESSIONAL_PHOTO', 'ROOM_PHOTO')`.
 2. Criar tabela `RoomPhotos` (`Id` PK, `RoomId` FK→`Rooms` cascade, `PrivateFileId` FK→`PrivateFiles` restrict, `SortOrder int`, `IsCover bool`, `CreatedAt`), índice `IX_RoomPhotos_Room_SortOrder`, índice único parcial `UX_RoomPhotos_Room_Cover WHERE "IsCover"`.
-3. Criar tabela `RoomRentalInquiries` (`Id` PK, `RoomId` FK→`Rooms` no-action, `FullName`, `WhatsApp`, `ProfessionOrCompany`, `Note` nullable, `PresentedAvailabilityStatus` (mesmo tipo/conversão de `PublicRoomAvailabilityStatus` usado no DTO — texto, não int, seguindo a convenção já usada para `LeaseLifecycleState`, §1.2), `PresentedAvailableFrom` (`date`, nullable), `Status`, `CreatedAt`), índice `IX_RoomRentalInquiries_Room_CreatedAt`.
+3. Criar tabela `RoomRentalInquiries` (`Id` PK, `RoomId` FK→`Rooms` no-action, `FullName`, `WhatsApp`, `ProfessionOrCompany`, `Note` nullable, `PresentedAvailabilityStatus` (mesmo tipo/conversão de `PublicRoomAvailabilityStatus` usado no DTO — texto, não int, seguindo a convenção já usada para `LeaseLifecycleState`, §1.2), `PresentedAvailableFrom` (`date`, nullable), `Status` como `NEW`/`CONVERTED`, `LeaseId` nullable com FK→`Leases` no-action, `ConvertedAt` nullable e `CreatedAt`). Adicionar CHECK constraint que permita somente `NEW` com `LeaseId`/`ConvertedAt` nulos ou `CONVERTED` com ambos preenchidos, o índice `IX_RoomRentalInquiries_Room_CreatedAt` e o índice parcial `IX_RoomRentalInquiries_Status_CreatedAt WHERE \"Status\" = 'NEW'` para a fila operacional.
 
 Zero mudança em tabelas existentes além do CHECK de `PrivateFiles` (nenhuma coluna nova em `Room`/`Lease`/`Professional`).
 
@@ -435,7 +460,8 @@ Zero mudança em tabelas existentes além do CHECK de `PrivateFiles` (nenhuma co
 | `GET /api/totem/rooms`, `/{id}`, `/{id}/photos/{photoId}` | anônimo | `CustomerPublicRateLimiter` | não (sem sessão) |
 | `POST /api/totem/rooms/{id}/rental-inquiries` | anônimo | `RoomRentalInquiryRateLimiter` (novo, mais restritivo) | não (sem sessão) |
 | `GET/POST/DELETE/PUT /api/admin/rooms/{id}/photos*` | `"Operations"` | não (mesma convenção do CRUD de salas hoje, que também não tem rate limiter dedicado) | sim, mutações |
-| `GET /api/admin/room-rental-inquiries` | `"Operations"` | não (leitura autenticada) | não (GET) |
+| `GET /api/admin/room-rental-inquiries`, `/{id:guid}` | `"Operations"` | não (leitura autenticada) | não (GET) |
+| `POST /api/admin/leases` com `RoomRentalInquiryId` opcional | `"Operations"` | não (mesma rota existente) | sim; criação e conversão atômicas |
 
 Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, `"Professional"` etc.) — só reuso.
 
@@ -446,7 +472,8 @@ Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, 
 **Backend:**
 - `RoomPhotoTests` (integração, mesmo padrão de `ProfessionalPhotoTests`): upload válido, upload inválido (`INVALID_ROOM_PHOTO`), limite de 8 (`ROOM_PHOTO_LIMIT_REACHED`), streaming público retorna a imagem certa com cache header público, e **um teste por invariante do §6.2.1**: primeira foto vira capa; segunda foto não mexe na capa; excluir foto não-capa preserva a capa e recompacta `SortOrder`; excluir a capa promove a próxima foto ordenada; excluir a última foto deixa a sala sem capa (`CoverPhotoUrl` nulo); `reorder` com conjunto de IDs incompleto/IDs duplicados/ID de outra sala → `400`; `reorder` válido produz `SortOrder` contíguo `0..N-1`; trocar de capa nunca deixa, mesmo momentaneamente, zero ou duas linhas com `IsCover=true` (teste de concorrência/transação, ex. duas trocas de capa disparadas em paralelo — a segunda deve falhar ou serializar, nunca violar `UX_RoomPhotos_Room_Cover`).
 - `RoomAvailabilityTests` (unit, sobre a função pura que implementa §5.1, **regra revisada**): sem lease bloqueante → `AVAILABLE_NOW`; um lease `Active` com `OccupancyEndAt` → `AVAILABLE_SOON` com a data certa (`+1 dia`); um lease `Scheduled` futuro com `OccupancyEndAt` → `AVAILABLE_SOON` (fixa a regra revisada — `Scheduled` agora bloqueia); **dois leases bloqueantes consecutivos** (um `Active` terminando antes de um `Scheduled` que já começa em seguida, ambos com `OccupancyEndAt`) → `AVAILABLE_SOON` com `AvailableFrom` = o **maior** `OccupancyEndAt` dos dois, `+1 dia` (cobre "múltiplos contratos consecutivos" explicitamente); qualquer lease bloqueante (`Active` **ou** `Scheduled`) sem `OccupancyEndAt` → sala fora da lista, mesmo com outro lease bloqueante tendo `OccupancyEndAt` definido; lease `EndingPending`/`Ended`/`Cancelled` → nunca bloqueante, ignorado (inalterado).
-- `RoomRentalInquiryTests` (integração): criação válida retorna `whatsappUrl` com o texto esperado (decodificar e comparar) e `presentedAvailabilityLabel` formatado corretamente; validação rejeita campos ausentes/whatsapp inválido; rate limit dispara 429; sala inativa/inexistente/`OCCUPIED` → 404; `PresentedAvailabilityStatus`/`PresentedAvailableFrom` persistidos refletem a disponibilidade real calculada no servidor no momento do POST (não confia em nada vindo do cliente); a entidade nunca grava texto formatado, só os dois campos estruturados (teste de asserção direta sobre as colunas, não só sobre a resposta).
+- `RoomRentalInquiryTests` (integração): criação válida retorna `whatsappUrl` com o texto esperado (decodificar e comparar) e `presentedAvailabilityLabel` formatado corretamente; validação rejeita campos ausentes/whatsapp inválido; rate limit dispara 429; sala inativa/inexistente/`OCCUPIED` → 404; `PresentedAvailabilityStatus`/`PresentedAvailableFrom` persistidos refletem a disponibilidade real calculada no servidor no momento do POST (não confia em nada vindo do cliente); a entidade nunca grava texto formatado, só os dois campos estruturados; todo interesse público nasce `New`, com `LeaseId`/`ConvertedAt` nulos.
+- `RoomRentalInquiryConversionTests` (integração): criar Lease sem inquiry preserva o comportamento atual; converter um inquiry `New` cria Lease/ocorrências/auditorias e grava `Converted`, `LeaseId` e `ConvertedAt` na mesma transação; escolher outra sala é permitido sem alterar o `RoomId` original do inquiry; falha de validação ou conflito de ocupação não cria Lease e deixa o inquiry `New`; ID inexistente retorna `404`; ID já convertido retorna `409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED`; duas requisições concorrentes para o mesmo inquiry deixam exatamente um Lease persistido e uma resposta `409`; FK e CHECK impedem referências/estados inconsistentes.
 - `PrivateFileTests` (unit, existente, estender): `PrivateFile.Create` aceita `ROOM_PHOTO` além de `PROFESSIONAL_PHOTO`; continua rejeitando qualquer outro valor.
 - `PublicRoomContractsTests` (novo, unit): `PublicRoomCard`/`PublicRoomDetail` não têm `HourlyRate`/`DailyRate` — teste de reflexão simples sobre as propriedades do tipo, para travar a decisão do §5.2 contra reintrodução acidental futura.
 
@@ -455,7 +482,9 @@ Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, 
 - `TotemRoomsCatalog.test.tsx`/`TotemRoomDetail.test.tsx` (novos): agrupamento "Disponíveis agora"/"Disponíveis em breve", rótulo de data correto, galeria renderiza `PhotoUrls` na ordem recebida, **nenhuma tarifa exibida** (assert negativo — `HourlyRate`/`DailyRate` não aparecem em lugar nenhum da tela pública), formulário valida campos obrigatórios, submissão bem-sucedida navega para a tela "Continue no WhatsApp" com o QR renderizado a partir do `whatsappUrl` retornado, erro de validação do backend aparece inline.
 - `TotemRoomInterestSuccess.test.tsx` (novo): renderiza o QR (mock de `qrcode`, mesmo padrão de mock já usado em `TotemHandoff.test.tsx` se existir, ou o padrão equivalente), botão "Abrir WhatsApp" chama `window.open` com o `whatsappUrl` exato, **nenhum polling/intervalo é iniciado** (diferente de `TotemHandoff` — teste negativo garantindo que a tela não tenta chamar nenhum endpoint de status).
 - `Rooms.test.tsx` (Admin, estender): botão "Gerenciar fotos" abre o modal, upload/remover/reordenar/capa chamam os endpoints certos, contador de limite.
-- `RoomRentalInquiries.test.tsx` (Admin, novo): tabela lista os campos pedidos incluindo a disponibilidade formatada a partir dos campos estruturados, paginação.
+- `RoomRentalInquiries.test.tsx` (Admin, novo): listagem e detalhe exibem os campos pedidos, disponibilidade formatada e os dois status; `New` oferece “Ver detalhes”/“Criar locação” e navega com `inquiryId`; `Converted` oferece “Ver detalhes”/“Ver locação” e navega com `leaseId`; paginação preservada.
+- `Leases.test.tsx` (Admin, estender): `inquiryId` abre o modal existente de “Nova locação”, preenche a sala de forma editável e oferece `FullName` somente como nome inicial do fluxo existente de “Novo locatário”; não infere `ProfessionalId`, `Kind`, modalidade, valores ou datas; o submit envia `RoomRentalInquiryId`; `leaseId` abre o detalhe existente da locação.
+- `modules.test.ts` (API frontend, estender): serialização opcional de `roomRentalInquiryId`, leitura do detalhe do inquiry e compatibilidade da criação de Lease sem inquiry.
 
 **Gates de sempre** (sem mudança): `npx vitest run`, `npx tsc -b`, `npx vite build`, `node scripts/verify-production-bundle.mjs`, `git diff --check`, mais os testes de integração `dotnet test` cobrindo os arquivos novos do backend.
 
@@ -468,7 +497,7 @@ Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, 
 3. `RoomPhoto` é uma tabela nova (não uma coluna em `Room`) porque é galeria (1-N), diferente do padrão de foto única de `Professional`. Invariantes de capa/ordenação detalhados explicitamente no §6.2.1, cada um com teste próprio.
 4. `PrivateFile.Create` e o CHECK constraint de `Purpose` precisam de uma mudança real e pequena (não é reuso "de graça") para aceitar `ROOM_PHOTO`.
 5. Limite de 8 fotos validado na aplicação, não em CHECK constraint no banco.
-6. `RoomRentalInquiry` sem CPF/CNPJ, sem versão/concorrência otimista, com um único valor de `Status` (`New`) nesta fase — sem endpoint de transição de status. **O snapshot de disponibilidade é estruturado** (`PresentedAvailabilityStatus` + `PresentedAvailableFrom`), nunca um texto PT-BR persistido — o texto é formatado só na exibição (Admin, resposta do POST, mensagem do WhatsApp), sempre pela mesma função.
+6. `RoomRentalInquiry` sem CPF/CNPJ e sem versão/concorrência otimista, com somente `New` e `Converted`. A conversão ocorre exclusivamente junto da criação de Lease; não há endpoint de edição manual de status. **O snapshot de disponibilidade é estruturado** (`PresentedAvailabilityStatus` + `PresentedAvailableFrom`), nunca um texto PT-BR persistido — o texto é formatado só na exibição (Admin, resposta do POST, mensagem do WhatsApp), sempre pela mesma função.
 7. **`HourlyRate`/`DailyRate` removidos de `PublicRoomCard`/`PublicRoomDetail`** — o fluxo público é de interesse, não de preço/contratação online. `RoomResponse` (Admin) continua com os valores normalmente.
 8. O backend monta e devolve a URL final do WhatsApp; o frontend nunca hardcoda nem monta essa URL.
 9. **A experiência pós-interesse é uma tela própria "Continue no WhatsApp" com QR Code** (reaproveitando a geração de QR de `TotemHandoff.tsx`, sem a máquina de polling/status/expiração daquela tela, que não se aplica aqui) — não um `window.open` isolado como a versão anterior desta spec propunha.
@@ -476,6 +505,7 @@ Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, 
 11. **Arquitetura de touch do carrossel** muda de Pointer Events customizados para scroll nativo + `scroll-snap`, **reaproveitando a derivação `onScroll`+`requestAnimationFrame` já existente e correta** — `IntersectionObserver` foi removido desta spec por não ser necessário (a lógica atual de achar o card mais próximo do centro nunca foi a causa do bug). `touch-action: pan-x pan-y` explicitamente, nunca um valor que bloqueie pan vertical.
 12. Ajuste visual (carrossel maior, palco mais para baixo) é resolvido por estrutura/`clamp()`/`gap`/`min-height`, nunca por `position:absolute`/`transform` arbitrário — conforme pedido explícito.
 13. **Configuração do WhatsApp do Financeiro**: obrigatória via `ValidateOnStart()` só em staging/produção (não em Development, que não pode quebrar por appsettings versionado vazio); testes usam configuração própria, nunca dependem do valor real; número real nunca commitado; qualquer mudança futura de variável de ambiente no Railway exige autorização explícita separada.
+14. **Conversão de interesse reutiliza o fluxo real de Lease**: o modal e o `POST /api/admin/leases` existentes recebem contexto opcional do inquiry. O Admin escolhe Tenant, Professional e termos; apenas sala e nome podem receber prefill seguro. Uma atualização condicional dentro da mesma transação garante uma única conversão, preserva o `RoomId` original e desfaz todo o Lease perdedor em caso de corrida.
 
 ---
 
