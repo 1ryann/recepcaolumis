@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Entregar catálogo público de salas, galeria administrável e registro de interesse com continuação por QR/WhatsApp do Financeiro.
+**Goal:** Entregar catálogo público de salas, galeria administrável, registro de interesse com continuação por QR/WhatsApp do Financeiro e conversão do interesse em locação pelo fluxo Admin existente.
 
-**Architecture:** Room + Lease calculam disponibilidade; RoomPhoto referencia PrivateFile e usa o storage/validador/normalizador existentes. RoomRentalInquiry guarda snapshot estruturado; backend monta a URL do WhatsApp após persistir. Interfaces públicas e Admin permanecem separadas, com uma única migration EF PostgreSQL.
+**Architecture:** Room + Lease calculam disponibilidade; RoomPhoto referencia PrivateFile e usa o storage/validador/normalizador existentes. RoomRentalInquiry guarda snapshot estruturado e depois se liga ao Lease criado pelo mesmo `POST /api/admin/leases` e pelo mesmo modal de “Nova locação”. A conversão `New → Converted` integra a transação existente de Lease e a migration EF PostgreSQL continua única.
 
 **Tech Stack:** ASP.NET Core/.NET 10, EF Core/Npgsql, PostgreSQL, React + TypeScript + Vite, xUnit, Vitest/RTL, qrcode e ImageSharp existentes.
 
@@ -21,7 +21,10 @@
 - DTO público sem Tenant, Professional de contrato, ContractedRate, HourlyRate, DailyRate.
 - Primeira foto é capa; havendo fotos, exatamente uma capa; exclusão não-capa preserva capa; exclusão da capa promove menor SortOrder remanescente; última exclusão deixa zero fotos/capa.
 - SortOrder contínuo 0..N-1; reorder exige conjunto completo sem duplicata ou ID de outra sala; capa transacional.
-- Interesse sem CPF, CNPJ ou Version; Status = New; Admin somente leitura.
+- Interesse sem CPF, CNPJ ou Version; somente `New → Converted`, sem edição manual, outros status ou CRM.
+- `LeaseId`/`ConvertedAt` começam nulos e são preenchidos atomicamente com a criação do Lease; conversão duplicada retorna `409` e não persiste um segundo contrato.
+- Reutilizar o modal existente de “Nova locação” e o `POST /api/admin/leases`; não criar formulário ou endpoint paralelo de contrato.
+- Prefill seguro: sala inicialmente selecionada e editável; `FullName` somente como nome inicial do fluxo “Novo locatário”. Admin escolhe `Tenant.Kind`, Professional e todos os termos contratuais.
 - Snapshot persistido: PresentedAvailabilityStatus + PresentedAvailableFrom, nunca texto localizado.
 - `Whatsapp__FinanceiroPhoneNumber`; número real nunca commitado ou hardcoded no React.
 - Development vazio inicia normalmente e criação retorna 503 claro; Staging/Production exigem número válido no startup; testes usam configuração fictícia própria.
@@ -33,7 +36,7 @@
 
 ## Inspeção real e mapa de responsabilidades
 
-Base: `codex/reception-backend`, worktree `.worktrees/reception-backend`, HEAD `16979ed7ce2b280d74a2c2a70aaffc444c641631`. Spec commitada nesse HEAD. Não usar o checkout principal em codex/leases-design nem main/master.
+Base: `codex/reception-backend`, worktree `.worktrees/reception-backend`, spec revisada no commit `8ec5be96264237b17c75cb2111275b29680b62c4`. Não usar o checkout principal em codex/leases-design nem main/master.
 
 | Existente confirmado | Reuso |
 |---|---|
@@ -46,10 +49,13 @@ Base: `codex/reception-backend`, worktree `.worktrees/reception-backend`, HEAD `
 | `src/GestaoPredio.Application/Leases/ILeaseResourceLock.cs`, `src/GestaoPredio.Infrastructure/Leases/PostgreSqlLeaseResourceLock.cs` | lock transacional de linha Room; reusar para serializar fotos e snapshots |
 | `recepcaototem/Features/Customers/CustomerPublicRateLimiter.cs` | dois buckets IP/identificador SHA-256, leituras públicas |
 | `recepcaototem/Features/Rooms/RoomContracts.cs`, `RoomEndpoints.cs` | requests estritos, paginação e autorização |
+| `recepcaototem/Features/Leases/LeaseContracts.cs`, `LeaseEndpoints.cs` | `CreateLeaseRequest` real e criação transacional com locks, validação, ocorrências e `LEASE_CREATED` |
+| `recepcaototem/Features/Tenants/TenantContracts.cs`, `TenantEndpoints.cs` | `CreateTenantRequest(Name, Kind)` e criação existente de locatário |
 | `recepcaototem/Features/Common/StrictBody.cs`, `PagingQuery.cs`, `PagedResponse.cs`, `ApiError.cs` | contratos comuns |
 | `recepcaototem/ClientApp/src/api/client.ts`, `modules.ts` | apiClient, postMultipart, paginação; post atual busca CSRF |
 | `recepcaototem/ClientApp/src/pages/TotemHandoff.tsx`, `TotemHandoff.test.tsx` | QRCode.toDataURL, opções e mock existentes |
 | `recepcaototem/ClientApp/src/pages/admin/Rooms.tsx`, `components/Modal.tsx` | cards Admin e modal large |
+| `recepcaototem/ClientApp/src/pages/admin/Leases.tsx` | modal “Nova locação”, fluxo “Novo locatário” e detalhe de Lease existentes |
 | `recepcaototem/ClientApp/src/components/AdminLayout.tsx`, `App.tsx` | navegação e rotas reais |
 | `tests/GestaoPredio.IntegrationTests/ModulesApiFactory.cs`, `LocalPostgreSqlTestDatabase.cs` | schemas lumis_test_* em localhost:5432/LumisDev, user-secrets locais |
 | `tests/GestaoPredio.IntegrationTests/MigrationSafetyTests.cs` | inspeção de migration sem conexão |
@@ -64,6 +70,8 @@ Correções factuais necessárias ao planejar:
 6. “Capa primeiro” no detalhe público = OrderByDescending(IsCover).ThenBy(SortOrder); reorder Admin altera SortOrder e não muda capa.
 7. Formatação única do snapshot fica no backend: o DTO Admin inclui campos estruturados e label calculado pelo mesmo RoomAvailabilityFormatter usado no POST e mensagem. React exibe esse label; não duplica a regra.
 8. Sem alteração do carrossel neste plano. Pode ser desenvolvido sem aguardar sua homologação, mas prioridade operacional é entregar primeiro o Plano 1.
+9. `ProfessionOrCompany` é texto informativo, sem vínculo inequívoco com Professional. Nunca inferir `ProfessionalId`; WhatsApp também não pertence ao contrato real de Tenant.
+10. A menor extensão transacional é `Guid? RoomRentalInquiryId` no `CreateLeaseRequest`: o handler existente cria tudo e conclui com update condicional do inquiry antes do commit.
 
 Todos os caminhos Create abaixo são arquivos **novos propostos**, não alegações de existência. Os arquivos Modify/Test existentes foram inspecionados. Namespaces novos acompanham suas pastas.
 
@@ -215,7 +223,7 @@ git commit -m "feat(rooms): calculate public rental availability"
 - Consumes: PublicRoomAvailabilityStatus Task 1, WhatsAppNormalizer.TryNormalize(string?, out string), TimestampNormalizer.ToUtcMicroseconds.
 - Produces: `PrivateFilePurposes.RoomPhoto = "ROOM_PHOTO"`.
 - Produces: RoomPhoto com Id/RoomId/PrivateFileId Guid, SortOrder int, IsCover bool, CreatedAt DateTimeOffset; `Attach(Guid roomId, Guid privateFileId, int sortOrder, bool isCover, DateTimeOffset occurredAt): RoomPhoto`, `Reorder(int): void`, `SetCover(bool): void`.
-- Produces: RoomRentalInquiry com propriedades exatas da spec, getters/private setters; `Create(Guid roomId, string fullName, string whatsApp, string professionOrCompany, string? note, PublicRoomAvailabilityStatus presentedAvailabilityStatus, DateOnly? presentedAvailableFrom, DateTimeOffset occurredAt): RoomRentalInquiry`; enum `RoomRentalInquiryStatus { New = 1 }`.
+- Produces: RoomRentalInquiry com propriedades exatas da spec, getters/private setters; `Create(Guid roomId, string fullName, string whatsApp, string professionOrCompany, string? note, PublicRoomAvailabilityStatus presentedAvailabilityStatus, DateOnly? presentedAvailableFrom, DateTimeOffset occurredAt): RoomRentalInquiry`; `Convert(Guid leaseId, DateTimeOffset occurredAt): void`; enum `RoomRentalInquiryStatus { New = 1, Converted = 2 }`.
 
 - [ ] **Step 1: Escrever testes que falham.**
 
@@ -236,7 +244,7 @@ public void Unknown_purpose_is_rejected(string purpose) =>
         PrivateFile.Create("test", "image/webp", 123, purpose, DateTimeOffset.UtcNow));
 ```
 
-Em testes novos: Attach com IDs válidos/ordem zero preserva dados; Guid.Empty e ordem negativa rejeitados; Reorder(-1) rejeitado; SetCover true/false funciona. Inquiry normaliza WhatsApp BR para E.164, trim dos textos, Note vazio → null; limites 200/200/500; falta de campo, telefone inválido, < ou > em Note rejeitados. Now com data ou Soon sem data rejeitados; nenhuma propriedade CPF/CNPJ/Version; Status New.
+Em testes novos: Attach com IDs válidos/ordem zero preserva dados; Guid.Empty e ordem negativa rejeitados; Reorder(-1) rejeitado; SetCover true/false funciona. Inquiry normaliza WhatsApp BR para E.164, trim dos textos, Note vazio → null; limites 200/200/500; falta de campo, telefone inválido, < ou > em Note rejeitados. Now com data ou Soon sem data rejeitados; nenhuma propriedade CPF/CNPJ/Version; nasce `New` com `LeaseId`/`ConvertedAt` nulos. `Convert` grava Lease/data/status, rejeita `Guid.Empty` e segunda conversão e preserva o `RoomId` original.
 
 - [ ] **Step 2: Rodar e confirmar RED.**
 ```powershell
@@ -271,7 +279,7 @@ if (!Enum.IsDefined(presentedAvailabilityStatus) ||
     (presentedAvailabilityStatus == PublicRoomAvailabilityStatus.AvailableSoon && presentedAvailableFrom == null))
     throw new ArgumentException("Par de disponibilidade inválido.");
 ```
-Preencher exatamente Id novo, RoomId, FullName=name, WhatsApp=canonical, ProfessionOrCompany=occupation, Note=cleanNote, snapshot, Status=New, CreatedAt UTC microseconds. Sem campo de label na entidade.
+Preencher exatamente Id novo, RoomId, FullName=name, WhatsApp=canonical, ProfessionOrCompany=occupation, Note=cleanNote, snapshot, Status=New, LeaseId/ConvertedAt nulos e CreatedAt UTC microseconds. Sem campo de label na entidade. `Convert` aceita somente `New`, valida o ID, normaliza o horário e preenche os três campos de conversão sem alterar RoomId.
 
 - [ ] **Step 4: Rodar e confirmar GREEN.** Repetir filtro.
 - [ ] **Step 5: Rodar regressões.** UnitTests completo; profissional e PrivateFile antigo continuam aceitos; git diff --check.
@@ -317,7 +325,7 @@ public void Room_rental_migration_contains_exactly_two_new_tables()
 }
 ```
 
-RoomRentalModelTests verifica FKs/índices/limites/conversões reais com db.Model; sem navegação para Tenant/Professional. Assert ausência de Version e coluna de label. Testar fim date nullable e CreatedAt timestamp with time zone. Gate de migração permite somente CreateTable/CreateIndex e Drop/Add do CHECK específico; proibir alterações em Room/Lease/Professional.
+RoomRentalModelTests verifica FKs/índices/limites/conversões reais com db.Model; sem navegação para Tenant/Professional. Assert ausência de Version e coluna de label. Testar fim date nullable, LeaseId/ConvertedAt nullable, CreatedAt/ConvertedAt timestamp with time zone, FK Lease NoAction, CHECK de estado e índice parcial da fila `NEW`. Gate de migração permite somente CreateTable/CreateIndex/AddForeignKey/AddCheckConstraint e Drop/Add do CHECK específico de PrivateFile; proibir alterações em colunas de Room/Lease/Professional.
 
 - [ ] **Step 2: Rodar e confirmar RED.**
 ```powershell
@@ -339,7 +347,7 @@ entity.HasIndex(x => x.RoomId).IsUnique().HasFilter("\"IsCover\"")
     .HasDatabaseName("UX_RoomPhotos_Room_Cover");
 ```
 
-Config Inquiry: table/key; FullName/ProfessionOrCompany varchar(200), WhatsApp varchar(16), Note varchar(500) nullable; snapshot status varchar(20) com ValueConverter explícito AVAILABLE_NOW/AVAILABLE_SOON; PresentedAvailableFrom date nullable; Status varchar(10) NEW; CreatedAt timestamp with time zone; FK Room NoAction; índice `IX_RoomRentalInquiries_Room_CreatedAt` (RoomId,CreatedAt). Não mapear Version/label/CPF/CNPJ. Invalid enum é rejeitado antes da persistência.
+Config Inquiry: table/key; FullName/ProfessionOrCompany varchar(200), WhatsApp varchar(16), Note varchar(500) nullable; snapshot status varchar(20) com ValueConverter explícito AVAILABLE_NOW/AVAILABLE_SOON; PresentedAvailableFrom date nullable; Status varchar(10) com `NEW`/`CONVERTED`; LeaseId nullable; CreatedAt/ConvertedAt timestamp with time zone, este último nullable; FK Room NoAction; FK Lease NoAction; índice `IX_RoomRentalInquiries_Room_CreatedAt` (RoomId,CreatedAt); índice parcial `IX_RoomRentalInquiries_Status_CreatedAt` (Status,CreatedAt) com filtro `\"Status\" = 'NEW'`; CHECK exigindo `NEW` com LeaseId/ConvertedAt nulos ou `CONVERTED` com ambos preenchidos. Não mapear Version/label/CPF/CNPJ. Invalid enum é rejeitado antes da persistência.
 
 PrivateFile CHECK:
 ```csharp
@@ -646,7 +654,7 @@ git commit -m "feat(totem): add public room catalog endpoints"
 
 - [ ] **Step 1: Escrever testes que falham.**
 
-Unit do limiter: IP e identificador têm buckets independentes, identificador armazenado pelo hash SHA-256, janela renova e limites inválidos são elevados a 1 conforme padrão existente. Integração: válido em Now e Soon persiste snapshot real, Status New e Audit `ROOM_RENTAL_INQUIRY_CREATED`; request não contém roomId/status/data; resposta tem URL e label. Decodificar texto e comparar integralmente:
+Unit do limiter: IP e identificador têm buckets independentes, identificador armazenado pelo hash SHA-256, janela renova e limites inválidos são elevados a 1 conforme padrão existente. Integração: válido em Now e Soon persiste snapshot real, Status New, LeaseId/ConvertedAt nulos e Audit `ROOM_RENTAL_INQUIRY_CREATED`; request não contém roomId/status/data; resposta tem URL e label. Decodificar texto e comparar integralmente:
 ```csharp
 var expected = $"Olá! Tenho interesse em alugar uma sala na Lumis.\n\n" +
     $"Sala: Sala 101\nDisponibilidade: Disponível agora\nNome: Ana Souza\n" +
@@ -846,7 +854,7 @@ git add recepcaototem/ClientApp/src/features/rooms/RoomPhotoManager.tsx recepcao
 git commit -m "feat(admin): manage room photo galleries"
 ```
 
-### Task 12: Listagem somente leitura de interesses no Admin
+### Task 12: Listagem, detalhe e ações de interesses no Admin
 
 **Files:**
 - Modify: `recepcaototem/Features/Rooms/RoomRentalInquiryContracts.cs`, `recepcaototem/Features/Rooms/RoomRentalInquiryEndpoints.cs`.
@@ -856,16 +864,17 @@ git commit -m "feat(admin): manage room photo galleries"
 
 **Interfaces:**
 - Consumes: RoomRentalInquiry/Room, RoomAvailabilityFormatter, PagingQuery/PagedResponse, Operations.
-- Produces: `RoomRentalInquiryAdminResponse(Guid Id, Guid RoomId, string RoomName, string FullName, string WhatsApp, string ProfessionOrCompany, string? Note, PublicRoomAvailabilityStatus PresentedAvailabilityStatus, DateOnly? PresentedAvailableFrom, string PresentedAvailabilityLabel, string Status, DateTimeOffset CreatedAt)`.
-- Produces: GET `/api/admin/room-rental-inquiries?page={int}&pageSize={int}`, RequireAuthorization("Operations").
-- Produces: TS `RoomRentalInquiryAdminDto`, `roomRentalInquiriesApi.list({page,pageSize},signal?)`, rota/nav `/admin/interesses-locacao`.
+- Produces: `RoomRentalInquiryAdminResponse(Guid Id, Guid RoomId, string RoomName, string FullName, string WhatsApp, string ProfessionOrCompany, string? Note, PublicRoomAvailabilityStatus PresentedAvailabilityStatus, DateOnly? PresentedAvailableFrom, string PresentedAvailabilityLabel, string Status, Guid? LeaseId, DateTimeOffset? ConvertedAt, DateTimeOffset CreatedAt)`.
+- Produces: GET `/api/admin/room-rental-inquiries?page={int}&pageSize={int}` e GET `/api/admin/room-rental-inquiries/{id:guid}`, ambos RequireAuthorization("Operations").
+- Produces: TS `RoomRentalInquiryAdminDto`, `roomRentalInquiriesApi.list(...)`, `roomRentalInquiriesApi.get(id, signal?)`, rota/nav `/admin/interesses-locacao` e navegação para `/admin/locacoes?inquiryId={id}` ou `/admin/locacoes?leaseId={leaseId}`.
 
 - [ ] **Step 1: Escrever testes que falham.**
 
-Backend: anônimo 401, Professional 403, Manager/Admin 200; paginação 1..100 via PagingQuery; ordena CreatedAt desc/Id; join traz RoomName; label Now/Soon usa formatter e snapshot histórico mesmo que leases mudem; Status `NEW`; resposta não inclui tarifas/Tenant/Professional relacionado ao contrato; nenhum PUT/POST/DELETE de status existe (405/404). Front: loading/erro/retry/vazio, colunas Interessado/WhatsApp/Sala/Disponibilidade apresentada/Profissão ou empresa/Data/Status, Note acessível sem quebrar tabela, paginação; usa presentedAvailabilityLabel retornado e mostra “Novo”; não há controle de editar status. AdminLayout.test verifica link e título da rota; App inclui página sob ProtectedRoute Admin.
+Backend: anônimo 401, Professional 403, Manager/Admin 200 em lista e detalhe; paginação 1..100 via PagingQuery; ordena CreatedAt desc/Id; join traz RoomName; label Now/Soon usa formatter e snapshot histórico mesmo que leases mudem; respostas representam `NEW` e `CONVERTED`, incluindo LeaseId/ConvertedAt; 404 para ID ausente; nenhum PUT/POST/DELETE de status existe. Front: loading/erro/retry/vazio, lista, detalhe e paginação; usa presentedAvailabilityLabel retornado. `New` mostra “Ver detalhes”/“Criar locação”; `Converted` mostra “Ver detalhes”/“Ver locação” e “Convertido em locação”. Os botões navegam com o query param correto; não há controle de editar status. AdminLayout.test verifica link e título da rota; App inclui página sob ProtectedRoute Admin.
 ```tsx
 expect(await screen.findByText('Ana Souza')).toBeInTheDocument()
 expect(screen.getByText('Disponível em breve — a partir de 16/11/2026')).toBeInTheDocument()
+expect(screen.getByRole('button', { name: /criar locação/i })).toBeInTheDocument()
 expect(screen.queryByRole('button', { name: /alterar status/i })).not.toBeInTheDocument()
 ```
 
@@ -878,10 +887,12 @@ Esperado: rota/DTO/página/nav ausentes.
 
 - [ ] **Step 3: Implementar o mínimo.**
 
-No endpoint, mapear GET autenticado separado da rota pública. Validar paginação com `PagingQuery.TryCreate(page,pageSize,null,null,...)`; query AsNoTracking join Room, total count, order desc e projection. Formatar labels após materializar a página; Status = `x.Status == New ? "NEW" : throw`, sem endpoint de mutação.
+No endpoint, mapear os dois GETs autenticados separados da rota pública. Validar paginação com `PagingQuery.TryCreate(page,pageSize,null,null,...)`; query AsNoTracking join Room, total count, order desc e projection. Formatar labels após materializar; mapear ambos os valores do enum. Detalhe reutiliza a mesma projeção por ID. Não criar endpoint de mutação do inquiry.
 
 ```csharp
 endpoints.MapGet("/api/admin/room-rental-inquiries", ListAdmin)
+    .RequireAuthorization("Operations");
+endpoints.MapGet("/api/admin/room-rental-inquiries/{id:guid}", DetailAdmin)
     .RequireAuthorization("Operations");
 
 var query = from inquiry in db.RoomRentalInquiries.AsNoTracking()
@@ -893,7 +904,7 @@ var rows = await query.OrderByDescending(x => x.Inquiry.CreatedAt)
     .Skip((paging.Page - 1) * paging.PageSize).Take(paging.PageSize).ToListAsync(ct);
 ```
 
-No frontend, adicionar client e página com `pageSize=20`, AbortController, tabela responsiva e botões Anterior/Próxima. Formatar CreatedAt em pt-BR com timezone `America/Porto_Velho`; disponibilidade vem do label do backend. Link da sala vai para `/admin/salas` porque não existe rota de detalhe Admin por ID; usar texto/aria-label, sem inventar rota.
+No frontend, adicionar client e página com `pageSize=20`, AbortController, tabela responsiva, detalhe no `Modal` existente e botões Anterior/Próxima. Formatar CreatedAt/ConvertedAt em pt-BR com timezone `America/Porto_Velho`; disponibilidade vem do label do backend. Link da sala vai para `/admin/salas` porque não existe rota de detalhe Admin por ID. As ações usam `navigate` com os query params definidos; a Task 13 implementa o consumo desses params na tela de Locações.
 
 ```tsx
 const createdAtLabel = (value: string) => new Date(value).toLocaleString('pt-BR', {
@@ -912,10 +923,65 @@ Adicionar `MessageSquareText` em navItems antes de Configurações; ajustar os s
 - [ ] **Step 6: Commit.**
 ```powershell
 git add recepcaototem/Features/Rooms/RoomRentalInquiryContracts.cs recepcaototem/Features/Rooms/RoomRentalInquiryEndpoints.cs tests/GestaoPredio.IntegrationTests/RoomRentalInquiryAdminTests.cs tests/GestaoPredio.IntegrationTests/SecurityTests.cs recepcaototem/ClientApp/src/pages/admin/RoomRentalInquiries.tsx recepcaototem/ClientApp/src/pages/admin/RoomRentalInquiries.test.tsx recepcaototem/ClientApp/src/components/AdminLayout.tsx recepcaototem/ClientApp/src/components/AdminLayout.test.tsx recepcaototem/ClientApp/src/api/modules.ts recepcaototem/ClientApp/src/api/modules.test.ts recepcaototem/ClientApp/src/App.tsx recepcaototem/ClientApp/src/styles.css
-git commit -m "feat(admin): list room rental inquiries"
+git commit -m "feat(admin): browse room rental inquiries"
 ```
 
-### Task 13: Gates finais e preparação de staging sem mudança remota
+### Task 13: Conversão atômica pelo modal existente de Nova locação
+
+**Files:**
+- Modify: `recepcaototem/Features/Leases/LeaseContracts.cs`, `recepcaototem/Features/Leases/LeaseEndpoints.cs`.
+- Modify: `src/GestaoPredio.Domain/Auditing/AuditActions.cs`, `tests/GestaoPredio.UnitTests/AuditFieldTests.cs`.
+- Modify: `recepcaototem/ClientApp/src/pages/admin/Leases.tsx`, `recepcaototem/ClientApp/src/api/modules.ts`.
+- Test: Create `tests/GestaoPredio.IntegrationTests/RoomRentalInquiryConversionTests.cs`; Modify `tests/GestaoPredio.IntegrationTests/LeaseAdministrationTests.cs`, `tests/GestaoPredio.IntegrationTests/StrictModuleContractsTests.cs`, `recepcaototem/ClientApp/src/pages/admin/Leases.test.tsx`, `recepcaototem/ClientApp/src/api/modules.test.ts`.
+
+**Interfaces:**
+- Consumes: Task 12 detail API; `LeaseEndpoints.Create` e sua transação/locks/regras atuais; `leasesApi.get`; modal/form/fluxo “Novo locatário” de `Leases.tsx`; `CreateTenantRequest(string? Name, string? Kind)`.
+- Produces: `CreateLeaseRequest(..., DateTimeOffset? OccupancyEndAt, Guid? RoomRentalInquiryId)` e TS `LeaseInput.roomRentalInquiryId?: string | null`.
+- Produces: `AuditActions.RoomRentalInquiryConverted = "ROOM_RENTAL_INQUIRY_CONVERTED"`; erro `409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED`; nenhum endpoint novo de criação de contrato.
+
+- [ ] **Step 1: Escrever testes backend que falham.**
+
+Cobrir: criação normal sem `RoomRentalInquiryId` permanece compatível; inquiry `New` cria Lease, ocorrências, `LEASE_CREATED` e `ROOM_RENTAL_INQUIRY_CONVERTED`, depois persiste `Converted`, LeaseId e ConvertedAt; sala escolhida pode diferir e o RoomId original não muda; erro de contrato/conflito desfaz tudo e deixa `New`; ID ausente retorna 404; já convertido retorna 409; duas conversões concorrentes com recursos contratuais distintos deixam exatamente um Lease e uma resposta 409. Assert também que o strict body aceita apenas o novo membro previsto.
+
+- [ ] **Step 2: Rodar e confirmar RED backend.**
+```powershell
+dotnet test tests/GestaoPredio.IntegrationTests/GestaoPredio.IntegrationTests.csproj --filter "FullyQualifiedName~RoomRentalInquiryConversionTests|FullyQualifiedName~LeaseAdministrationTests|FullyQualifiedName~StrictModuleContractsTests"
+dotnet test tests/GestaoPredio.UnitTests/GestaoPredio.UnitTests.csproj --filter FullyQualifiedName~AuditFieldTests
+```
+Esperado: contrato/código de auditoria ausentes e conversão ainda não executada.
+
+- [ ] **Step 3: Estender o mesmo handler de criação de Lease.**
+
+Adicionar `RoomRentalInquiryId` opcional ao final do request. Quando nulo, manter o caminho atual. Quando preenchido, ainda dentro da transação já aberta: carregar/prevalidar o inquiry com `AsNoTracking`; 404 se ausente, 409 se já convertido; executar sem duplicação todas as validações, locks, reconciliação, disponibilidade, `Lease.Create`, ocorrências, audit e primeiro SaveChanges atuais. Não exigir que `request.RoomId == inquiry.RoomId`.
+
+Depois de obter `lease.Id`, executar update SQL condicional pelo EF com predicado `Id == inquiryId && Status == New`, preenchendo `CONVERTED`, LeaseId e ConvertedAt UTC/microssegundos. Se `ExecuteUpdateAsync` afetar zero linhas, fazer rollback e retornar `409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED`; o Lease/ocorrências/audits do perdedor pertencem à mesma transação e desaparecem. Adicionar audit de conversão e fazer commit somente depois do update e SaveChanges final. Não marcar o inquiry antes de criar o Lease e não copiar as regras para `RoomRentalInquiryEndpoints`.
+
+- [ ] **Step 4: Rodar e confirmar GREEN backend.** Repetir os filtros; rodar integração completa local e `dotnet build recepcaototem.sln`.
+
+- [ ] **Step 5: Escrever testes frontend que falham.**
+
+Com `?inquiryId=...`, a tela carrega detalhe do inquiry e abre o mesmo modal “Nova locação”; sala vem selecionada, mas o select continua editável; a disponibilidade aparece só como contexto; “Novo locatário” abre o modal existente com `FullName` no nome e Kind ainda decidido pelo Admin. Professional, Kind, modalidade, valor, vencimento e datas não são inferidos do inquiry. Submit inclui `roomRentalInquiryId` e, após sucesso, limpa o param e abre o detalhe retornado. Com `?leaseId=...`, usar `leasesApi.get` e abrir o detalhe existente. Erros 404/409 aparecem pela infraestrutura já usada e não fecham silenciosamente o formulário.
+
+- [ ] **Step 6: Implementar o mínimo no frontend.**
+
+Ler `useSearchParams` em `Leases.tsx`. Extrair a função que inicializa o modal existente para aceitar contexto opcional, sem criar segundo estado/formulário de contrato. O prefill inicial altera apenas `form.roomId`; guardar inquiryId separado para o submit e contexto visual. Ao abrir “Novo locatário” nesse contexto, inicializar `tenantName` com FullName; manter `tenantKind` sob escolha explícita do Admin e o comportamento atual de selecionar o Tenant recém-criado. Nunca usar WhatsApp ou ProfessionOrCompany como campos de Tenant/Professional.
+
+- [ ] **Step 7: Rodar GREEN e regressões frontend.**
+```powershell
+npx vitest run src/pages/admin/Leases.test.tsx src/pages/admin/RoomRentalInquiries.test.tsx src/api/modules.test.ts
+npx vitest run
+npx tsc -b
+npx vite build
+node scripts/verify-production-bundle.mjs
+```
+
+- [ ] **Step 8: Revisar atomicidade, compatibilidade e commit.** Confirmar uma só chamada de criação, nenhuma rota/form duplicado, RoomId original preservado, erro concorrente determinístico, antiforgery/Operations intactos e `git diff --check`.
+```powershell
+git add recepcaototem/Features/Leases/LeaseContracts.cs recepcaototem/Features/Leases/LeaseEndpoints.cs src/GestaoPredio.Domain/Auditing/AuditActions.cs tests/GestaoPredio.UnitTests/AuditFieldTests.cs tests/GestaoPredio.IntegrationTests/RoomRentalInquiryConversionTests.cs tests/GestaoPredio.IntegrationTests/LeaseAdministrationTests.cs tests/GestaoPredio.IntegrationTests/StrictModuleContractsTests.cs recepcaototem/ClientApp/src/pages/admin/Leases.tsx recepcaototem/ClientApp/src/pages/admin/Leases.test.tsx recepcaototem/ClientApp/src/api/modules.ts recepcaototem/ClientApp/src/api/modules.test.ts
+git commit -m "feat(admin): convert rental inquiries to leases"
+```
+
+### Task 14: Gates finais e preparação de staging sem mudança remota
 
 **Files:**
 - Create: `docs/operations/2026-09-13-room-rental-staging.md`.
@@ -923,7 +989,7 @@ git commit -m "feat(admin): list room rental inquiries"
 - Test: solução completa, frontend, SQL gerado offline e checklist operacional.
 
 **Interfaces:**
-- Consumes: commits Tasks 1–12, migration RoomPhotosAndRentalInquiries, runbook `docs/operations/staging-railway-runbook.md` e configuração externa existente.
+- Consumes: commits Tasks 1–13, migration RoomPhotosAndRentalInquiries, runbook `docs/operations/staging-railway-runbook.md` e configuração externa existente.
 - Produces: pacote local revisado e runbook com SHAs, migration, sequência de staging, gates/pendências; nenhuma alteração no Supabase, Railway ou env vars.
 
 - [ ] **Step 1: Escrever o teste operacional que falha inicialmente.**
@@ -953,7 +1019,7 @@ Gerar script idempotente em arquivo temporário fora do repo, sem conexão:
 ```powershell
 dotnet ef migrations script TotemBookingHandoff RoomPhotosAndRentalInquiries --idempotent --project src/GestaoPredio.Infrastructure --startup-project recepcaototem --context ApplicationDbContext --output $env:TEMP\lumis-room-rental.sql
 ```
-Inspecionar que contém apenas troca do CHECK PrivateFiles, RoomPhotos/RoomRentalInquiries, FKs/índices esperados; nenhum DML, DROP TABLE/COLUMN, tabela de identidade, Room/Lease/Professional alterada. Apagar o temporário após registrar hash SHA-256/contagem de operações no runbook.
+Inspecionar que contém apenas troca do CHECK PrivateFiles, RoomPhotos/RoomRentalInquiries, FK de Room/PrivateFile/Lease, CHECK de conversão e índices esperados; nenhum DML, DROP TABLE/COLUMN, tabela de identidade ou coluna de Room/Lease/Professional alterada. Apagar o temporário após registrar hash SHA-256/contagem de operações no runbook.
 
 Preparar a sequência remota, sem executá-la: verificar backup restaurável; confirmar que `Storage__PrivateFilesPath` aponta para volume persistente do Railway; confirmar número real em `Whatsapp__FinanceiroPhoneNumber` sem registrar valor; aplicar migration via conexão de migração autorizada ao Session pooler conforme runbook existente; verificar `__EFMigrationsHistory`, tabelas/check/índices; publicar SHA; `/health` e `/health/ready`; smoke catálogo/foto/form/QR/Admin. Cada ação remota tem checkpoint explícito de autorização.
 
@@ -965,7 +1031,7 @@ Somente se todos os comandos locais e inspeção SQL passarem, marcar `PREPARAÇ
 
 - [ ] **Step 5: Rodar regressões finais e revisar segurança.**
 
-Confirmar git diff --check, git status, ausência de número real/connection string/storage path em `git diff` e bundle, todos os endpoints públicos AllowAnonymous explícitos, mutações Admin com CSRF, POST público com limiter, DTOs sem preços/contratos, nenhum startup migration. Executar `rg -n "FinanceiroPhoneNumber|ROOM_PHOTO|RoomRentalInquiry"` e revisar cada ocorrência; não imprimir segredos de ambiente.
+Confirmar git diff --check, git status, ausência de número real/connection string/storage path em `git diff` e bundle, todos os endpoints públicos AllowAnonymous explícitos, mutações Admin com CSRF, POST público com limiter, criação/conversão de Lease sob Operations + antiforgery, DTOs públicos sem preços/contratos e nenhum startup migration. Executar `rg -n "FinanceiroPhoneNumber|ROOM_PHOTO|RoomRentalInquiry"` e revisar cada ocorrência; não imprimir segredos de ambiente.
 
 - [ ] **Step 6: Commit do runbook e resultado local.**
 ```powershell
@@ -989,6 +1055,8 @@ Não executar push, migration remota, mudança de env, deploy ou smoke remoto ne
 | PUT | `/api/admin/rooms/{roomId}/photos/reorder` | Operations + antiforgery |
 | POST | `/api/admin/rooms/{roomId}/photos/{photoId}/cover` | Operations + antiforgery |
 | GET | `/api/admin/room-rental-inquiries` | Operations |
+| GET | `/api/admin/room-rental-inquiries/{id}` | Operations |
+| POST | `/api/admin/leases` (`RoomRentalInquiryId` opcional) | Operations + antiforgery; Lease e conversão na mesma transação |
 
 ## Riscos controlados pelo plano
 
@@ -1003,14 +1071,16 @@ Não executar push, migration remota, mudança de env, deploy ou smoke remoto ne
 - Migration altera um CHECK existente: inspecionar script/backup e aplicar antes do build dependente, somente com autorização.
 - Supabase Data API: verificar grants/exposição antes de aplicar; nenhuma concessão é presumida.
 - QR abre serviço externo: somente host `wa.me` aceito na UI e target vem do backend.
+- Conversão concorrente: update condicional `Id + Status=NEW`; zero linhas produz rollback e 409, inclusive desfazendo Lease, ocorrências e audits do perdedor.
+- Prefill indevido: testes negativos garantem que somente RoomId e nome inicial do Tenant são sugeridos; Professional, Kind e termos continuam escolhas do Admin.
 
 ## Autorrevisão do plano
 
 - §5 → Tasks 1 e 7; §6.1–6.3 → Tasks 2–4 e 6; §6.4 → Task 11.
-- §7.1–7.3 → Tasks 2, 3 e 8; §7.4 → Tasks 9–10; §7.5 → Task 12.
-- §8 → Tasks 5, 8 e 10; §9 → Tasks 6–8; §10 → Task 3; §11 → Tasks 6–8 e 12; §12 → testes distribuídos; §14 → Task 13.
+- §7.1–7.3 → Tasks 2, 3 e 8; §7.4 → Tasks 9–10; §7.5 → Tasks 12–13; §7.6 → Task 13.
+- §8 → Tasks 5, 8 e 10; §9 → Tasks 6–8; §10 → Task 3; §11 → Tasks 6–8, 12 e 13; §12 → testes distribuídos; §14 → Task 14.
 - Migration única e nome exato fixados; nenhum comando de aplicação remota autorizado.
 - Contratos, paths, namespaces e comandos existentes foram verificados; caminhos Create são propostas explícitas.
 - Cada Task tem Files Create/Modify/Test, Interfaces Consumes/Produces e ciclo RED → mínimo → GREEN → regressões → commit.
-- Não há CPF/CNPJ/Version/CRM, preço público, storage paralelo, checkbox de disponibilidade, polling de WhatsApp ou número real.
+- Não há CPF/CNPJ/Version/CRM, status além de New/Converted, preço público, storage paralelo, formulário paralelo de Lease, checkbox de disponibilidade, polling de WhatsApp ou número real.
 - Revisão documental concluída; nenhuma implementação, migration ou operação remota foi executada.
