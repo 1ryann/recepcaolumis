@@ -1793,9 +1793,10 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 /* ==========================================================================
    Totem professional carousel — the /totem/profissionais strip (Task 8)
-   Real horizontal swipe / mouse-drag on a scroll-snapped strip: a larger
-   centred active card with its neighbours partly visible, big prev/next
-   arrows, dots, and a per-card status chip (dot + word, never colour alone).
+   Native touch/trackpad horizontal scrolling on a scroll-snapped strip: a
+   larger centred active card with its neighbours partly visible, with mouse
+   click controls, keyboard navigation, big prev/next arrows, dots, and a
+   per-card status chip (dot + word, never colour alone).
    Standalone token set so it does not depend on .totem-kiosk being present.
    Tokens: #181818 #1c1c1c #222 #272727 #f2f2f2 #888 #3d3d3d
    ========================================================================== */

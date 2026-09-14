@@ -1,0 +1,29 @@
+Task 2 fix round 1 — corrected zoom evidence
+
+Capability check with agent-browser on the local Chrome session:
+  agent-browser --session task2-zoom-16b416e3e795 set viewport 1920 1080 1
+  agent-browser --session task2-zoom-16b416e3e795 set media dark
+  agent-browser --session task2-zoom-16b416e3e795 focus .totem-carousel-viewport
+  agent-browser --session task2-zoom-16b416e3e795 press Control+plus  (five times)
+
+Output:
+{"label":"after-five-Ctrl-plus","innerWidth":1920,"innerHeight":1080,"devicePixelRatio":1,"visualViewportScale":1,"mediaMax560":false,"reducedMotion":false}
+
+The CLI exposes DevTools viewport emulation, but no Chrome UI zoom command. CDP-dispatched Ctrl+plus remained in-page input and did not change the effective CSS viewport, so it is not browser-zoom evidence.
+
+Corrected DevTools effective-viewport equivalent:
+  agent-browser --session task2-zoom-16b416e3e795 set viewport 960 540 2
+  agent-browser --session task2-zoom-16b416e3e795 focus .totem-carousel-viewport
+  agent-browser --session task2-zoom-16b416e3e795 press Home
+
+This emulates the CSS viewport (960x540) and device pixel ratio (2) that a 1920x1080, DPR 1 desktop window presents to page CSS at 200% Chrome browser zoom. It is not a literal Chrome UI zoom operation. `visualViewport.scale` remains 1 because desktop browser zoom is not pinch zoom. Normal motion remained enabled.
+
+Before vertical scroll:
+{"label":"effective-200-zoom-equivalent-before-scroll","innerWidth":960,"innerHeight":540,"devicePixelRatio":2,"visualViewportScale":1,"mediaMax560":false,"reducedMotion":false,"documentWidth":960,"clientWidth":960,"horizontalOverflow":false,"documentHeight":743,"clientHeight":540,"scrollY":0,"active":"Ana Souza, Fisioterapeuta, Disponível, toque para continuar","focus":"Profissionais","focusVisible":true,"activeTransform":"matrix(1.06, 0, 0, 1.06, 0, 0)","centerError":0,"stage":{"x":38.39,"y":232.22,"width":883.22,"height":480},"card":{"x":331.6,"y":254.12,"width":296.8,"height":445.2}}
+
+After `agent-browser --session task2-zoom-16b416e3e795 scroll down 500`:
+{"label":"effective-200-zoom-equivalent-after-scroll","innerWidth":960,"innerHeight":540,"devicePixelRatio":2,"visualViewportScale":1,"documentWidth":960,"clientWidth":960,"horizontalOverflow":false,"documentHeight":743,"clientHeight":540,"scrollY":203,"focus":"Profissionais","focusVisible":true,"reducedMotion":false}
+
+Screenshots:
+  after-effective-200-browser-zoom-equivalent.png
+  after-effective-200-browser-zoom-equivalent-scrolled.png

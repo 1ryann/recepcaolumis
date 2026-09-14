@@ -1,0 +1,92 @@
+✓ Done
+✓ Done
+✓ Done
+http://127.0.0.1:5197/totem/profissionais
+Nenhum profissional disponível.
+Fixture count: 0
+true
+"{\"size\":[390,844],\"document\":[390,844],\"scrollY\":0,\"count\":0,\"centerError\":null,\"touchAction\":null,\"reducedMotion\":false,\"scrollBehavior\":null,\"activeTransform\":null,\"focus\":null,\"focusVisible\":false,\"neighbors\":[]}"
+- generic "10:47Domingo, 13 de setembroEscolha o profissionalAlugar salaNenhum profissional disponível.Tentar n" [ref=e1] clickable [onclick]
+  - button "Voltar ao início" [ref=e2]
+  - heading "Escolha o profissional" [level=1, ref=e5]
+  - button "Alugar sala" [disabled, ref=e6]
+  - button "Tentar novamente" [ref=e3]
+  - button "Tenho código" [ref=e4]
+✓ Screenshot saved to C:\Users\ryan-\OneDrive\Documents\projetos\recepcaolumis\.worktrees\reception-backend\.superpowers\sdd\2026-09-13-totem-native-carousel\visual\after-390x844-count-0.png
+✓ Done
+✓ Done
+http://127.0.0.1:5197/totem/profissionais
+Ana Souza
+✓ Done
+✓ Done
+true
+Fixture count: 1
+true
+"{\"size\":[390,844],\"document\":[390,844],\"scrollY\":0,\"count\":1,\"active\":\"Ana Souza\",\"centerError\":-0.01,\"card\":{\"x\":37.90516662597656,\"y\":299.0429382324219,\"width\":314.174072265625,\"height\":439.8503112792969,\"top\":299.0429382324219,\"right\":352.07923889160156,\"bottom\":738.8932495117188,\"left\":37.90516662597656},\"stage\":{\"x\":8,\"y\":269.30401611328125,\"width\":374,\"height\":482.453125,\"top\":269.30401611328125,\"right\":382,\"bottom\":751.7571411132812,\"left\":8},\"touchAction\":\"pan-x pan-y\",\"reducedMotion\":false,\"scrollBehavior\":\"smooth\",\"activeTransform\":\"matrix(1.06, 0, 0, 1.06, 0, 0)\",\"focus\":\"Profissionais\",\"focusVisible\":true,\"neighbors\":[]}"
+- generic "10:47Domingo, 13 de setembroEscolha o profissionalAlugar salaASAna SouzaFisioterapeutaDisponívelToqu" [ref=e1] clickable [onclick]
+  - button "Voltar ao início" [ref=e2]
+  - heading "Escolha o profissional" [level=1, ref=e3]
+  - button "Alugar sala" [disabled, ref=e4]
+  - button "Anterior" [ref=e5]
+  - listbox "Profissionais" [ref=e6]
+    - option "Ana Souza, Fisioterapeuta, Disponível, toque para continuar" [selected, ref=e8]
+  - button "Próximo" [ref=e7]
+  - button "Ir para Ana Souza" [ref=e9]
+✓ Screenshot saved to C:\Users\ryan-\OneDrive\Documents\projetos\recepcaolumis\.worktrees\reception-backend\.superpowers\sdd\2026-09-13-totem-native-carousel\visual\after-390x844-count-1.png
+✓ Done
+✓ Done
+http://127.0.0.1:5197/totem/profissionais
+Ana Souza
+✓ Done
+✓ Done
+true
+Fixture count: 2
+true
+"{\"size\":[390,844],\"document\":[390,844],\"scrollY\":0,\"count\":2,\"active\":\"Bruno Lima\",\"centerError\":0.38,\"card\":{\"x\":38.29579162597656,\"y\":298.8951721191406,\"width\":314.174072265625,\"height\":439.8503112792969,\"top\":298.8951721191406,\"right\":352.46986389160156,\"bottom\":738.7454833984375,\"left\":38.29579162597656},\"stage\":{\"x\":8,\"y\":269.15625,\"width\":374,\"height\":482.453125,\"top\":269.15625,\"right\":382,\"bottom\":751.609375,\"left\":8},\"touchAction\":\"pan-x pan-y\",\"reducedMotion\":false,\"scrollBehavior\":\"smooth\",\"activeTransform\":\"matrix(1.06, 0, 0, 1.06, 0, 0)\",\"focus\":\"Profissionais\",\"focusVisible\":true,\"neighbors\":[{\"name\":\"Ana Souza\",\"visibleWidth\":12.089752197265625}]}"
+- generic "10:47Domingo, 13 de setembroEscolha o profissionalAlugar salaASAna SouzaFisioterapeutaDisponívelBLBr" [ref=e1] clickable [onclick]
+  - button "Voltar ao início" [ref=e2]
+  - heading "Escolha o profissional" [level=1, ref=e3]
+  - button "Alugar sala" [disabled, ref=e4]
+  - button "Anterior" [ref=e5]
+  - listbox "Profissionais" [ref=e6]
+    - option "Ana Souza, Fisioterapeuta, Disponível" [ref=e8]
+    - option "Bruno Lima, Psicólogo, Em atendimento, toque para continuar" [selected, ref=e9]
+  - button "Próximo" [ref=e7]
+  - button "Ir para Ana Souza" [ref=e10]
+  - button "Ir para Bruno Lima" [ref=e11]
+✓ Screenshot saved to C:\Users\ryan-\OneDrive\Documents\projetos\recepcaolumis\.worktrees\reception-backend\.superpowers\sdd\2026-09-13-totem-native-carousel\visual\after-390x844-count-2.png
+✓ Done
+✓ Done
+http://127.0.0.1:5197/totem/profissionais
+Ana Souza
+✓ Done
+✓ Done
+true
+Fixture count: 5
+true
+"{\"size\":[390,844],\"document\":[390,844],\"scrollY\":0,\"count\":5,\"active\":\"Elisa Martins\",\"centerError\":-0.45,\"card\":{\"x\":37.46766662597656,\"y\":298.8951721191406,\"width\":314.174072265625,\"height\":439.8503112792969,\"top\":298.8951721191406,\"right\":351.64173889160156,\"bottom\":738.7454833984375,\"left\":37.46766662597656},\"stage\":{\"x\":8,\"y\":269.15625,\"width\":374,\"height\":482.453125,\"top\":269.15625,\"right\":382,\"bottom\":751.609375,\"left\":8},\"touchAction\":\"pan-x pan-y\",\"reducedMotion\":false,\"scrollBehavior\":\"smooth\",\"activeTransform\":\"matrix(1.06, 0, 0, 1.06, 0, 0)\",\"focus\":\"Profissionais\",\"focusVisible\":true,\"neighbors\":[{\"name\":\"Diego Santos\",\"visibleWidth\":11.261627197265625}]}"
+- generic "10:47Domingo, 13 de setembroEscolha o profissionalAlugar salaASAna SouzaFisioterapeutaDisponívelBLBr" [ref=e1] clickable [onclick]
+  - button "Voltar ao início" [ref=e2]
+  - heading "Escolha o profissional" [level=1, ref=e3]
+  - button "Alugar sala" [disabled, ref=e4]
+  - button "Anterior" [ref=e5]
+  - listbox "Profissionais" [ref=e6]
+    - option "Ana Souza, Fisioterapeuta, Disponível" [ref=e8]
+    - option "Bruno Lima, Psicólogo, Em atendimento" [ref=e9]
+    - option "Carla Reis, Nutricionista, Disponível" [ref=e10]
+    - option "Diego Santos, Advogado, Indisponível" [ref=e11]
+    - option "Elisa Martins, Arquiteta, Disponível, toque para continuar" [selected, ref=e12]
+  - button "Próximo" [ref=e7]
+  - button "Ir para Ana Souza" [ref=e13]
+  - button "Ir para Bruno Lima" [ref=e14]
+  - button "Ir para Carla Reis" [ref=e15]
+  - button "Ir para Diego Santos" [ref=e16]
+  - button "Ir para Elisa Martins" [ref=e17]
+✓ Screenshot saved to C:\Users\ryan-\OneDrive\Documents\projetos\recepcaolumis\.worktrees\reception-backend\.superpowers\sdd\2026-09-13-totem-native-carousel\visual\after-390x844-count-5.png
+✓ Done
+✓ Done
+✓ Done
+✓ Done
+✓ Done
+✓ Done
+✓ Done

@@ -9,7 +9,8 @@ import { usePrefersReducedMotion } from './magic/usePrefersReducedMotion'
 // active card and its neighbours partly visible. It is driven purely by `activeIndex` state,
 // so the big prev/next arrows, the dots, and keyboard navigation (ArrowLeft/ArrowRight/
 // Home/End on the listbox) all work even where there is no layout (jsdom). Native horizontal
-// overflow and scroll-snap handle touch, pen, and mouse movement. `onScroll` only *reads* the
+// overflow and scroll-snap handle touch and trackpad scrolling; mouse click controls and
+// keyboard navigation remain available. `onScroll` only *reads* the
 // nearest-centre card to keep `activeIndex` in sync
 // — it never scrolls back, so there is no feedback loop. Status is conveyed as a dot *and* a
 // word (never colour alone); the active card alone wears the BorderBeam, and ProgressiveBlur

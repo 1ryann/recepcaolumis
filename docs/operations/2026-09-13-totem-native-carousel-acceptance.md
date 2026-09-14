@@ -80,7 +80,7 @@ nenhum backend, dado remoto ou código de produção foi modificado.
 | Carregamento | `GET /api/totem/professionals` interceptado retornou Ana Smoke (`smoke-ana`), Bruno Smoke (`smoke-bruno`) e Carla Smoke (`smoke-carla`). |
 | Clique lateral | Clique em Bruno Smoke, inicialmente lateral, manteve a rota `/totem/profissionais`, marcou Bruno como `aria-selected="true"`, `data-offset="0"` e `is-active`; o log de rede tinha **nenhuma** requisição `booking-handoffs`. |
 | Ativação central | Segundo clique em Bruno Smoke já centralizado fez `POST /api/totem/booking-handoffs` com corpo exato `{"professionalId":"smoke-bruno"}` e resposta fixture `smoke-handoff-001`. |
-| Transição e QR | A rota tornou-se `/totem/handoff`; a página mostrou `Continue no seu celular`, `Bruno Smoke`, `Psicólogo` e o QR. A captura retida é `visual/task-3-local-handoff-smoke.png`; comandos, fixtures e saída estão em `visual/task-3-local-handoff-smoke.log`. |
+| Transição e QR | A rota tornou-se `/totem/handoff`; a página mostrou `Continue no seu celular`, `Bruno Smoke`, `Psicólogo` e o QR. A captura retida é [task-3-local-handoff-smoke.png](evidence/2026-09-13-totem-native-carousel/screenshots/task-3-local-handoff-smoke.png); comandos, fixtures e saída estão em [task-3-local-handoff-smoke.log](evidence/2026-09-13-totem-native-carousel/logs/task-3-local-handoff-smoke.log). |
 
 As requisições de polling subsequentes usaram o fixture PENDING
 `/api/totem/booking-handoffs/smoke-handoff-001/status` com
@@ -90,10 +90,17 @@ matriz **NÃO EXECUTADO / ACEITE FÍSICO PENDENTE**.
 
 ## Evidência automatizada de navegador e layout
 
-As quatro capturas retidas são evidência local automatizada, não captura em
-celular físico: `visual/after-1920x1080.png`,
-`visual/after-1366x768.png`, `visual/after-768x1024.png` e
-`visual/after-390x844.png`. As métricas vêm de `visual/final-metrics.log`.
+As quatro comparações antes/depois retidas são evidência local automatizada,
+não captura em celular físico. O inventário versionado liga cada viewport:
+
+| Viewport automatizado | Antes | Depois |
+| --- | --- | --- |
+| 1920×1080 | [before-1920x1080.png](evidence/2026-09-13-totem-native-carousel/screenshots/before-1920x1080.png) | [after-1920x1080.png](evidence/2026-09-13-totem-native-carousel/screenshots/after-1920x1080.png) |
+| 1366×768 | [before-1366x768.png](evidence/2026-09-13-totem-native-carousel/screenshots/before-1366x768.png) | [after-1366x768.png](evidence/2026-09-13-totem-native-carousel/screenshots/after-1366x768.png) e [captura de página completa](evidence/2026-09-13-totem-native-carousel/screenshots/after-1366x768-full.png) |
+| 768×1024 | [before-768x1024.png](evidence/2026-09-13-totem-native-carousel/screenshots/before-768x1024.png) | [after-768x1024.png](evidence/2026-09-13-totem-native-carousel/screenshots/after-768x1024.png) |
+| 390×844 | [before-390x844.png](evidence/2026-09-13-totem-native-carousel/screenshots/before-390x844.png) | [after-390x844.png](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844.png) |
+
+As métricas vêm de [final-metrics.log](evidence/2026-09-13-totem-native-carousel/logs/final-metrics.log).
 
 | Viewport automatizado | Documento | Palco (x, y, largura, altura) | Cartão ativo (largura, altura) | Erro de centralização | Vizinhos visíveis |
 | --- | --- | --- | --- | --- | --- |
@@ -102,16 +109,18 @@ celular físico: `visual/after-1920x1080.png`,
 | 768×1024 | 768×1024 | 30,71875, 241,71875, 706,5625, 540 | 296,800018, 466,731201 | -0,16 px | 169,285118 px / 169,597595 px |
 | 390×844 | 390×844 | 8, 269,15625, 374, 482,453125 | 314,174072, 439,850311 | -0,23 px | 11,480377 px / 11,933502 px |
 
-`visual/layout-checks.log` também registra, em automação de navegador local,
-Home/End/setas, redução de movimento e scroll vertical sobre o cartão em
-390×600: o documento tinha 753 px, e o `scrollY` passou de 0 para 153. Isso
-apoia a regressão automatizada; não demonstra o gesto físico, o callout nativo
-ou o comportamento de toque em aparelho real.
+A [síntese de teclado e layout](evidence/2026-09-13-totem-native-carousel/logs/keyboard-layout-summary.md)
+retém apenas as observações assentadas de Home/End/setas, redução de movimento
+e scroll vertical sobre o cartão em 390×600: o documento tinha 753 px, e o
+`scrollY` passou de 0 para 153. A [captura após o scroll](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x600-scrolled.png)
+e a [captura com movimento reduzido](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844-reduced-motion.png)
+estão no mesmo pacote. Isso apoia a regressão automatizada; não demonstra o
+gesto físico, o callout nativo ou o comportamento de toque em aparelho real.
 
 ## Limitação de 200% e RED de Task 2
 
-`visual/effective-200-zoom-equivalent.log` registra que cinco `Ctrl+plus`
-despachados por automação mantiveram `innerWidth: 1920`, `innerHeight: 1080`,
+O [log de viewport efetivo a 200%](evidence/2026-09-13-totem-native-carousel/logs/effective-200-zoom-equivalent.log)
+registra que cinco `Ctrl+plus` despachados por automação mantiveram `innerWidth: 1920`, `innerHeight: 1080`,
 `devicePixelRatio: 1` e `visualViewport.scale: 1`. Por isso, essa tentativa não
 é prova de zoom literal da interface do Chrome.
 
@@ -122,6 +131,21 @@ DPR 2, equivalente ao contexto CSS de uma janela desktop 1920×1080 em DPR 1 a
 horizontal (960/960) e scroll vertical de 0 para 203. É uma equivalência de
 viewport efetivo; **não é zoom literal da UI do navegador e não é evidência
 física**.
+
+As capturas correspondentes são [antes do scroll](evidence/2026-09-13-totem-native-carousel/screenshots/after-effective-200-browser-zoom-equivalent.png)
+e [depois do scroll](evidence/2026-09-13-totem-native-carousel/screenshots/after-effective-200-browser-zoom-equivalent-scrolled.png).
+
+## Pacote de evidências versionado
+
+O pacote [evidence/2026-09-13-totem-native-carousel/](evidence/2026-09-13-totem-native-carousel/README.md)
+é a localização durável destes artefatos e contém o manifesto, contexto de
+execução, limitações, comandos e inventário. As evidências de fixtures de 0,
+1, 2 e 5 profissionais estão no [log](evidence/2026-09-13-totem-native-carousel/logs/fixture-checks.log),
+nas capturas [0](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844-count-0.png),
+[1](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844-count-1.png),
+[2](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844-count-2.png) e
+[5](evidence/2026-09-13-totem-native-carousel/screenshots/after-390x844-count-5.png),
+e no [fixture determinístico](evidence/2026-09-13-totem-native-carousel/fixtures/professionals-fixture.json).
 
 O relatório da Task 2 informa que o stdout RED original não estava retido quando
 a retomada começou. Há hoje um arquivo local `task-2-red.log` com uma falha de

@@ -1,0 +1,64 @@
+Task 3 fix round 1 — local browser smoke (automation only)
+
+Candidate source checkout:
+  c76c2be20edf5d3d6b122b76a9ba9c38de92c28a
+
+Local runtime command:
+  npm run dev -- --host 127.0.0.1 --port 5174
+
+Local URL:
+  http://127.0.0.1:5174/totem/profissionais
+
+Isolated browser session:
+  agent-browser session id --scope worktree --prefix task3-smoke
+  -> task3-smoke-16b416e3e795
+
+Fixture commands (network interception in that local browser session only):
+  agent-browser --session task3-smoke-16b416e3e795 network route "**/api/totem/professionals" --body '[{"id":"smoke-ana","name":"Ana Smoke","profession":"Fisioterapeuta","photoUrl":null,"status":"AVAILABLE"},{"id":"smoke-bruno","name":"Bruno Smoke","profession":"Psicólogo","photoUrl":null,"status":"IN_SERVICE"},{"id":"smoke-carla","name":"Carla Smoke","profession":"Nutricionista","photoUrl":null,"status":"AVAILABLE"}]'
+  agent-browser --session task3-smoke-16b416e3e795 network route "**/api/auth/csrf" --body '{"token":"smoke-csrf-token"}'
+  agent-browser --session task3-smoke-16b416e3e795 network route "**/api/totem/booking-handoffs" --body '{"id":"smoke-handoff-001","handoffToken":"smoke-handoff-token","statusToken":"smoke-status-token","expiresAt":"2026-09-13T23:59:59.000Z","professionalName":"Bruno Smoke","profession":"Psicólogo"}'
+  agent-browser --session task3-smoke-16b416e3e795 network route "**/api/totem/booking-handoffs/smoke-handoff-001/status" --body '{"status":"PENDING","expiresAt":"2026-09-13T23:59:59.000Z"}'
+
+Side-card interaction:
+  agent-browser --session task3-smoke-16b416e3e795 click '@e9'
+  agent-browser --session task3-smoke-16b416e3e795 wait 500
+  agent-browser --session task3-smoke-16b416e3e795 eval "JSON.stringify({route:location.pathname,brunoActive:document.querySelector('.totem-carousel-card.is-active .totem-carousel-name')?.textContent,brunoSelected:Array.from(document.querySelectorAll('.totem-carousel-card')).find(card=>card.querySelector('.totem-carousel-name')?.textContent==='Bruno Smoke')?.getAttribute('aria-selected'),brunoOffset:Array.from(document.querySelectorAll('.totem-carousel-card')).find(card=>card.querySelector('.totem-carousel-name')?.textContent==='Bruno Smoke')?.getAttribute('data-offset')})"
+  -> {"route":"/totem/profissionais","brunoActive":"Bruno Smoke","brunoSelected":"true","brunoOffset":"0"}
+  agent-browser --session task3-smoke-16b416e3e795 network requests --filter "booking-handoffs"
+  -> No requests captured
+
+Centred-card activation:
+  agent-browser --session task3-smoke-16b416e3e795 snapshot -i
+  agent-browser --session task3-smoke-16b416e3e795 click '@e9'
+  agent-browser --session task3-smoke-16b416e3e795 wait --url "**/totem/handoff"
+  agent-browser --session task3-smoke-16b416e3e795 wait --text "Continue no seu celular"
+  agent-browser --session task3-smoke-16b416e3e795 wait --fn "Boolean(document.querySelector('.totem-handoff-qr'))"
+  -> http://127.0.0.1:5174/totem/handoff
+  -> Continue no seu celular
+  -> true
+
+Retained request evidence:
+  POST http://127.0.0.1:5174/api/totem/booking-handoffs
+  requestId: 38680.333
+  status: 200 (local fixture)
+  postData: {"professionalId":"smoke-bruno"}
+
+  POST http://127.0.0.1:5174/api/totem/booking-handoffs/smoke-handoff-001/status
+  postData: {"statusToken":"smoke-status-token"}
+  status: 200 (local PENDING fixture; repeated by polling)
+
+Handoff UI evidence:
+  Accessibility snapshot showed heading "Continue no seu celular".
+  Rendered text showed Bruno Smoke and Psicólogo.
+  Boolean(document.querySelector('.totem-handoff-qr')) returned true.
+  Screenshot: task-3-local-handoff-smoke.png
+
+Focused covering tests after the smoke:
+  npx vitest run src/pages/TotemProfessionals.test.tsx src/pages/TotemHandoff.test.tsx src/features/totem/TotemProfessionalCarousel.test.tsx
+  -> Test Files 3 passed (3)
+  -> Tests 30 passed (30)
+
+Scope and limitation:
+  Browser automation used a mouse click against a local Vite runtime and intercepted local responses.
+  It is not a physical-device touch result. The physical acceptance matrix remains
+  NÃO EXECUTADO / ACEITE FÍSICO PENDENTE.
