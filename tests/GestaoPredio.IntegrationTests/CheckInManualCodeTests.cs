@@ -333,6 +333,7 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
                 builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Task16-ProdKeys"));
                 builder.UseSetting("Storage:PrivateFilesPath", Path.GetTempPath());
                 builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
+                builder.UseSetting("Whatsapp:FinanceiroPhoneNumber", "+5569999999999");
                 // deliberately NO CheckIn:ManualCodeHmacKey
                 builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(logs));
             });

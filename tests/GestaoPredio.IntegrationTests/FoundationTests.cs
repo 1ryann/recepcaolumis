@@ -16,6 +16,7 @@ public class FoundationTests
             builder.UseSetting("AllowedHosts", "localhost");
             builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Test-Keys"));
             builder.UseSetting("Storage:PrivateFilesPath", Path.GetTempPath());
+            builder.UseSetting("Whatsapp:FinanceiroPhoneNumber", "+5569999999999");
         });
 
     [Fact]

@@ -30,6 +30,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using recepcaototem.Api.Health;
 using recepcaototem.Api.Middleware;
 using recepcaototem.Api.Configuration;
@@ -82,6 +83,12 @@ builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<IImageNormalizer, ImageSharpImageNormalizer>();
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
+builder.Services.AddSingleton<IValidateOptions<WhatsappOptions>>(
+    new WhatsappOptionsValidator(builder.Environment.EnvironmentName));
+var whatsapp = builder.Services.AddOptions<WhatsappOptions>()
+    .Bind(builder.Configuration.GetSection(WhatsappOptions.SectionName));
+if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing"))
+    whatsapp.ValidateOnStart();
 builder.Services.Configure<ManualCheckInCodeHashingOptions>(
     builder.Configuration.GetSection(ManualCheckInCodeHashingOptions.SectionName));
 builder.Services.AddSingleton<IManualCheckInCodeHasher, HmacManualCheckInCodeHasher>();

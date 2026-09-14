@@ -39,6 +39,7 @@ public class SecurityTests
             builder.UseEnvironment("Production");
             builder.UseSetting("Security:DataProtectionPath", Path.Combine(Path.GetTempPath(), "Lumis-Test-Keys"));
             builder.UseSetting("Storage:PrivateFilesPath", Path.GetTempPath());
+            builder.UseSetting("Whatsapp:FinanceiroPhoneNumber", "+5569999999999");
             builder.UseSetting("ConnectionStrings:DefaultConnection", "");
             builder.ConfigureServices(services => services.AddScoped<IDatabaseProbe>(_ => new Probe(databaseOnline)));
         });
