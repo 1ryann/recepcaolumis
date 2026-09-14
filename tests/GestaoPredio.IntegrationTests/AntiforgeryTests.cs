@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GestaoPredio.Domain.Security;
 
 namespace GestaoPredio.IntegrationTests;
 
@@ -30,4 +31,29 @@ public sealed class AntiforgeryTests(AuthApiFactory factory) : IAsyncLifetime
     }
 
     private sealed record TokenPayload(string Token);
+}
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed class RoomPhotoAntiforgeryTests(ModulesApiFactory factory)
+{
+    [Theory]
+    [InlineData("upload", false)]
+    [InlineData("delete", false)]
+    [InlineData("reorder", false)]
+    [InlineData("cover", false)]
+    [InlineData("upload", true)]
+    [InlineData("delete", true)]
+    [InlineData("reorder", true)]
+    [InlineData("cover", true)]
+    public async Task Photo_mutations_require_valid_csrf(string operation, bool invalid)
+    {
+        await factory.ResetAsync();
+        await factory.CreateUserAsync("photo-csrf@lumis.test", "Valid-Password-123!", [SystemRoles.Gerente]);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync("photo-csrf@lumis.test", "Valid-Password-123!")).StatusCode);
+        using var request = RoomPhotoHttpRequests.Create(operation, Guid.NewGuid(), Guid.NewGuid());
+        if (invalid) request.Headers.Add("X-CSRF-TOKEN", "invalid");
+        var response = await factory.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("INVALID_CSRF", await response.Content.ReadAsStringAsync());
+    }
 }

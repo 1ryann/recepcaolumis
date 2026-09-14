@@ -97,7 +97,7 @@ public static class RoomPhotoMutation
             db.AuditEntries.Add(CreateAudit(context, roomId, "ROOM_PHOTO_UPLOADED", now));
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return Results.Ok(new RoomPhotoResponse(photo.Id, $"/api/admin/rooms/{roomId}/photos/{photo.Id}",
+            return Results.Ok(new RoomPhotoResponse(photo.Id, $"/api/admin/rooms/{roomId}/photos/{photo.Id}?v={photo.PrivateFileId}",
                 photo.SortOrder, photo.IsCover, photo.CreatedAt));
         }
         catch

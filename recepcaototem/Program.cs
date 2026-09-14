@@ -195,6 +195,7 @@ app.MapProfessionalRegistrationEndpoints();
 app.MapProfessionalUserLinkEndpoints();
 app.MapProfessionalPhotoEndpoints();
 app.MapRoomEndpoints();
+app.MapRoomPhotoEndpoints();
 app.MapTenantEndpoints();
 app.MapLeaseEndpoints();
 app.MapProfessionalLeaseEndpoints();

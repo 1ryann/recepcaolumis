@@ -11,9 +11,11 @@ using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Files;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using recepcaototem.Features.Common;
@@ -22,8 +24,7 @@ using SixLabors.ImageSharp;
 
 namespace GestaoPredio.IntegrationTests;
 
-// Task 4 exercises the mutation service with real multipart requests and scoped dependencies.
-// HTTP gallery route authorization/CSRF belongs to Task 6; setup uses the existing protected API.
+// Mutation and HTTP contracts share the same isolated PostgreSQL schema and real file storage.
 [Collection(ModulesDatabaseCollection.Name)]
 public sealed class RoomPhotoTests(ModulesApiFactory factory)
 {
@@ -31,6 +32,191 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     private Guid _otherRoomId;
     private string _actorId = "";
     private string _csrf = "";
+
+    [Theory]
+    [InlineData(SystemRoles.Gerente)]
+    [InlineData(SystemRoles.Administrador)]
+    public async Task Admin_gallery_http_lifecycle_has_ordered_versioned_urls_and_protected_bytes(string role)
+    {
+        await PrepareAsync(role);
+        var path = $"/api/admin/rooms/{_roomId}/photos";
+        Assert.Empty((await factory.Client.GetFromJsonAsync<RoomPhotoResponse[]>(path))!);
+        var first = await HttpUploadAsync();
+        var second = await HttpUploadAsync();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var metadata = await db.PrivateFiles.SingleAsync(x => x.Id == db.RoomPhotos.Where(p => p.Id == first.Id).Select(p => p.PrivateFileId).Single());
+        Assert.Equal($"{path}/{first.Id}?v={metadata.Id}", first.PhotoUrl);
+        using var bytesRequest = new HttpRequestMessage(HttpMethod.Get, first.PhotoUrl);
+        bytesRequest.Headers.Range = new RangeHeaderValue(0, 3);
+        var content = await factory.Client.SendAsync(bytesRequest);
+        Assert.Equal(HttpStatusCode.OK, content.StatusCode);
+        Assert.Equal("image/webp", content.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("inline", content.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.True(content.Headers.CacheControl!.Private);
+        Assert.True(content.Headers.CacheControl.NoStore);
+        Assert.Equal("nosniff", Assert.Single(content.Headers.GetValues("X-Content-Type-Options")));
+        var bytes = await content.Content.ReadAsByteArrayAsync();
+        Assert.Equal(metadata.Length, bytes.LongLength);
+        Assert.Equal("image/webp", Image.DetectFormat(bytes).DefaultMimeType);
+        Assert.DoesNotContain(metadata.StorageKey, content.Headers.ToString());
+        Assert.DoesNotContain(factory.PrivateFilesRoot, content.Headers.ToString());
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.PutWithCsrfAsync($"{path}/reorder", new { orderedPhotoIds = new[] { second.Id, first.Id } })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.PostWithCsrfAsync($"{path}/{second.Id}/cover", new { })).StatusCode);
+        var listing = await factory.Client.GetAsync(path);
+        var gallery = (await listing.Content.ReadFromJsonAsync<RoomPhotoResponse[]>())!;
+        Assert.Equal(new[] { second.Id, first.Id }, gallery.Select(x => x.Id));
+        Assert.Equal(new[] { 0, 1 }, gallery.Select(x => x.SortOrder));
+        Assert.Equal(second.Id, gallery.Single(x => x.IsCover).Id);
+        Assert.All(gallery, x => Assert.Contains("?v=", x.PhotoUrl));
+        Assert.DoesNotContain("storageKey", await listing.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(metadata.StorageKey, await listing.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.DeleteWithCsrfAsync($"{path}/{second.Id}", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync(second.PhotoUrl)).StatusCode);
+        Assert.True(Assert.Single((await factory.Client.GetFromJsonAsync<RoomPhotoResponse[]>(path))!).IsCover);
+    }
+
+    [Fact]
+    public async Task Admin_inactive_room_stays_accessible_and_foreign_or_missing_resources_return_404()
+    {
+        await PrepareAsync();
+        var first = Photo(await UploadAsync());
+        var foreign = Photo(await UploadAsync(roomId: _otherRoomId));
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Rooms
+                .Where(x => x.Id == _roomId).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsActive, false));
+        var path = $"/api/admin/rooms/{_roomId}/photos";
+        Assert.Single((await factory.Client.GetFromJsonAsync<RoomPhotoResponse[]>(path))!);
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.GetAsync($"{path}/{first.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync($"{path}/{foreign.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync($"{path}/{Guid.NewGuid()}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.Client.GetAsync($"/api/admin/rooms/{Guid.NewGuid()}/photos")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.DeleteWithCsrfAsync($"{path}/{foreign.Id}", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await factory.PostWithCsrfAsync($"{path}/{foreign.Id}/cover", new { })).StatusCode);
+        await HttpUploadAsync();
+    }
+
+    [Theory]
+    [InlineData("extra")]
+    [InlineData("duplicate")]
+    [InlineData("missing")]
+    [InlineData("foreign")]
+    public async Task Http_reorder_rejects_invalid_contract_without_gallery_or_audit_changes(string variant)
+    {
+        await PrepareAsync();
+        var first = Photo(await UploadAsync());
+        var second = Photo(await UploadAsync());
+        object body = variant switch
+        {
+            "extra" => new { orderedPhotoIds = new[] { second.Id, first.Id }, storageKey = "forbidden" },
+            "duplicate" => new { orderedPhotoIds = new[] { first.Id, first.Id } },
+            "foreign" => new { orderedPhotoIds = new[] { first.Id, Guid.NewGuid() } },
+            _ => new { orderedPhotoIds = new[] { first.Id } }
+        };
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.PutWithCsrfAsync($"/api/admin/rooms/{_roomId}/photos/reorder", body)).StatusCode);
+        await AssertGalleryAsync([first.Id, second.Id], first.Id);
+        await AssertAuditsAsync("ROOM_PHOTOS_REORDERED", 0);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("purpose")]
+    [InlineData("length")]
+    [InlineData("io")]
+    [InlineData("access")]
+    [InlineData("argument")]
+    [InlineData("nonseek")]
+    [InlineData("length-throws")]
+    public async Task Admin_stream_failures_return_safe_503_and_log_only_identifiers(string failure)
+    {
+        await PrepareAsync();
+        var photo = Photo(await UploadAsync());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var metadata = await db.PrivateFiles.SingleAsync();
+        var storage = scope.ServiceProvider.GetRequiredService<IPrivateFileStorage>();
+        if (failure == "missing") await storage.DeleteAsync(metadata.StorageKey, default);
+        if (failure == "purpose") await db.PrivateFiles.ExecuteUpdateAsync(set => set.SetProperty(x => x.Purpose, PrivateFilePurposes.ProfessionalPhoto));
+        if (failure == "length") await db.PrivateFiles.ExecuteUpdateAsync(set => set.SetProperty(x => x.Length, x => x.Length + 1));
+        var faultStorage = new FaultStorage(storage, failure);
+        await using var child = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IPrivateFileStorage>();
+            services.AddSingleton<IPrivateFileStorage>(faultStorage);
+        }));
+        using var client = child.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var token = (await client.GetFromJsonAsync<CsrfPayload>("/api/auth/csrf"))!.Token;
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = JsonContent.Create(new { email = "room-photo@lumis.test", password = "Valid-Password-123!" }) };
+        login.Headers.Add("X-CSRF-TOKEN", token);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(login)).StatusCode);
+        var logs = factory.CaptureLogs();
+        var response = await client.GetAsync($"/api/admin/rooms/{_roomId}/photos/{photo.Id}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("PHOTO_UNAVAILABLE", body);
+        Assert.DoesNotContain(metadata.StorageKey, body + response.Headers + logs.Text);
+        Assert.DoesNotContain(factory.PrivateFilesRoot, body + response.Headers + logs.Text);
+        Assert.Contains("Room photo unavailable", logs.Text);
+        Assert.Contains(metadata.Id.ToString(), logs.Text);
+        Assert.Contains("CorrelationId=", logs.Text);
+        Assert.Equal(1, await db.RoomPhotos.CountAsync());
+        Assert.Equal(1, await db.PrivateFiles.CountAsync());
+        if (faultStorage.LastStream is not null) Assert.True(faultStorage.LastStream.Disposed);
+    }
+
+    private async Task<RoomPhotoResponse> HttpUploadAsync()
+    {
+        using var request = RoomPhotoHttpRequests.Create("upload", _roomId, Guid.NewGuid());
+        request.Headers.Add("X-CSRF-TOKEN", _csrf);
+        var response = await factory.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<RoomPhotoResponse>())!;
+    }
+
+    private sealed record CsrfPayload(string Token);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Streaming_missing_metadata_uses_caller_failure_policy(bool publicFailureIsNotFound)
+    {
+        await PrepareAsync();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        // Detached photo models a missing metadata pointer without disabling the database FK.
+        var photo = RoomPhoto.Attach(_roomId, Guid.NewGuid(), 0, true, factory.UtcNow);
+        var result = await RoomPhotoStreaming.StreamAsync(photo, services.GetRequiredService<ApplicationDbContext>(),
+            services.GetRequiredService<IPrivateFileStorage>(), services.GetRequiredService<ILoggerFactory>(),
+            Context(services), "private, no-store", publicFailureIsNotFound, default);
+        Assert.Equal(publicFailureIsNotFound ? 404 : 503, Status(result));
+        if (!publicFailureIsNotFound) AssertError(result, 503, "PHOTO_UNAVAILABLE");
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("purpose")]
+    [InlineData("length")]
+    [InlineData("io")]
+    [InlineData("nonseek")]
+    public async Task Streaming_public_failure_policy_hides_metadata_and_storage_failures(string failure)
+    {
+        await PrepareAsync();
+        Photo(await UploadAsync());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<ApplicationDbContext>();
+        var photo = await db.RoomPhotos.SingleAsync();
+        var metadata = await db.PrivateFiles.SingleAsync();
+        var storage = services.GetRequiredService<IPrivateFileStorage>();
+        if (failure == "missing") await storage.DeleteAsync(metadata.StorageKey, default);
+        if (failure == "purpose") await db.PrivateFiles.ExecuteUpdateAsync(set => set.SetProperty(x => x.Purpose, PrivateFilePurposes.ProfessionalPhoto));
+        if (failure == "length") await db.PrivateFiles.ExecuteUpdateAsync(set => set.SetProperty(x => x.Length, x => x.Length + 1));
+        var result = await RoomPhotoStreaming.StreamAsync(photo, db, new FaultStorage(storage, failure),
+            services.GetRequiredService<ILoggerFactory>(), Context(services), "public, max-age=60", true, default);
+        Assert.Equal(404, Status(result));
+        Assert.Equal(1, await db.RoomPhotos.CountAsync());
+        Assert.Equal(1, await db.PrivateFiles.CountAsync());
+    }
 
     [Fact]
     public async Task Upload_normalizes_webp_preserves_first_cover_and_audits_without_storage_keys()
@@ -40,9 +226,10 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         var second = Photo(await UploadAsync());
         Assert.True(first.IsCover);
         Assert.False(second.IsCover);
-        Assert.Equal($"/api/admin/rooms/{_roomId}/photos/{first.Id}", first.PhotoUrl);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstFileId = await db.RoomPhotos.Where(x => x.Id == first.Id).Select(x => x.PrivateFileId).SingleAsync();
+        Assert.Equal($"/api/admin/rooms/{_roomId}/photos/{first.Id}?v={firstFileId}", first.PhotoUrl);
         var storage = scope.ServiceProvider.GetRequiredService<IPrivateFileStorage>();
         foreach (var file in await db.PrivateFiles.ToListAsync())
         {
@@ -308,10 +495,10 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         await AssertAuditsAsync("ROOM_PHOTO_REMOVED", 1);
     }
 
-    private async Task PrepareAsync()
+    private async Task PrepareAsync(string role = SystemRoles.Gerente)
     {
         await factory.ResetAsync();
-        var user = await factory.CreateUserAsync("room-photo@lumis.test", "Valid-Password-123!", [SystemRoles.Gerente]);
+        var user = await factory.CreateUserAsync("room-photo@lumis.test", "Valid-Password-123!", [role]);
         _actorId = user.Id;
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(user.Email!, "Valid-Password-123!")).StatusCode);
         _csrf = await factory.GetCsrfTokenAsync();
@@ -491,6 +678,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     }
     private sealed class FaultStorage(IPrivateFileStorage inner, string? failure) : IPrivateFileStorage
     {
+        public FaultReadStream? LastStream { get; private set; }
         private int _stages;
         public Task<StagedPrivateFile> StageAsync(Stream source, long maximumBytes, CancellationToken ct)
         {
@@ -504,7 +692,15 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         public Task<string> CommitAsync(StagedPrivateFile staged, CancellationToken ct) =>
             failure == "commit" ? throw new IOException("Injected commit failure") : inner.CommitAsync(staged, ct);
         public Task<Stream> OpenStagedReadAsync(StagedPrivateFile staged, CancellationToken ct) => inner.OpenStagedReadAsync(staged, ct);
-        public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => inner.OpenReadAsync(key, ct);
+        public Task<Stream?> OpenReadAsync(string key, CancellationToken ct)
+        {
+            if (failure == "io") throw new IOException(key);
+            if (failure == "access") throw new UnauthorizedAccessException(key);
+            if (failure == "argument") throw new ArgumentException(key);
+            if (failure is "nonseek" or "length-throws")
+                return Task.FromResult<Stream?>(LastStream = new FaultReadStream(failure));
+            return inner.OpenReadAsync(key, ct);
+        }
         public Task<bool> DeleteAsync(string key, CancellationToken ct) => failure switch
         {
             "delete-false" => Task.FromResult(false),
@@ -512,5 +708,13 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             _ => inner.DeleteAsync(key, ct)
         };
         public Task DiscardAsync(StagedPrivateFile staged, CancellationToken ct) => inner.DiscardAsync(staged, ct);
+    }
+
+    private sealed class FaultReadStream(string failure) : MemoryStream
+    {
+        public bool Disposed { get; private set; }
+        public override bool CanSeek => failure != "nonseek";
+        public override long Length => failure == "length-throws" ? throw new IOException("private-path") : base.Length;
+        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
     }
 }

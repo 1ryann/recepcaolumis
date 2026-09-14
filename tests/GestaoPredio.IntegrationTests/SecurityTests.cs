@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using GestaoPredio.Application.Abstractions;
 using GestaoPredio.Domain.Security;
@@ -116,5 +117,58 @@ public class SecurityTests
         var token = db.Model.FindEntityType(typeof(Microsoft.AspNetCore.Identity.IdentityUserToken<string>))!;
         Assert.Equal(128, token.FindProperty("Name")!.GetMaxLength());
         Assert.Contains("AuditEntries", db.Database.GenerateCreateScript());
+    }
+}
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed class RoomPhotoSecurityTests(ModulesApiFactory factory)
+{
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Every_room_photo_route_requires_operations(bool professional)
+    {
+        await factory.ResetAsync();
+        if (professional)
+        {
+            await factory.CreateUserAsync("photo-security@lumis.test", "Valid-Password-123!", [SystemRoles.Profissional]);
+            Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync("photo-security@lumis.test", "Valid-Password-123!")).StatusCode);
+        }
+        foreach (var operation in RoomPhotoHttpRequests.Operations)
+        {
+            using var request = RoomPhotoHttpRequests.Create(operation, Guid.NewGuid(), Guid.NewGuid());
+            request.Headers.Add("X-CSRF-TOKEN", await factory.GetCsrfTokenAsync());
+            var response = await factory.Client.SendAsync(request);
+            Assert.Equal(professional ? HttpStatusCode.Forbidden : HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+    }
+}
+
+internal static class RoomPhotoHttpRequests
+{
+    internal static readonly string[] Operations = ["list", "bytes", "upload", "delete", "reorder", "cover"];
+
+    internal static HttpRequestMessage Create(string operation, Guid roomId, Guid photoId)
+    {
+        var path = $"/api/admin/rooms/{roomId}/photos";
+        var request = operation switch
+        {
+            "list" => new HttpRequestMessage(HttpMethod.Get, path),
+            "bytes" => new HttpRequestMessage(HttpMethod.Get, $"{path}/{photoId}"),
+            "upload" => new HttpRequestMessage(HttpMethod.Post, path),
+            "delete" => new HttpRequestMessage(HttpMethod.Delete, $"{path}/{photoId}"),
+            "reorder" => new HttpRequestMessage(HttpMethod.Put, $"{path}/reorder") { Content = JsonContent.Create(new { orderedPhotoIds = new[] { photoId } }) },
+            "cover" => new HttpRequestMessage(HttpMethod.Post, $"{path}/{photoId}/cover"),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+        if (operation == "upload")
+        {
+            var multipart = new MultipartFormDataContent();
+            var file = new ByteArrayContent(TestImageData.Png());
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+            multipart.Add(file, "file", "room.png");
+            request.Content = multipart;
+        }
+        return request;
     }
 }
