@@ -9,8 +9,22 @@ public sealed class PrivateFileStorageOptionsTests : IDisposable
     [Fact]
     public void Default_photo_limit_is_five_mebibytes()
     {
+        Assert.Equal(5 * 1024 * 1024, new PrivateFileStorageOptions().RoomPhotoMaxBytes);
         Assert.Equal(5 * 1024 * 1024, new PrivateFileStorageOptions().ProfessionalPhotoMaxBytes);
         Assert.Equal(10 * 1024 * 1024, PrivateFileStorageOptions.MaximumProfessionalPhotoBytes);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(10485761, false)]
+    [InlineData(5242880, true)]
+    public void Room_photo_limit_validates_its_own_safe_range(long size, bool valid)
+    {
+        var privateRoot = Path.Combine(_root, "private");
+        Directory.CreateDirectory(privateRoot);
+        var result = Validator("Production").Validate(null,
+            new PrivateFileStorageOptions { PrivateFilesPath = privateRoot, RoomPhotoMaxBytes = size });
+        Assert.Equal(valid, result.Succeeded);
     }
 
     [Theory]

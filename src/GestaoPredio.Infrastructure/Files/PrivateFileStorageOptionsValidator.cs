@@ -25,6 +25,8 @@ public sealed class PrivateFileStorageOptionsValidator : IValidateOptions<Privat
     {
         if (options.ProfessionalPhotoMaxBytes is < 1 or > PrivateFileStorageOptions.MaximumProfessionalPhotoBytes)
             return Failure();
+        if (options.RoomPhotoMaxBytes is < 1 or > PrivateFileStorageOptions.MaximumRoomPhotoBytes)
+            return Failure();
         if (string.IsNullOrWhiteSpace(options.PrivateFilesPath) || !Path.IsPathFullyQualified(options.PrivateFilesPath))
             return Failure();
 

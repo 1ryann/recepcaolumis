@@ -194,7 +194,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task Public_photo_endpoint_returns_404_when_the_metadata_pointer_has_a_non_photo_purpose()
+    public async Task Public_photo_endpoint_returns_404_when_the_metadata_pointer_has_a_non_professional_photo_purpose()
     {
         await factory.ResetAsync();
         await using var scope = factory.Services.CreateAsyncScope();
@@ -207,15 +207,12 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         db.Professionals.Add(professional);
         await db.SaveChangesAsync();
 
-        // PrivateFile.Create and the CK_PrivateFiles_Purpose check constraint both forbid any purpose
-        // other than PROFESSIONAL_PHOTO, so drop the constraint, mislabel the persisted row, then
-        // restore every row to a valid purpose and re-add the constraint in a finally.
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE \"PrivateFiles\" DROP CONSTRAINT \"CK_PrivateFiles_Purpose\"");
+        // ROOM_PHOTO is valid storage metadata but cannot be served as a professional photo.
+        // Keep the current constraint intact so this test cannot narrow the shared fixture schema.
         try
         {
             await db.Database.ExecuteSqlRawAsync(
-                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'SOME_OTHER_PURPOSE' WHERE \"Id\" = {0}", photoId);
+                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'ROOM_PHOTO' WHERE \"Id\" = {0}", photoId);
 
             var response = await factory.Client.GetAsync(
                 $"/api/totem/professionals/{professional.Id}/photo");
@@ -224,9 +221,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         finally
         {
             await db.Database.ExecuteSqlRawAsync(
-                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'PROFESSIONAL_PHOTO'");
-            await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE \"PrivateFiles\" ADD CONSTRAINT \"CK_PrivateFiles_Purpose\" CHECK (\"Purpose\" = 'PROFESSIONAL_PHOTO')");
+                "UPDATE \"PrivateFiles\" SET \"Purpose\" = 'PROFESSIONAL_PHOTO' WHERE \"Id\" = {0}", photoId);
         }
     }
 
