@@ -877,9 +877,10 @@ export const totemRoomApi = {
   detail(id: string, signal?: AbortSignal) {
     return apiClient.get<PublicRoomDetailDto>(`/api/totem/rooms/${encodeURIComponent(id)}`, { signal })
   },
-  // Wired to the UI in Task 10 — defined now so the contract exists alongside `list`/`detail`.
+  // Anonymous endpoint with no antiforgery: uses `postPublic` (no CSRF round trip), unlike
+  // every other mutation in this module.
   createInquiry(id: string, input: RoomRentalInquiryInput) {
-    return apiClient.post<RoomRentalInquiryResultDto>(`/api/totem/rooms/${encodeURIComponent(id)}/rental-inquiries`, input)
+    return apiClient.postPublic<RoomRentalInquiryResultDto>(`/api/totem/rooms/${encodeURIComponent(id)}/rental-inquiries`, input)
   },
 }
 

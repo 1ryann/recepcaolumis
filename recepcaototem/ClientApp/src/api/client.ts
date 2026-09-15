@@ -83,6 +83,16 @@ export const apiClient = {
   get<T>(path: string, options: GetOptions = {}) {
     return request<T>(withQuery(path, options.query), { signal: options.signal })
   },
+  // Bypasses `mutate`/CSRF entirely: for a public, AllowAnonymous, no-antiforgery endpoint
+  // (e.g. the totem room rental inquiry) there is no session cookie to protect, and fetching
+  // a CSRF token first would be a wasted round trip. Calls `request` directly, same as `get`.
+  postPublic<T>(path: string, body: unknown) {
+    return request<T>(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  },
   post<T>(path: string, body: unknown) {
     return mutate<T>('POST', path, JSON.stringify(body), 'application/json')
   },

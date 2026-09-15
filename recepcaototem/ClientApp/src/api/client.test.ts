@@ -114,6 +114,37 @@ test('postMultipart sends a POST with FormData body and a CSRF header', async ()
   expect(init.headers).toEqual(expect.objectContaining({ 'X-CSRF-TOKEN': 'csrf-token' }))
 })
 
+test('postPublic sends JSON same-origin without ever fetching a CSRF token', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(json({ ok: true }))
+  vi.stubGlobal('fetch', fetchMock)
+  const { apiClient } = await import('./client')
+  const result = await apiClient.postPublic<{ ok: boolean }>('/api/totem/rooms/r1/rental-inquiries', { fullName: 'Ana' })
+  expect(result.ok).toBe(true)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(fetchMock).toHaveBeenCalledWith('/api/totem/rooms/r1/rental-inquiries', expect.objectContaining({
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ fullName: 'Ana' }),
+  }))
+  expect(fetchMock.mock.calls.every(([url]) => url !== '/api/auth/csrf')).toBe(true)
+  expect((fetchMock.mock.calls[0][1] as RequestInit).headers).not.toHaveProperty('X-CSRF-TOKEN')
+})
+
+test('postPublic decodes a stable ApiError on failure without retrying', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(json(
+    { code: 'INVALID_ROOM_RENTAL_INQUIRY', message: 'Os dados do interesse são inválidos.' }, 400,
+  ))
+  vi.stubGlobal('fetch', fetchMock)
+  const { apiClient, ApiError } = await import('./client')
+  const error = await apiClient.postPublic('/api/totem/rooms/r1/rental-inquiries', {}).catch((value) => value)
+  expect(error).toBeInstanceOf(ApiError)
+  expect(error).toEqual(expect.objectContaining({
+    status: 400, code: 'INVALID_ROOM_RENTAL_INQUIRY', message: 'Os dados do interesse são inválidos.',
+  }))
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }

@@ -6,7 +6,7 @@ import { leasesApi, professionalReservationsApi, professionalsApi, professionalL
   totemRoomApi } from './modules'
 
 vi.mock('./client', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn(), postPublic: vi.fn() },
 }))
 
 beforeEach(() => vi.clearAllMocks())
@@ -227,7 +227,7 @@ test('customer registration and profile clients keep identity server-owned', asy
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/reservations', { query: { page: 1, pageSize: 20 }, signal: undefined })
 })
 
-test('public totem room catalog reads use GET with escaped paths and the inquiry client posts', async () => {
+test('public totem room catalog reads use GET with escaped paths and the inquiry client posts without CSRF', async () => {
   const signal = new AbortController().signal
   await totemRoomApi.list(signal)
   await totemRoomApi.detail('room 1', signal)
@@ -236,8 +236,11 @@ test('public totem room catalog reads use GET with escaped paths and the inquiry
   })
   expect(apiClient.get).toHaveBeenCalledWith('/api/totem/rooms', { signal })
   expect(apiClient.get).toHaveBeenCalledWith(`/api/totem/rooms/${encodeURIComponent('room 1')}`, { signal })
-  expect(apiClient.post).toHaveBeenCalledWith(
+  // The rental inquiry endpoint is AllowAnonymous with no antiforgery, so this must go
+  // through `postPublic` (no CSRF round trip) rather than the regular `post`.
+  expect(apiClient.postPublic).toHaveBeenCalledWith(
     `/api/totem/rooms/${encodeURIComponent('room 1')}/rental-inquiries`,
     { fullName: 'Ana Souza', whatsApp: '+5565999999999', professionOrCompany: 'Fisioterapeuta', note: 'Manhãs' },
   )
+  expect(apiClient.post).not.toHaveBeenCalled()
 })

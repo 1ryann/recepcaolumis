@@ -2594,6 +2594,226 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 
 /* ==========================================================================
+   Totem room detail — /totem/salas/:id (Task 10)
+   Photo gallery + description + inquiry form for a single room from the
+   public catalog (Task 9). Shares the same kiosk shell shape as .totem-rooms
+   (LumisBackground, logo-as-back, KioskClock) but keeps its own class names.
+   Never renders a price/tariff. The form reuses the shared .field-label/
+   .field-input/.form-error primitives, restyled here for the dark kiosk bg.
+   ========================================================================== */
+.totem-room-detail {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--lumis-text-dim);
+  background: radial-gradient(120% 90% at 50% 0%, var(--lumis-surface), var(--lumis-bg) 60%);
+}
+.totem-room-detail-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: clamp(20px, 3.5vw, 44px);
+}
+.totem-room-detail-logo { width: clamp(104px, 12vw, 140px); height: auto; display: block; opacity: .96; }
+.totem-room-detail-logo-link {
+  display: inline-flex;
+  padding: 4px;
+  margin: -4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  transition: opacity .16s ease;
+}
+.totem-room-detail-logo-link:hover { opacity: .82; }
+.totem-room-detail-logo-link:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-room-detail-bar .totem-clock { align-items: flex-end; text-align: right; }
+
+.totem-room-detail-inner {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding-inline: clamp(16px, 4vw, 48px);
+  padding-block: clamp(16px, 4vh, 40px) clamp(24px, 4vh, 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.totem-room-detail-slot {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(16px, 3vh, 28px);
+  padding-block: clamp(40px, 10vh, 96px);
+}
+
+.totem-room-detail-content {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+  text-align: left;
+}
+.totem-room-detail-gallery { display: flex; flex-direction: column; gap: 12px; }
+.totem-room-detail-photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  border-radius: 20px;
+  background: var(--lumis-surface-3);
+}
+.totem-room-detail-fallback {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lumis-muted);
+  border-radius: 20px;
+  background: linear-gradient(160deg, var(--lumis-surface-3), var(--lumis-surface-2));
+}
+.totem-room-detail-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.totem-room-detail-thumb {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--lumis-surface-3);
+}
+.totem-room-detail-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.totem-room-detail-thumb.is-selected { border-color: var(--lumis-text); }
+.totem-room-detail-thumb:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 2px; }
+
+.totem-room-detail-info { display: flex; flex-direction: column; gap: 14px; }
+.totem-room-detail-title {
+  margin: 0;
+  font-size: clamp(22px, 2.8vw, 32px);
+  line-height: 1.12;
+  letter-spacing: -.03em;
+  font-weight: 640;
+  color: var(--lumis-text);
+}
+.totem-room-detail-description { margin: 0; color: var(--lumis-muted); font-size: 15px; line-height: 1.5; }
+.totem-room-detail-availability { margin: 0; color: var(--lumis-warning); font-size: 14px; font-weight: 650; }
+
+.totem-room-detail-form { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+.totem-room-detail-form .field-label { color: var(--lumis-muted); }
+.totem-room-detail-form .field-input {
+  color: var(--lumis-text);
+  background: rgba(255, 255, 255, .04);
+  border-color: var(--lumis-border);
+}
+.totem-room-detail-form .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px var(--lumis-border-soft); }
+.totem-room-detail-form textarea.field-input { height: auto; padding-block: 12px; resize: vertical; }
+.totem-room-detail-form .form-error { color: #f0b8b8; border-color: rgba(226, 120, 120, .35); background: rgba(226, 120, 120, .08); }
+.totem-room-detail-form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
+
+@media (max-width: 720px) {
+  .totem-room-detail-content { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .totem-room-detail-inner { padding-inline: 8px; }
+}
+
+/* ==========================================================================
+   Totem room interest success — /totem/salas/:id/interesse (Task 10)
+   Static "continue on WhatsApp" QR hand-off shown right after a rental
+   inquiry is submitted. Deliberately has NO KioskClock/polling/countdown/
+   auto-return of any kind — the whole screen sets zero timers.
+   ========================================================================== */
+.totem-room-interest {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--lumis-text-dim);
+  background: var(--lumis-bg);
+}
+.totem-room-interest-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: clamp(18px, 3.2vw, 40px);
+}
+.totem-room-interest-logo { width: clamp(96px, 11vw, 128px); height: auto; display: block; opacity: .92; }
+.totem-room-interest-logo-link {
+  display: inline-flex;
+  padding: 4px;
+  margin: -4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  transition: opacity .16s ease;
+}
+.totem-room-interest-logo-link:hover { opacity: .82; }
+.totem-room-interest-logo-link:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+
+.totem-room-interest-inner {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 40px) clamp(28px, 6vh, 64px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2.4vh, 22px);
+  text-align: center;
+}
+.totem-room-interest-title {
+  margin: 0;
+  font-size: clamp(24px, 3.4vw, 38px);
+  line-height: 1.12;
+  letter-spacing: -.03em;
+  font-weight: 640;
+  color: var(--lumis-text);
+}
+.totem-room-interest-room { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.totem-room-interest-room strong { font-size: clamp(17px, 2vw, 21px); font-weight: 700; color: var(--lumis-text); }
+.totem-room-interest-room span { color: var(--lumis-muted); font-size: clamp(13px, 1.6vw, 16px); }
+.totem-room-interest-qr-card {
+  padding: clamp(16px, 2.4vw, 24px);
+  border-radius: 20px;
+  background: var(--lumis-surface-2);
+  border: 1px solid var(--lumis-border-soft);
+}
+.totem-room-interest-qr {
+  display: block;
+  width: min(64vw, 280px);
+  height: auto;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+.totem-room-interest-hint { margin: 0; color: var(--lumis-muted); font-size: clamp(13px, 1.6vw, 16px); }
+.totem-room-interest-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 4px; }
+
+/* ==========================================================================
    Customer portal — dark sidebar + drawer shell on LumisPageShell (Task 21)
    Mirrors AdminLayout's open/overlay drawer pattern, but themed with the
    --lumis-* tokens instead of the admin's own brand palette.
