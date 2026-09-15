@@ -172,3 +172,19 @@ internal static class RoomPhotoHttpRequests
         return request;
     }
 }
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed class PublicRoomCatalogSecurityTests(ModulesApiFactory factory)
+{
+    [Fact]
+    public async Task Public_room_catalog_routes_are_anonymous_and_do_not_fall_through_to_the_authenticated_api_catch_all()
+    {
+        await factory.ResetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.GetAsync("/api/totem/rooms")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.Client.GetAsync($"/api/totem/rooms/{Guid.NewGuid()}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.Client.GetAsync($"/api/totem/rooms/{Guid.NewGuid()}/photos/{Guid.NewGuid()}")).StatusCode);
+    }
+}
