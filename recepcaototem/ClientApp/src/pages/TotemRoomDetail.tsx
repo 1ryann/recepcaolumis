@@ -1,8 +1,8 @@
-import { DoorOpen } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { totemRoomApi, type PublicRoomAvailability, type PublicRoomDetailDto } from '../api/modules'
+import { RoomPhotoGallery } from '../components/RoomPhotoGallery'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 
@@ -51,8 +51,6 @@ export function TotemRoomDetail() {
   const navigate = useNavigate()
   const [phase, setPhase] = useState<Phase>('loading')
   const [room, setRoom] = useState<PublicRoomDetailDto | null>(null)
-  const [selectedPhoto, setSelectedPhoto] = useState(0)
-  const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set())
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<InquiryForm>(emptyForm)
   const [formError, setFormError] = useState('')
@@ -65,8 +63,6 @@ export function TotemRoomDetail() {
       .detail(id, controller.signal)
       .then((detail) => {
         setRoom(detail)
-        setSelectedPhoto(0)
-        setFailedPhotos(new Set())
         setShowForm(false)
         setForm(emptyForm)
         setFormError('')
@@ -83,14 +79,6 @@ export function TotemRoomDetail() {
     const controller = load()
     return () => controller.abort()
   }, [load])
-
-  const markPhotoFailed = (index: number) =>
-    setFailedPhotos((current) => {
-      if (current.has(index)) return current
-      const next = new Set(current)
-      next.add(index)
-      return next
-    })
 
   const change = (field: keyof InquiryForm, value: string) =>
     setForm((current) => ({ ...current, [field]: value }))
@@ -183,58 +171,7 @@ export function TotemRoomDetail() {
 
         {phase === 'ready' && room && (
           <div className="totem-room-detail-content">
-            <div className="totem-room-detail-gallery">
-              {room.photoUrls.length > 0 ? (
-                <>
-                  {failedPhotos.has(selectedPhoto) ? (
-                    <div
-                      className="totem-room-detail-fallback"
-                      data-testid="totem-room-detail-fallback"
-                      aria-hidden="true"
-                    >
-                      <DoorOpen size={40} />
-                    </div>
-                  ) : (
-                    <img
-                      className="totem-room-detail-photo"
-                      src={room.photoUrls[selectedPhoto]}
-                      alt={`Foto da sala ${room.name}`}
-                      onError={() => markPhotoFailed(selectedPhoto)}
-                    />
-                  )}
-                  {room.photoUrls.length > 1 && (
-                    <div className="totem-room-detail-thumbs">
-                      {room.photoUrls.map((url, index) => (
-                        <button
-                          key={url}
-                          type="button"
-                          className={`totem-room-detail-thumb${index === selectedPhoto ? ' is-selected' : ''}`}
-                          aria-label={`Ver foto ${index + 1} de ${room.name}`}
-                          aria-pressed={index === selectedPhoto}
-                          onClick={() => setSelectedPhoto(index)}
-                        >
-                          {failedPhotos.has(index) ? (
-                            <div
-                              className="totem-room-detail-thumb-fallback"
-                              data-testid="totem-room-detail-thumb-fallback"
-                              aria-hidden="true"
-                            >
-                              <DoorOpen size={16} />
-                            </div>
-                          ) : (
-                            <img src={url} alt="" onError={() => markPhotoFailed(index)} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="totem-room-detail-fallback" data-testid="totem-room-detail-fallback" aria-hidden="true">
-                  <DoorOpen size={40} />
-                </div>
-              )}
-            </div>
+            <RoomPhotoGallery photoUrls={room.photoUrls} roomName={room.name} />
 
             <div className="totem-room-detail-info">
               <h1 className="totem-room-detail-title">{room.name}</h1>

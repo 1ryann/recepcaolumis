@@ -2688,9 +2688,20 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   text-align: left;
 }
 .totem-room-detail-gallery { display: flex; flex-direction: column; gap: 12px; }
+.totem-room-detail-photo-trigger {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  cursor: zoom-in;
+}
+.totem-room-detail-photo-trigger:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; border-radius: 20px; }
 .totem-room-detail-photo {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 6 / 5;
+  min-height: clamp(340px, 46vh, 560px);
   object-fit: cover;
   display: block;
   border-radius: 20px;
@@ -2698,7 +2709,8 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .totem-room-detail-fallback {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 6 / 5;
+  min-height: clamp(340px, 46vh, 560px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2706,6 +2718,20 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   border-radius: 20px;
   background: linear-gradient(160deg, var(--lumis-surface-3), var(--lumis-surface-2));
 }
+.totem-room-detail-dots { display: flex; gap: 8px; padding-block: 2px; }
+.totem-room-detail-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--lumis-border-strong);
+  cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease;
+}
+.totem-room-detail-dot:hover { background: #bdbdbd; }
+.totem-room-detail-dot:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 2px; }
+.totem-room-detail-dot.is-active { background: #f2f2f2; transform: scale(1.3); }
 .totem-room-detail-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
 .totem-room-detail-thumb {
   width: 64px;
@@ -2729,6 +2755,77 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .totem-room-detail-thumb.is-selected { border-color: var(--lumis-text); }
 .totem-room-detail-thumb:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 2px; }
+
+/* Room detail lightbox — a dedicated full-bleed overlay rather than the shared <Modal>,
+   which is a centred, padded, fixed max-width (760px) card with a mandatory title header:
+   not a good fit for a large image plus side navigation arrows that want to sit near the
+   viewport edges. See RoomPhotoGallery's task report for the full reasoning. */
+.totem-room-detail-lightbox-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 3vw, 40px);
+  background: rgba(0, 0, 0, .82);
+  backdrop-filter: blur(6px);
+  animation: page-in .2s ease;
+}
+.totem-room-detail-lightbox {
+  position: relative;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 40px);
+  display: grid;
+  place-items: center;
+}
+.totem-room-detail-lightbox-photo {
+  width: 100%;
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+  border-radius: 12px;
+  display: block;
+}
+.totem-room-detail-lightbox-fallback {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lumis-muted);
+  border-radius: 12px;
+  background: linear-gradient(160deg, var(--lumis-surface-3), var(--lumis-surface-2));
+}
+.totem-room-detail-lightbox-close {
+  position: absolute;
+  top: -16px;
+  right: -16px;
+  z-index: 2;
+  color: #f2f2f2;
+  border: 1px solid var(--lumis-border-strong);
+  background: rgba(20, 20, 20, .85);
+}
+.totem-room-detail-lightbox-close:hover { color: #fff; background: rgba(40, 40, 40, .95); }
+.totem-room-detail-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: clamp(44px, 6vw, 56px);
+  height: clamp(44px, 6vw, 56px);
+  display: grid;
+  place-items: center;
+  color: var(--lumis-text-dim);
+  border: 1px solid var(--lumis-border-strong);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease, border-color .16s ease;
+}
+.totem-room-detail-lightbox-nav:hover { background: rgba(255, 255, 255, .16); border-color: #f2f2f2; transform: translateY(-50%) scale(1.05); }
+.totem-room-detail-lightbox-nav:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 3px; }
+.totem-room-detail-lightbox-prev { left: clamp(-4px, -1.5vw, 12px); }
+.totem-room-detail-lightbox-next { right: clamp(-4px, -1.5vw, 12px); }
 
 .totem-room-detail-info { display: flex; flex-direction: column; gap: 14px; }
 .totem-room-detail-title {
@@ -2754,11 +2851,17 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-room-detail-form .form-error { color: #f0b8b8; border-color: rgba(226, 120, 120, .35); background: rgba(226, 120, 120, .08); }
 .totem-room-detail-form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
 
+@media (max-width: 900px) {
+  .totem-room-detail-photo,.totem-room-detail-fallback { aspect-ratio: 4 / 3; min-height: clamp(220px, 38vh, 380px); }
+  .totem-room-detail-lightbox-prev { left: 4px; }
+  .totem-room-detail-lightbox-next { right: 4px; }
+}
 @media (max-width: 720px) {
   .totem-room-detail-content { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .totem-room-detail-inner { padding-inline: 8px; }
+  .totem-room-detail-lightbox-close { top: 8px; right: 8px; }
 }
 
 /* ==========================================================================
