@@ -2718,6 +2718,15 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   background: var(--lumis-surface-3);
 }
 .totem-room-detail-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.totem-room-detail-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lumis-muted);
+  background: linear-gradient(160deg, var(--lumis-surface-3), var(--lumis-surface-2));
+}
 .totem-room-detail-thumb.is-selected { border-color: var(--lumis-text); }
 .totem-room-detail-thumb:focus-visible { outline: 2px solid #f2f2f2; outline-offset: 2px; }
 

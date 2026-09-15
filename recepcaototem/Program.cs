@@ -78,6 +78,7 @@ builder.Services.AddSingleton<ProfessionalRegistrationRateLimiter>();
 builder.Services.AddSingleton<ProfessionalPresenceRateLimiter>();
 builder.Services.AddSingleton<ProfessionalPhotoUploadRateLimiter>();
 builder.Services.AddSingleton<RoomRentalInquiryRateLimiter>();
+builder.Services.AddSingleton<RoomPhotoRateLimiter>();
 builder.Services.AddSingleton<recepcaototem.Features.Totem.TotemHandoffRateLimiter>();
 builder.Services.AddSingleton<RescheduleTokenRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();

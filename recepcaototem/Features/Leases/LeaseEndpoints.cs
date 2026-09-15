@@ -235,7 +235,7 @@ public static partial class LeaseEndpoints
                 Result = "SUCCEEDED",
                 OccurredAt = now,
                 CorrelationId = context.TraceIdentifier,
-                TargetEntityType = "ROOM_RENTAL_INQUIRY",
+                TargetEntityType = AuditTargetTypes.RoomRentalInquiry,
                 TargetEntityId = convertingInquiryId
             });
             await db.SaveChangesAsync(cancellationToken);

@@ -67,7 +67,7 @@ public static class RoomRentalInquiryEndpoints
             Result = "SUCCEEDED",
             OccurredAt = now,
             CorrelationId = context.TraceIdentifier,
-            TargetEntityType = "ROOM_RENTAL_INQUIRY",
+            TargetEntityType = AuditTargetTypes.RoomRentalInquiry,
             TargetEntityId = inquiry.Id
         });
         await db.SaveChangesAsync(cancellationToken);

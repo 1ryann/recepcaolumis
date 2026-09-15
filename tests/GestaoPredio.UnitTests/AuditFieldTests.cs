@@ -101,6 +101,11 @@ public sealed class AuditFieldTests
         Assert.Equal("LEASE_ENDED", AuditActions.LeaseEnded);
         Assert.Equal("ROOM_RENTAL_INQUIRY_CREATED", AuditActions.RoomRentalInquiryCreated);
         Assert.Equal("ROOM_RENTAL_INQUIRY_CONVERTED", AuditActions.RoomRentalInquiryConverted);
+        Assert.Equal("ROOM_RENTAL_INQUIRY", AuditTargetTypes.RoomRentalInquiry);
+        Assert.Equal("ROOM_PHOTO_UPLOADED", AuditActions.RoomPhotoUploaded);
+        Assert.Equal("ROOM_PHOTO_REMOVED", AuditActions.RoomPhotoRemoved);
+        Assert.Equal("ROOM_PHOTOS_REORDERED", AuditActions.RoomPhotosReordered);
+        Assert.Equal("ROOM_PHOTO_COVER_CHANGED", AuditActions.RoomPhotoCoverChanged);
     }
 
     [Fact]

@@ -85,6 +85,26 @@ test('renders photoUrls in the exact order received with a working thumbnail sel
   expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', room.photoUrls[1])
 })
 
+test('a main photo load failure swaps it for the fallback without losing the thumbnail strip', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
+  renderAt()
+  const main = await screen.findByAltText('Foto da sala Sala Alfa')
+  fireEvent.error(main)
+  expect(screen.getByTestId('totem-room-detail-fallback')).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: /ver foto/i })).toHaveLength(2)
+})
+
+test('a thumbnail photo load failure swaps just that thumbnail for a fallback', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
+  renderAt()
+  await screen.findByAltText('Foto da sala Sala Alfa')
+  const thumbs = screen.getAllByRole('button', { name: /ver foto/i })
+  fireEvent.error(thumbs[1].querySelector('img')!)
+  expect(screen.getByTestId('totem-room-detail-thumb-fallback')).toBeInTheDocument()
+  // The main photo (a different image) is unaffected by the thumbnail's own failure.
+  expect(screen.getByAltText('Foto da sala Sala Alfa')).toBeInTheDocument()
+})
+
 test('never renders any tariff/price text', async () => {
   vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
   renderAt()

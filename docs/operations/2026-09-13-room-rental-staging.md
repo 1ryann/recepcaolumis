@@ -205,8 +205,8 @@ Nenhuma ocorrência de connection string, chave de API ou número de telefone re
    (`MapPost("", Create).AddEndpointFilter<AntiforgeryFilter>()`); é o mesmo `POST` que, quando recebe
    `RoomRentalInquiryId`, converte o inquiry na mesma transação — nenhum endpoint paralelo.
 5. **DTOs públicos sem preço/contrato/tenant/profissional** — confirmado em `TotemRoomEndpoints.cs`: `PublicRoomCard(Id,
-   Name, Description, Status, AvailableFrom, CoverUrl?)` e `PublicRoomDetail(Id, Name, Description, Status,
-   AvailableFrom, Photos[])`; e em `RoomRentalInquiryContracts.cs:13`: `RoomRentalInquiryResult(InquiryId,
+   Name, Description, Availability, AvailableFrom, CoverPhotoUrl?)` e `PublicRoomDetail(Id, Name, Description, Availability,
+   AvailableFrom, PhotoUrls)`; e em `RoomRentalInquiryContracts.cs:13`: `RoomRentalInquiryResult(InquiryId,
    WhatsappUrl, PresentedAvailabilityLabel)`. Nenhum desses tipos carrega `Tenant`, `Professional`,
    `ContractedRate`, `HourlyRate` ou `DailyRate`.
 6. **Nenhuma chamada de aplicação de migration no startup** — confirmado: busca por

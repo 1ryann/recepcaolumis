@@ -52,6 +52,7 @@ export function TotemRoomDetail() {
   const [phase, setPhase] = useState<Phase>('loading')
   const [room, setRoom] = useState<PublicRoomDetailDto | null>(null)
   const [selectedPhoto, setSelectedPhoto] = useState(0)
+  const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set())
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<InquiryForm>(emptyForm)
   const [formError, setFormError] = useState('')
@@ -65,6 +66,7 @@ export function TotemRoomDetail() {
       .then((detail) => {
         setRoom(detail)
         setSelectedPhoto(0)
+        setFailedPhotos(new Set())
         setShowForm(false)
         setForm(emptyForm)
         setFormError('')
@@ -81,6 +83,14 @@ export function TotemRoomDetail() {
     const controller = load()
     return () => controller.abort()
   }, [load])
+
+  const markPhotoFailed = (index: number) =>
+    setFailedPhotos((current) => {
+      if (current.has(index)) return current
+      const next = new Set(current)
+      next.add(index)
+      return next
+    })
 
   const change = (field: keyof InquiryForm, value: string) =>
     setForm((current) => ({ ...current, [field]: value }))
@@ -176,11 +186,22 @@ export function TotemRoomDetail() {
             <div className="totem-room-detail-gallery">
               {room.photoUrls.length > 0 ? (
                 <>
-                  <img
-                    className="totem-room-detail-photo"
-                    src={room.photoUrls[selectedPhoto]}
-                    alt={`Foto da sala ${room.name}`}
-                  />
+                  {failedPhotos.has(selectedPhoto) ? (
+                    <div
+                      className="totem-room-detail-fallback"
+                      data-testid="totem-room-detail-fallback"
+                      aria-hidden="true"
+                    >
+                      <DoorOpen size={40} />
+                    </div>
+                  ) : (
+                    <img
+                      className="totem-room-detail-photo"
+                      src={room.photoUrls[selectedPhoto]}
+                      alt={`Foto da sala ${room.name}`}
+                      onError={() => markPhotoFailed(selectedPhoto)}
+                    />
+                  )}
                   {room.photoUrls.length > 1 && (
                     <div className="totem-room-detail-thumbs">
                       {room.photoUrls.map((url, index) => (
@@ -192,14 +213,24 @@ export function TotemRoomDetail() {
                           aria-pressed={index === selectedPhoto}
                           onClick={() => setSelectedPhoto(index)}
                         >
-                          <img src={url} alt="" />
+                          {failedPhotos.has(index) ? (
+                            <div
+                              className="totem-room-detail-thumb-fallback"
+                              data-testid="totem-room-detail-thumb-fallback"
+                              aria-hidden="true"
+                            >
+                              <DoorOpen size={16} />
+                            </div>
+                          ) : (
+                            <img src={url} alt="" onError={() => markPhotoFailed(index)} />
+                          )}
                         </button>
                       ))}
                     </div>
                   )}
                 </>
               ) : (
-                <div className="totem-room-detail-fallback" aria-hidden="true">
+                <div className="totem-room-detail-fallback" data-testid="totem-room-detail-fallback" aria-hidden="true">
                   <DoorOpen size={40} />
                 </div>
               )}

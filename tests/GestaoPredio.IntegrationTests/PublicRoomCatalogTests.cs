@@ -124,6 +124,53 @@ public sealed class PublicRoomCatalogTests(ModulesApiFactory factory)
         Assert.Contains("TOO_MANY_REQUESTS", await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task Public_room_photo_returns_stable_rate_limit_error_when_its_own_budget_is_exhausted_leaving_catalog_untouched()
+    {
+        await factory.ResetAsync();
+        var room = Room.Create("Sala Fotos Limitadas", null, 1m, 1m, factory.UtcNow);
+        await SeedAsync([room]);
+        var photo = await SeedPhotoAsync(room.Id, 0, true);
+        using var throttled = factory.WithConfig(
+            ("RateLimiting:RoomPhotoIpPermitLimit", "1"),
+            ("RateLimiting:RoomPhotoIdentifierPermitLimit", "10000"),
+            ("RateLimiting:CustomerIpPermitLimit", "10000"),
+            ("RateLimiting:CustomerIdentifierPermitLimit", "10000"));
+        var photoUrl = $"/api/totem/rooms/{room.Id}/photos/{photo.PhotoId}";
+
+        Assert.Equal(HttpStatusCode.OK, (await throttled.Client.GetAsync(photoUrl)).StatusCode);
+        var exhausted = await throttled.Client.GetAsync(photoUrl);
+        Assert.Equal((HttpStatusCode)429, exhausted.StatusCode);
+        Assert.Contains("TOO_MANY_REQUESTS", await exhausted.Content.ReadAsStringAsync());
+
+        // The photo route's own exhausted budget must not touch the catalog list/detail budget.
+        Assert.Equal(HttpStatusCode.OK, (await throttled.Client.GetAsync("/api/totem/rooms")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await throttled.Client.GetAsync($"/api/totem/rooms/{room.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Exhausting_the_catalog_budget_does_not_affect_the_room_photo_budget()
+    {
+        await factory.ResetAsync();
+        var room = Room.Create("Sala Catalogo Limitado", null, 1m, 1m, factory.UtcNow);
+        await SeedAsync([room]);
+        var photo = await SeedPhotoAsync(room.Id, 0, true);
+        using var throttled = factory.WithConfig(
+            ("RateLimiting:CustomerIpPermitLimit", "1"),
+            ("RateLimiting:CustomerIdentifierPermitLimit", "10000"),
+            ("RateLimiting:RoomPhotoIpPermitLimit", "10000"),
+            ("RateLimiting:RoomPhotoIdentifierPermitLimit", "10000"));
+
+        Assert.Equal(HttpStatusCode.OK, (await throttled.Client.GetAsync("/api/totem/rooms")).StatusCode);
+        var exhausted = await throttled.Client.GetAsync("/api/totem/rooms");
+        Assert.Equal((HttpStatusCode)429, exhausted.StatusCode);
+        Assert.Contains("TOO_MANY_REQUESTS", await exhausted.Content.ReadAsStringAsync());
+
+        // The catalog's own exhausted budget must not touch the room photo budget.
+        var photoUrl = $"/api/totem/rooms/{room.Id}/photos/{photo.PhotoId}";
+        Assert.Equal(HttpStatusCode.OK, (await throttled.Client.GetAsync(photoUrl)).StatusCode);
+    }
+
     private async Task SeedAsync(IReadOnlyList<Room> rooms,
         Func<Guid, Guid, IReadOnlyList<Lease>>? createLeases = null)
     {

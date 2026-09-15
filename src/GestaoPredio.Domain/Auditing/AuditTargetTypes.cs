@@ -7,6 +7,7 @@ public static class AuditTargetTypes
     public const string ProfessionalPresence = "PROFESSIONAL_PRESENCE";
     public const string RescheduleToken = "RESCHEDULE_TOKEN";
     public const string Room = "ROOM";
+    public const string RoomRentalInquiry = "ROOM_RENTAL_INQUIRY";
     public const string Lease = "LEASE";
     public const string Reservation = "RESERVATION";
     public const string Visit = "VISIT";

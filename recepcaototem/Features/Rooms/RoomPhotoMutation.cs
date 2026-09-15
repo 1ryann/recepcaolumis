@@ -94,7 +94,7 @@ public static class RoomPhotoMutation
             var photo = RoomPhoto.Attach(roomId, file.Id, count, count == 0, now);
             db.PrivateFiles.Add(file);
             db.RoomPhotos.Add(photo);
-            db.AuditEntries.Add(CreateAudit(context, roomId, "ROOM_PHOTO_UPLOADED", now));
+            db.AuditEntries.Add(CreateAudit(context, roomId, AuditActions.RoomPhotoUploaded, now));
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new RoomPhotoResponse(photo.Id, $"/api/admin/rooms/{roomId}/photos/{photo.Id}?v={photo.PrivateFileId}",
@@ -139,7 +139,7 @@ public static class RoomPhotoMutation
                 photos[i].Reorder(i);
                 if (photo.IsCover) photos[i].SetCover(i == 0);
             }
-            db.AuditEntries.Add(CreateAudit(context, roomId, "ROOM_PHOTO_REMOVED", timeProvider.GetUtcNow()));
+            db.AuditEntries.Add(CreateAudit(context, roomId, AuditActions.RoomPhotoRemoved, timeProvider.GetUtcNow()));
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -160,7 +160,7 @@ public static class RoomPhotoMutation
             !photos.Select(x => x.Id).ToHashSet().SetEquals(ids)) return InvalidPhoto();
         var byId = photos.ToDictionary(x => x.Id);
         for (var i = 0; i < ids.Count; i++) byId[ids[i]].Reorder(i);
-        db.AuditEntries.Add(CreateAudit(context, roomId, "ROOM_PHOTOS_REORDERED", timeProvider.GetUtcNow()));
+        db.AuditEntries.Add(CreateAudit(context, roomId, AuditActions.RoomPhotosReordered, timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
@@ -179,7 +179,7 @@ public static class RoomPhotoMutation
             .ExecuteUpdateAsync(set => set.SetProperty(x => x.IsCover, false), cancellationToken);
         await db.RoomPhotos.Where(x => x.RoomId == roomId && x.Id == photoId)
             .ExecuteUpdateAsync(set => set.SetProperty(x => x.IsCover, true), cancellationToken);
-        db.AuditEntries.Add(CreateAudit(context, roomId, "ROOM_PHOTO_COVER_CHANGED", timeProvider.GetUtcNow()));
+        db.AuditEntries.Add(CreateAudit(context, roomId, AuditActions.RoomPhotoCoverChanged, timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
@@ -247,7 +247,7 @@ public static class RoomPhotoMutation
     {
         Id = Guid.NewGuid(), ActorUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier),
         IpAddress = context.Connection.RemoteIpAddress?.ToString(), Action = action, Result = "SUCCEEDED",
-        OccurredAt = now, CorrelationId = context.TraceIdentifier, TargetEntityType = "ROOM", TargetEntityId = roomId
+        OccurredAt = now, CorrelationId = context.TraceIdentifier, TargetEntityType = AuditTargetTypes.Room, TargetEntityId = roomId
     };
 
     private static async Task DiscardSafely(IPrivateFileStorage storage, StagedPrivateFile staged)

@@ -68,7 +68,7 @@ public static class TotemRoomEndpoints
     }
 
     private static async Task<IResult> Photo(Guid roomId, Guid photoId, HttpContext context,
-        CustomerPublicRateLimiter limiter, ApplicationDbContext db, IPrivateFileStorage storage,
+        RoomPhotoRateLimiter limiter, ApplicationDbContext db, IPrivateFileStorage storage,
         ILoggerFactory loggerFactory, TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
     {
         using var rate = await limiter.AcquireAsync(RemoteIp(context), $"room-photo:{roomId}:{photoId}", ct);
