@@ -48,6 +48,21 @@ public sealed class RoomRentalInquiryAdminTests(ModulesApiFactory factory)
     }
 
     [Theory]
+    [InlineData(SystemRoles.Administrador)]
+    [InlineData(SystemRoles.Gerente)]
+    public async Task Operations_roles_receive_200_on_the_detail_route(string role)
+    {
+        await factory.ResetAsync();
+        var room = await SeedRoomAsync("Sala Detalhe Papéis");
+        var inquiry = await SeedInquiryAsync(room.Id, "Ana Souza", factory.UtcNow, PublicRoomAvailabilityStatus.AvailableNow, null);
+        await LoginAsAsync(role, $"inquiry-admin-detail-{role.ToLowerInvariant()}@lumis.test");
+
+        var response = await factory.Client.GetAsync($"/api/admin/room-rental-inquiries/{inquiry.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
     [InlineData("page=0", "INVALID_PAGE")]
     [InlineData("pageSize=101", "INVALID_PAGE_SIZE")]
     public async Task Invalid_paging_uses_the_stable_error_shape(string query, string code)
