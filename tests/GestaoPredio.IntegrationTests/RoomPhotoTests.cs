@@ -11,6 +11,7 @@ using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Files;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -20,6 +21,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Rooms;
+using recepcaototem.Api.Middleware;
 using SixLabors.ImageSharp;
 
 namespace GestaoPredio.IntegrationTests;
@@ -174,6 +176,89 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     }
 
     private sealed record CsrfPayload(string Token);
+
+    [Theory]
+    [InlineData("read-first", false, false)]
+    [InlineData("read-first", true, false)]
+    [InlineData("read-after-block", false, true)]
+    [InlineData("read-after-block", true, true)]
+    [InlineData("dispose", false, true)]
+    [InlineData("dispose", true, true)]
+    [InlineData("dispose-before-start", false, false)]
+    [InlineData("dispose-before-start", true, false)]
+    public async Task Streaming_execution_failures_use_safe_policy_before_start_or_abort_after_start(
+        string failure, bool publicFailureIsNotFound, bool started)
+    {
+        await PrepareAsync();
+        Photo(await UploadAsync());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<ApplicationDbContext>();
+        var photo = await db.RoomPhotos.SingleAsync();
+        var metadata = await db.PrivateFiles.SingleAsync();
+        var transfer = new TransferFaultStream(failure, metadata.Length, metadata.StorageKey);
+        var storage = new FaultStorage(services.GetRequiredService<IPrivateFileStorage>(), null, transfer);
+        var context = Context(services);
+        var responseFeature = new TransferResponseFeature();
+        var lifetime = new TransferLifetimeFeature();
+        var output = new StartingOutputStream(responseFeature);
+        context.Features.Set<IHttpResponseFeature>(responseFeature);
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(output));
+        context.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
+        var logs = factory.CaptureLogs();
+        var result = await RoomPhotoStreaming.StreamAsync(photo, db, storage,
+            services.GetRequiredService<ILoggerFactory>(), context, "private, no-store", publicFailureIsNotFound, default);
+        var middleware = new GlobalExceptionMiddleware(result.ExecuteAsync,
+            services.GetRequiredService<ILogger<GlobalExceptionMiddleware>>());
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(1, transfer.DisposeCalls);
+        Assert.Equal(started, lifetime.Aborted);
+        Assert.DoesNotContain(metadata.StorageKey, logs.Text);
+        Assert.DoesNotContain("Unhandled request failure", logs.Text);
+        Assert.Contains("Room photo unavailable", logs.Text);
+        if (started)
+        {
+            Assert.Equal(200, context.Response.StatusCode);
+            Assert.True(output.Length > 0);
+            Assert.DoesNotContain("PHOTO_UNAVAILABLE", System.Text.Encoding.UTF8.GetString(output.ToArray()));
+        }
+        else
+        {
+            Assert.Equal(publicFailureIsNotFound ? 404 : 503, context.Response.StatusCode);
+            var body = System.Text.Encoding.UTF8.GetString(output.ToArray());
+            if (publicFailureIsNotFound) Assert.Empty(body);
+            else Assert.Contains("PHOTO_UNAVAILABLE", body);
+            Assert.DoesNotContain(metadata.StorageKey, body);
+            Assert.False(context.Response.Headers.ContainsKey("Content-Disposition"));
+            Assert.NotEqual("image/webp", context.Response.ContentType);
+        }
+    }
+
+    [Theory]
+    [InlineData("read-cancel")]
+    [InlineData("dispose-cancel")]
+    [InlineData("read-cancel-dispose-fails")]
+    public async Task Streaming_execution_cancellation_propagates_and_always_disposes(string failure)
+    {
+        await PrepareAsync();
+        Photo(await UploadAsync());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<ApplicationDbContext>();
+        var photo = await db.RoomPhotos.SingleAsync();
+        var metadata = await db.PrivateFiles.SingleAsync();
+        var transfer = new TransferFaultStream(failure, metadata.Length, metadata.StorageKey);
+        var storage = new FaultStorage(services.GetRequiredService<IPrivateFileStorage>(), null, transfer);
+        var context = Context(services);
+        context.Response.Body = new MemoryStream();
+        var logs = factory.CaptureLogs();
+        var result = await RoomPhotoStreaming.StreamAsync(photo, db, storage,
+            services.GetRequiredService<ILoggerFactory>(), context, "private, no-store", false, default);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => result.ExecuteAsync(context));
+        Assert.Equal(1, transfer.DisposeCalls);
+        Assert.DoesNotContain(metadata.StorageKey, logs.Text);
+    }
 
     [Theory]
     [InlineData(false)]
@@ -676,7 +761,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             await inner.AcquireAsync(request, cancellationToken);
         }
     }
-    private sealed class FaultStorage(IPrivateFileStorage inner, string? failure) : IPrivateFileStorage
+    private sealed class FaultStorage(IPrivateFileStorage inner, string? failure, Stream? readStream = null) : IPrivateFileStorage
     {
         public FaultReadStream? LastStream { get; private set; }
         private int _stages;
@@ -694,6 +779,7 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         public Task<Stream> OpenStagedReadAsync(StagedPrivateFile staged, CancellationToken ct) => inner.OpenStagedReadAsync(staged, ct);
         public Task<Stream?> OpenReadAsync(string key, CancellationToken ct)
         {
+            if (readStream is not null) return Task.FromResult<Stream?>(readStream);
             if (failure == "io") throw new IOException(key);
             if (failure == "access") throw new UnauthorizedAccessException(key);
             if (failure == "argument") throw new ArgumentException(key);
@@ -716,5 +802,76 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         public override bool CanSeek => failure != "nonseek";
         public override long Length => failure == "length-throws" ? throw new IOException("private-path") : base.Length;
         protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
+    }
+
+    private sealed class TransferResponseFeature : HttpResponseFeature
+    {
+        public bool Started { get; set; }
+        public override bool HasStarted => Started;
+    }
+
+    private sealed class TransferLifetimeFeature : IHttpRequestLifetimeFeature
+    {
+        public CancellationToken RequestAborted { get; set; }
+        public bool Aborted { get; private set; }
+        public void Abort() => Aborted = true;
+    }
+
+    private sealed class StartingOutputStream(TransferResponseFeature feature) : MemoryStream
+    {
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            feature.Started = true;
+            base.Write(buffer, offset, count);
+        }
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            feature.Started = true;
+            return base.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            feature.Started = true;
+            return base.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
+    private sealed class TransferFaultStream(string failure, long length, string secret) : Stream
+    {
+        private long _position;
+        public int DisposeCalls { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => length;
+        public override long Position { get => _position; set => _position = value; }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (failure.StartsWith("read-cancel", StringComparison.Ordinal)) throw new OperationCanceledException(secret);
+            if (failure == "read-first" || (failure == "read-after-block" && _position > 0)) throw new IOException(secret);
+            if (failure == "dispose-before-start") return 0;
+            var read = (int)Math.Min(Math.Min(count, failure == "read-after-block" ? 4 : count), length - _position);
+            buffer.AsSpan(offset, read).Fill(42);
+            _position += read;
+            return read;
+        }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var bytes = new byte[buffer.Length];
+            var read = Read(bytes, 0, bytes.Length);
+            bytes.AsMemory(0, read).CopyTo(buffer);
+            return ValueTask.FromResult(read);
+        }
+        public override ValueTask DisposeAsync()
+        {
+            DisposeCalls++;
+            if (failure == "dispose-cancel") throw new OperationCanceledException(secret);
+            if (failure is "dispose" or "dispose-before-start" or "read-cancel-dispose-fails") throw new IOException(secret);
+            return ValueTask.CompletedTask;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
     }
 }
