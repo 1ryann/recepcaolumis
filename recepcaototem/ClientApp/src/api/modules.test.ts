@@ -3,7 +3,7 @@ import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
   professionalVisitsApi, reservationsApi, roomsApi, roomPhotosApi, tenantsApi, visitsApi, customerApi,
   professionalAvailabilityApi, adminProfessionalAvailabilityApi, operatingHoursApi, roomBlocksApi,
-  totemRoomApi } from './modules'
+  totemRoomApi, roomRentalInquiriesApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn(), postMultipart: vi.fn(), postPublic: vi.fn() },
@@ -252,6 +252,16 @@ test('customer registration and profile clients keep identity server-owned', asy
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/me', { signal: undefined })
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/professionals', { signal: undefined })
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/reservations', { query: { page: 1, pageSize: 20 }, signal: undefined })
+})
+
+test('admin room rental inquiry client uses server paging and a dedicated detail route', async () => {
+  const signal = new AbortController().signal
+  await roomRentalInquiriesApi.list({ page: 2, pageSize: 20 }, signal)
+  await roomRentalInquiriesApi.get('inquiry 1', signal)
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/room-rental-inquiries', {
+    query: { page: 2, pageSize: 20 }, signal,
+  })
+  expect(apiClient.get).toHaveBeenCalledWith(`/api/admin/room-rental-inquiries/${encodeURIComponent('inquiry 1')}`, { signal })
 })
 
 test('public totem room catalog reads use GET with escaped paths and the inquiry client posts without CSRF', async () => {

@@ -191,6 +191,7 @@ a { color: inherit; }
 
 /* Status */
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 99px; font-size: 9px; font-weight: 800; white-space: nowrap; }.status-badge i { width: 6px; height: 6px; border-radius: 50%; }.status-paid,.status-active,.status-occupied { color: #297762; background: #e5f3ee; }.status-paid i,.status-active i,.status-occupied i { background: #48a88d; }.status-pending { color: #9a6a2a; background: #fff2dc; }.status-pending i { background: #d99a45; }.status-overdue { color: #a34848; background: #fce8e8; }.status-overdue i { background: #dc6969; }.status-inactive,.status-available { color: #687d84; background: #eaf0f1; }.status-inactive i,.status-available i { background: #8fa4aa; }.status-waiting { color: #2f6690; background: #e3eefb; }.status-waiting i { background: #5b9bd5; }.status-in-service { color: #1f7a72; background: #dff3f0; }.status-in-service i { background: #35a89a; }
+.inquiry-converted-note { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: #48a88d; font-size: 10px; font-weight: 700; }
 
 /* Rooms */
 .room-summary { display: flex; align-items: center; gap: 19px; margin: -5px 0 20px; color: var(--muted); font-size: 10px; }.room-summary span { display: flex; align-items: center; gap: 7px; }.room-summary b { margin-left: auto; color: #849398; font-weight: 650; }.legend-dot { width: 8px; height: 8px; border-radius: 50%; }.legend-dot.occupied { background: #4aaa90; }.legend-dot.available { background: #a4b7bc; }

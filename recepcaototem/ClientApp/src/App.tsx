@@ -13,6 +13,7 @@ import { Leases } from './pages/admin/Leases'
 import { Reservations } from './pages/admin/Reservations'
 import { Visits } from './pages/admin/Visits'
 import { ReceptionMonitor } from './pages/admin/ReceptionMonitor'
+import { RoomRentalInquiries } from './pages/admin/RoomRentalInquiries'
 import { CustomerHome, CustomerReservations, CustomerShell } from './pages/customer/CustomerHome'
 import { CustomerRegister } from './pages/customer/CustomerRegister'
 import { CustomerBooking } from './pages/customer/CustomerBooking'
@@ -89,6 +90,7 @@ function ProductionApp() {
           <Route path="visitas" element={<Visits />} />
           <Route path="recepcao" element={<ReceptionMonitor />} />
           <Route path="solicitacoes-profissionais" element={<ProfessionalApplications />} />
+          <Route path="interesses-locacao" element={<RoomRentalInquiries />} />
           <Route path="configuracoes" element={<Settings />} />
         </Route>
       </Route>

@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Rooms;
 using recepcaototem.Features.Common;
 
 namespace recepcaototem.Features.Rooms;
@@ -10,6 +11,29 @@ public sealed record RoomRentalInquiryRequest(
     string? Note) : IStrictModuleRequest;
 
 public sealed record RoomRentalInquiryResult(Guid InquiryId, string WhatsappUrl, string PresentedAvailabilityLabel);
+
+/// <summary>
+/// Admin read model for <see cref="RoomRentalInquiry"/> (Task 12). <see cref="PresentedAvailabilityLabel"/> is
+/// always derived, at read time, from the persisted <see cref="PresentedAvailabilityStatus"/>/
+/// <see cref="PresentedAvailableFrom"/> snapshot (via <c>RoomAvailabilityFormatter</c>) — never recomputed from
+/// the room's current leases, so it keeps reporting what the customer actually saw when they asked.
+/// <see cref="RoomName"/> comes from a live join to <c>Rooms</c>, never a denormalized copy.
+/// </summary>
+public sealed record RoomRentalInquiryAdminResponse(
+    Guid Id,
+    Guid RoomId,
+    string RoomName,
+    string FullName,
+    string WhatsApp,
+    string ProfessionOrCompany,
+    string? Note,
+    PublicRoomAvailabilityStatus PresentedAvailabilityStatus,
+    DateOnly? PresentedAvailableFrom,
+    string PresentedAvailabilityLabel,
+    string Status,
+    Guid? LeaseId,
+    DateTimeOffset? ConvertedAt,
+    DateTimeOffset CreatedAt);
 
 internal sealed record ValidRoomRentalInquiryInput(
     string FullName, string WhatsApp, string ProfessionOrCompany, string? Note);

@@ -242,6 +242,24 @@ export interface RoomPhotoDto {
   createdAt: string
 }
 
+export type RoomRentalInquiryStatus = 'NEW' | 'CONVERTED'
+export interface RoomRentalInquiryAdminDto {
+  id: string
+  roomId: string
+  roomName: string
+  fullName: string
+  whatsApp: string
+  professionOrCompany: string
+  note: string | null
+  presentedAvailabilityStatus: 'AVAILABLE_NOW' | 'AVAILABLE_SOON'
+  presentedAvailableFrom: string | null
+  presentedAvailabilityLabel: string
+  status: RoomRentalInquiryStatus
+  leaseId: string | null
+  convertedAt: string | null
+  createdAt: string
+}
+
 export type TenantKind = 'INDIVIDUAL' | 'LEGAL_ENTITY'
 export interface TenantDto {
   id: string
@@ -499,6 +517,7 @@ export const dashboardApi = {
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
 const roomPhotosPath = (roomId: string) => `${roomPath(roomId)}/photos`
+const roomRentalInquiryPath = (id: string) => `/api/admin/room-rental-inquiries/${encodeURIComponent(id)}`
 const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
 const leasePath = (id: string) => `/api/admin/leases/${encodeURIComponent(id)}`
 const reservationPath = (id: string) => `/api/admin/reservations/${encodeURIComponent(id)}`
@@ -583,6 +602,15 @@ export const roomPhotosApi = {
   },
   setCover(roomId: string, photoId: string) {
     return apiClient.post<void>(`${roomPhotosPath(roomId)}/${encodeURIComponent(photoId)}/cover`, {})
+  },
+}
+
+export const roomRentalInquiriesApi = {
+  list(query: { page: number, pageSize: number }, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<RoomRentalInquiryAdminDto>>('/api/admin/room-rental-inquiries', { query: { ...query }, signal })
+  },
+  get(id: string, signal?: AbortSignal) {
+    return apiClient.get<RoomRentalInquiryAdminDto>(roomRentalInquiryPath(id), { signal })
   },
 }
 

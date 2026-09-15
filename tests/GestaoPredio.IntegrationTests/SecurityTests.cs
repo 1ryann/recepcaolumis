@@ -206,3 +206,24 @@ public sealed class RoomRentalInquirySecurityTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed class RoomRentalInquiryAdminSecurityTests(ModulesApiFactory factory)
+{
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Every_admin_room_rental_inquiry_route_requires_operations(bool professional)
+    {
+        await factory.ResetAsync();
+        if (professional)
+        {
+            await factory.CreateUserAsync("inquiry-admin-security@lumis.test", "Valid-Password-123!", [SystemRoles.Profissional]);
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await factory.LoginAsync("inquiry-admin-security@lumis.test", "Valid-Password-123!")).StatusCode);
+        }
+        var expected = professional ? HttpStatusCode.Forbidden : HttpStatusCode.Unauthorized;
+        Assert.Equal(expected, (await factory.Client.GetAsync("/api/admin/room-rental-inquiries")).StatusCode);
+        Assert.Equal(expected, (await factory.Client.GetAsync($"/api/admin/room-rental-inquiries/{Guid.NewGuid()}")).StatusCode);
+    }
+}

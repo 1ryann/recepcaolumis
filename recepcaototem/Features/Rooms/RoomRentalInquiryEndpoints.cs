@@ -16,6 +16,8 @@ public static class RoomRentalInquiryEndpoints
     public static IEndpointRouteBuilder MapRoomRentalInquiryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/totem/rooms/{roomId:guid}/rental-inquiries", Create).AllowAnonymous();
+        endpoints.MapGet("/api/admin/room-rental-inquiries", ListAdmin).RequireAuthorization("Operations");
+        endpoints.MapGet("/api/admin/room-rental-inquiries/{id:guid}", DetailAdmin).RequireAuthorization("Operations");
         return endpoints;
     }
 
@@ -82,6 +84,36 @@ public static class RoomRentalInquiryEndpoints
         return Results.Ok(new RoomRentalInquiryResult(inquiry.Id, url, label));
     }
 
+    // Deliberately separate from the public Create route above: these two are authenticated Admin reads
+    // (Task 12) with no accompanying mutation endpoint — conversion to a Lease (Task 13) is the only way
+    // an inquiry's Status/LeaseId/ConvertedAt ever change, and it happens through POST /api/admin/leases.
+    private static async Task<IResult> ListAdmin(int? page, int? pageSize, ApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!PagingQuery.TryCreate(page, pageSize, null, null, out var paging, out var error))
+            return Results.BadRequest(error);
+
+        var query = from inquiry in db.RoomRentalInquiries.AsNoTracking()
+                    join room in db.Rooms.AsNoTracking() on inquiry.RoomId equals room.Id
+                    select new { Inquiry = inquiry, RoomName = room.Name };
+        var totalCount = await query.CountAsync(cancellationToken);
+        var rows = await query.OrderByDescending(x => x.Inquiry.CreatedAt).ThenByDescending(x => x.Inquiry.Id)
+            .Skip((paging!.Page - 1) * paging.PageSize).Take(paging.PageSize).ToListAsync(cancellationToken);
+
+        var items = rows.Select(row => row.Inquiry.ToAdminResponse(row.RoomName)).ToArray();
+        return Results.Ok(new PagedResponse<RoomRentalInquiryAdminResponse>(items, paging.Page, paging.PageSize, totalCount));
+    }
+
+    private static async Task<IResult> DetailAdmin(Guid id, ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var row = await (from inquiry in db.RoomRentalInquiries.AsNoTracking()
+                          join room in db.Rooms.AsNoTracking() on inquiry.RoomId equals room.Id
+                          where inquiry.Id == id
+                          select new { Inquiry = inquiry, RoomName = room.Name })
+            .SingleOrDefaultAsync(cancellationToken);
+        return row is null ? Results.NotFound() : Results.Ok(row.Inquiry.ToAdminResponse(row.RoomName));
+    }
+
     private static string RemoteIp(HttpContext context) => context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     private static IResult TooManyRequests() => Results.Json(
@@ -90,4 +122,30 @@ public static class RoomRentalInquiryEndpoints
     private static IResult WhatsappNotConfigured() => Results.Json(
         new ApiError("ROOM_RENTAL_WHATSAPP_NOT_CONFIGURED", "O WhatsApp do financeiro não está configurado."),
         statusCode: StatusCodes.Status503ServiceUnavailable);
+}
+
+internal static class RoomRentalInquiryAdminMappings
+{
+    public static RoomRentalInquiryAdminResponse ToAdminResponse(this RoomRentalInquiry inquiry, string roomName) => new(
+        inquiry.Id,
+        inquiry.RoomId,
+        roomName,
+        inquiry.FullName,
+        inquiry.WhatsApp,
+        inquiry.ProfessionOrCompany,
+        inquiry.Note,
+        inquiry.PresentedAvailabilityStatus,
+        inquiry.PresentedAvailableFrom,
+        RoomAvailabilityFormatter.Format(inquiry.PresentedAvailabilityStatus, inquiry.PresentedAvailableFrom),
+        inquiry.Status.ToContract(),
+        inquiry.LeaseId,
+        inquiry.ConvertedAt,
+        inquiry.CreatedAt);
+
+    private static string ToContract(this RoomRentalInquiryStatus status) => status switch
+    {
+        RoomRentalInquiryStatus.New => "NEW",
+        RoomRentalInquiryStatus.Converted => "CONVERTED",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Status de interesse desconhecido.")
+    };
 }
