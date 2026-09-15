@@ -188,3 +188,21 @@ public sealed class PublicRoomCatalogSecurityTests(ModulesApiFactory factory)
             (await factory.Client.GetAsync($"/api/totem/rooms/{Guid.NewGuid()}/photos/{Guid.NewGuid()}")).StatusCode);
     }
 }
+
+[Collection(ModulesDatabaseCollection.Name)]
+public sealed class RoomRentalInquirySecurityTests(ModulesApiFactory factory)
+{
+    [Fact]
+    public async Task Rental_inquiry_route_is_anonymous_and_does_not_fall_through_to_the_authenticated_api_catch_all()
+    {
+        await factory.ResetAsync();
+
+        // A route that fell through to `app.Map("/api/{**path}", ...).RequireAuthorization()` would answer
+        // 401 for an anonymous caller; a properly mapped, AllowAnonymous route instead reaches the handler
+        // and reports 404 for a room that does not exist.
+        var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{Guid.NewGuid()}/rental-inquiries",
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+}

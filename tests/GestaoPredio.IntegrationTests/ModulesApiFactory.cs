@@ -127,6 +127,9 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         builder.UseSetting("RateLimiting:PhotoUploadIpPermitLimit", "10000");
         builder.UseSetting("RateLimiting:PhotoUploadIdentifierPermitLimit", "10000");
         builder.UseSetting("RateLimiting:PhotoUploadWindowSeconds", "600");
+        builder.UseSetting("RateLimiting:RoomRentalInquiryIpPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:RoomRentalInquiryIdentifierPermitLimit", "10000");
+        builder.UseSetting("RateLimiting:RoomRentalInquiryWindowSeconds", "600");
         builder.UseSetting("Scheduling:TimeZoneId", "America/Porto_Velho");
         builder.UseSetting("Whatsapp:FinanceiroPhoneNumber", "+5569999999999");
         builder.UseSetting("CheckIn:ManualCodeHmacKey", "integration-tests-manual-code-hmac-key-not-a-secret");
