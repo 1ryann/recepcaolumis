@@ -21,6 +21,7 @@ import { TotemCheckIn } from './pages/TotemCheckIn'
 import { TotemEntry } from './pages/TotemEntry'
 import { TotemHandoff } from './pages/TotemHandoff'
 import { TotemProfessionals } from './pages/TotemProfessionals'
+import { TotemRoomsCatalog } from './pages/TotemRoomsCatalog'
 import { ProfessionalDashboard, ProfessionalShell } from './pages/professional/ProfessionalHome'
 import { ProfessionalAgenda } from './pages/professional/ProfessionalAgenda'
 import { ProfessionalRegistration } from './pages/professional/ProfessionalRegistration'
@@ -46,6 +47,7 @@ function ProductionApp() {
   <Route path="/totem" element={<TotemEntry />} />
   <Route path="/totem/check-in" element={<TotemCheckIn />} />
   <Route path="/totem/profissionais" element={<TotemProfessionals />} />
+  <Route path="/totem/salas" element={<TotemRoomsCatalog />} />
   <Route path="/totem/handoff" element={<TotemHandoff />} />
   <Route path="/change-password" element={<ChangePassword />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>

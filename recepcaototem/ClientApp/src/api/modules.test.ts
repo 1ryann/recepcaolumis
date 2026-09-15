@@ -2,7 +2,8 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
   professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi, customerApi,
-  professionalAvailabilityApi, adminProfessionalAvailabilityApi, operatingHoursApi, roomBlocksApi } from './modules'
+  professionalAvailabilityApi, adminProfessionalAvailabilityApi, operatingHoursApi, roomBlocksApi,
+  totemRoomApi } from './modules'
 
 vi.mock('./client', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn() },
@@ -224,4 +225,19 @@ test('customer registration and profile clients keep identity server-owned', asy
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/me', { signal: undefined })
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/professionals', { signal: undefined })
   expect(apiClient.get).toHaveBeenCalledWith('/api/customer/reservations', { query: { page: 1, pageSize: 20 }, signal: undefined })
+})
+
+test('public totem room catalog reads use GET with escaped paths and the inquiry client posts', async () => {
+  const signal = new AbortController().signal
+  await totemRoomApi.list(signal)
+  await totemRoomApi.detail('room 1', signal)
+  await totemRoomApi.createInquiry('room 1', {
+    fullName: 'Ana Souza', whatsApp: '+5565999999999', professionOrCompany: 'Fisioterapeuta', note: 'Manhãs',
+  })
+  expect(apiClient.get).toHaveBeenCalledWith('/api/totem/rooms', { signal })
+  expect(apiClient.get).toHaveBeenCalledWith(`/api/totem/rooms/${encodeURIComponent('room 1')}`, { signal })
+  expect(apiClient.post).toHaveBeenCalledWith(
+    `/api/totem/rooms/${encodeURIComponent('room 1')}/rental-inquiries`,
+    { fullName: 'Ana Souza', whatsApp: '+5565999999999', professionOrCompany: 'Fisioterapeuta', note: 'Manhãs' },
+  )
 })

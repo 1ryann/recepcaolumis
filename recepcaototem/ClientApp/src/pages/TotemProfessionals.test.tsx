@@ -112,11 +112,14 @@ test('the LUMIS logo navigates back to /totem', async () => {
   expect(navigateSpy).toHaveBeenCalledWith('/totem')
 })
 
-test('"Alugar sala" renders as a disabled visual-only CTA (no public rental-inquiry destination exists yet)', async () => {
+test('"Alugar sala" is an enabled CTA that navigates to the public room catalog', async () => {
   vi.mocked(totemApi.professionals).mockResolvedValue(people)
   renderAt()
   await screen.findByRole('listbox')
-  expect(screen.getByRole('button', { name: /alugar sala/i })).toBeDisabled()
+  const cta = screen.getByRole('button', { name: /alugar sala/i })
+  expect(cta).toBeEnabled()
+  fireEvent.click(cta)
+  expect(navigateSpy).toHaveBeenCalledWith('/totem/salas')
 })
 
 test('empty -> message + Tentar novamente + Tenho código', async () => {

@@ -813,6 +813,39 @@ export const roomBlocksApi = {
   },
 }
 
+export type PublicRoomAvailability = 'AVAILABLE_NOW' | 'AVAILABLE_SOON'
+
+export interface PublicRoomCardDto {
+  id: string
+  name: string
+  description: string | null
+  availability: PublicRoomAvailability
+  availableFrom: string | null
+  coverPhotoUrl: string | null
+}
+
+export interface PublicRoomDetailDto {
+  id: string
+  name: string
+  description: string | null
+  availability: PublicRoomAvailability
+  availableFrom: string | null
+  photoUrls: string[]
+}
+
+export interface RoomRentalInquiryInput {
+  fullName: string
+  whatsApp: string
+  professionOrCompany: string
+  note?: string | null
+}
+
+export interface RoomRentalInquiryResultDto {
+  inquiryId: string
+  whatsappUrl: string
+  presentedAvailabilityLabel: string
+}
+
 export const totemApi = {
   professionals(signal?: AbortSignal) {
     return apiClient.get<TotemProfessionalCardDto[]>('/api/totem/professionals', { signal })
@@ -834,6 +867,19 @@ export const totemApi = {
   },
   claimHandoff(handoffToken: string) {
     return apiClient.post<{ status: string, expiresAt: string }>('/api/totem/booking-handoffs/claim', { handoffToken })
+  },
+}
+
+export const totemRoomApi = {
+  list(signal?: AbortSignal) {
+    return apiClient.get<PublicRoomCardDto[]>('/api/totem/rooms', { signal })
+  },
+  detail(id: string, signal?: AbortSignal) {
+    return apiClient.get<PublicRoomDetailDto>(`/api/totem/rooms/${encodeURIComponent(id)}`, { signal })
+  },
+  // Wired to the UI in Task 10 — defined now so the contract exists alongside `list`/`detail`.
+  createInquiry(id: string, input: RoomRentalInquiryInput) {
+    return apiClient.post<RoomRentalInquiryResultDto>(`/api/totem/rooms/${encodeURIComponent(id)}/rental-inquiries`, input)
   },
 }
 

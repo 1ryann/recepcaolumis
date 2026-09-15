@@ -24,12 +24,8 @@ import { BlurFade } from '../features/totem/magic/BlurFade'
 // empty and error offer "Tenho código" straight to `/totem/check-in`. All data comes from
 // `totemApi.professionals` — there are no hardcoded professionals or photos here.
 //
-// "Alugar sala" is a visual-only CTA for now: there is no public, unauthenticated route or
-// endpoint for a walk-in room-rental inquiry anywhere in this app (checked App.tsx's public
-// routes and the backend for a rental/lease-inquiry endpoint — neither exists; the only
-// lease-related routes are the authenticated admin/professional ones). Per the explicit
-// instruction not to invent a route or fake a flow, the button renders disabled until a real
-// destination exists.
+// "Alugar sala" navigates to the public room catalog at `/totem/salas` (`TotemRoomsCatalog`),
+// backed by the anonymous `GET /api/totem/rooms` endpoint.
 type Phase = 'loading' | 'ready' | 'empty' | 'error'
 
 export function TotemProfessionals() {
@@ -119,8 +115,7 @@ export function TotemProfessionals() {
             <button
               type="button"
               className="totem-professionals-rent-cta"
-              disabled
-              title="Em breve"
+              onClick={() => navigate('/totem/salas')}
             >
               <BriefcaseBusiness size={16} aria-hidden="true" />
               Alugar sala
