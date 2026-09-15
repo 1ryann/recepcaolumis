@@ -56,7 +56,8 @@ public static class RoomRentalInquiryEndpoints
         if (availability is null) return Results.NotFound();
 
         var inquiry = RoomRentalInquiry.Create(roomId, input!.FullName, input.WhatsApp, input.ProfessionOrCompany,
-            input.Note, availability.Status, availability.AvailableFrom, now);
+            input.Note, availability.Status, availability.AvailableFrom, now,
+            input.DesiredStartDate, input.DesiredEndDate);
         db.RoomRentalInquiries.Add(inquiry);
         db.AuditEntries.Add(new AuditEntry
         {
@@ -140,7 +141,9 @@ internal static class RoomRentalInquiryAdminMappings
         inquiry.Status.ToContract(),
         inquiry.LeaseId,
         inquiry.ConvertedAt,
-        inquiry.CreatedAt);
+        inquiry.CreatedAt,
+        inquiry.DesiredStartDate,
+        inquiry.DesiredEndDate);
 
     private static string ToContract(this RoomRentalInquiryStatus status) => status switch
     {

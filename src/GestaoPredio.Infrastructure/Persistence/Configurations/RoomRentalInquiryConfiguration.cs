@@ -23,6 +23,8 @@ public sealed class RoomRentalInquiryConfiguration : IEntityTypeConfiguration<Ro
                 value => AvailabilityToStorage(value), value => AvailabilityFromStorage(value)))
             .HasMaxLength(20).IsRequired();
         entity.Property(x => x.PresentedAvailableFrom).HasColumnType("date");
+        entity.Property(x => x.DesiredStartDate).HasColumnType("date");
+        entity.Property(x => x.DesiredEndDate).HasColumnType("date");
         entity.Property(x => x.Status)
             .HasConversion(new ValueConverter<RoomRentalInquiryStatus, string>(
                 value => StatusToStorage(value), value => StatusFromStorage(value)))

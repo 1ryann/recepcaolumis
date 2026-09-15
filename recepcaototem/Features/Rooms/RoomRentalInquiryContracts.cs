@@ -8,7 +8,9 @@ public sealed record RoomRentalInquiryRequest(
     string? FullName,
     string? WhatsApp,
     string? ProfessionOrCompany,
-    string? Note) : IStrictModuleRequest;
+    string? Note,
+    DateOnly? DesiredStartDate,
+    DateOnly? DesiredEndDate) : IStrictModuleRequest;
 
 public sealed record RoomRentalInquiryResult(Guid InquiryId, string WhatsappUrl, string PresentedAvailabilityLabel);
 
@@ -33,10 +35,13 @@ public sealed record RoomRentalInquiryAdminResponse(
     string Status,
     Guid? LeaseId,
     DateTimeOffset? ConvertedAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateOnly? DesiredStartDate,
+    DateOnly? DesiredEndDate);
 
 internal sealed record ValidRoomRentalInquiryInput(
-    string FullName, string WhatsApp, string ProfessionOrCompany, string? Note);
+    string FullName, string WhatsApp, string ProfessionOrCompany, string? Note,
+    DateOnly DesiredStartDate, DateOnly DesiredEndDate);
 
 /// <summary>
 /// Mirrors <see cref="RoomInput"/>'s static-validator pattern. Pre-validates and maps to
@@ -54,14 +59,17 @@ internal static class RoomRentalInquiryInput
 
         if (fullName.Length is < 1 or > 200 || professionOrCompany.Length is < 1 or > 200 ||
             !WhatsAppNormalizer.TryNormalize(request.WhatsApp, out var whatsApp) ||
-            note is { Length: > 500 } || note?.Contains('<') == true || note?.Contains('>') == true)
+            note is { Length: > 500 } || note?.Contains('<') == true || note?.Contains('>') == true ||
+            request.DesiredStartDate is null || request.DesiredEndDate is null ||
+            request.DesiredEndDate < request.DesiredStartDate)
         {
             input = null;
             error = new ApiError("INVALID_ROOM_RENTAL_INQUIRY", "Os dados do interesse são inválidos.");
             return false;
         }
 
-        input = new ValidRoomRentalInquiryInput(fullName, whatsApp, professionOrCompany, note);
+        input = new ValidRoomRentalInquiryInput(fullName, whatsApp, professionOrCompany, note,
+            request.DesiredStartDate.Value, request.DesiredEndDate.Value);
         error = null;
         return true;
     }

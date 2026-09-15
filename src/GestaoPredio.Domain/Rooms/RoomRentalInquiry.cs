@@ -17,6 +17,8 @@ public sealed class RoomRentalInquiry
     public string? Note { get; private set; }
     public PublicRoomAvailabilityStatus PresentedAvailabilityStatus { get; private set; }
     public DateOnly? PresentedAvailableFrom { get; private set; }
+    public DateOnly? DesiredStartDate { get; private set; }
+    public DateOnly? DesiredEndDate { get; private set; }
     public RoomRentalInquiryStatus Status { get; private set; }
     public Guid? LeaseId { get; private set; }
     public DateTimeOffset? ConvertedAt { get; private set; }
@@ -24,7 +26,7 @@ public sealed class RoomRentalInquiry
 
     public static RoomRentalInquiry Create(Guid roomId, string fullName, string whatsApp, string professionOrCompany,
         string? note, PublicRoomAvailabilityStatus presentedAvailabilityStatus, DateOnly? presentedAvailableFrom,
-        DateTimeOffset occurredAt)
+        DateTimeOffset occurredAt, DateOnly desiredStartDate, DateOnly desiredEndDate)
     {
         var name = fullName?.Trim() ?? "";
         var occupation = professionOrCompany?.Trim() ?? "";
@@ -44,6 +46,11 @@ public sealed class RoomRentalInquiry
             throw new ArgumentException("Par de disponibilidade inválido.");
         }
 
+        if (desiredEndDate < desiredStartDate)
+        {
+            throw new ArgumentException("O período desejado é inválido.");
+        }
+
         return new RoomRentalInquiry
         {
             Id = Guid.NewGuid(),
@@ -54,6 +61,8 @@ public sealed class RoomRentalInquiry
             Note = cleanNote,
             PresentedAvailabilityStatus = presentedAvailabilityStatus,
             PresentedAvailableFrom = presentedAvailableFrom,
+            DesiredStartDate = desiredStartDate,
+            DesiredEndDate = desiredEndDate,
             Status = RoomRentalInquiryStatus.New,
             LeaseId = null,
             ConvertedAt = null,

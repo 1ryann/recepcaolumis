@@ -41,7 +41,7 @@ public sealed class RoomRentalModelTests
         Assert.NotNull(inquiry);
         Assert.Equal("RoomRentalInquiries", inquiry.GetTableName());
         Assert.Equal("Id", Assert.Single(inquiry.FindPrimaryKey()!.Properties).Name);
-        Assert.Equal(new[] { "ConvertedAt", "CreatedAt", "FullName", "Id", "LeaseId", "Note",
+        Assert.Equal(new[] { "ConvertedAt", "CreatedAt", "DesiredEndDate", "DesiredStartDate", "FullName", "Id", "LeaseId", "Note",
                 "PresentedAvailabilityStatus", "PresentedAvailableFrom", "ProfessionOrCompany", "RoomId", "Status", "WhatsApp" },
             inquiry.GetProperties().Select(x => x.Name).Order().ToArray());
         foreach (var (name, length, nullable) in new[]
@@ -55,6 +55,11 @@ public sealed class RoomRentalModelTests
         }
         Assert.True(inquiry.FindProperty("PresentedAvailableFrom")!.IsNullable);
         Assert.Equal("date", inquiry.FindProperty("PresentedAvailableFrom")!.GetColumnType());
+        foreach (var name in new[] { "DesiredStartDate", "DesiredEndDate" })
+        {
+            Assert.True(inquiry.FindProperty(name)!.IsNullable);
+            Assert.Equal("date", inquiry.FindProperty(name)!.GetColumnType());
+        }
         Assert.True(inquiry.FindProperty("LeaseId")!.IsNullable);
         Assert.True(inquiry.FindProperty("ConvertedAt")!.IsNullable);
         Assert.False(inquiry.FindProperty("CreatedAt")!.IsNullable);

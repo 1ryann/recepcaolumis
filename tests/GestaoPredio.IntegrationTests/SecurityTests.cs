@@ -201,7 +201,8 @@ public sealed class RoomRentalInquirySecurityTests(ModulesApiFactory factory)
         // 401 for an anonymous caller; a properly mapped, AllowAnonymous route instead reaches the handler
         // and reports 404 for a room that does not exist.
         var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{Guid.NewGuid()}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }

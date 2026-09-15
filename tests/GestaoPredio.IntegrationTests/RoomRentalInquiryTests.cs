@@ -27,7 +27,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         var room = await SeedRoomAsync("Sala 101");
 
         var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = (await response.Content.ReadFromJsonAsync<RoomRentalInquiryResultPayload>())!;
@@ -51,6 +52,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         Assert.Equal(RoomRentalInquiryStatus.New, inquiry.Status);
         Assert.Null(inquiry.LeaseId);
         Assert.Null(inquiry.ConvertedAt);
+        Assert.Equal(new DateOnly(2026, 12, 1), inquiry.DesiredStartDate);
+        Assert.Equal(new DateOnly(2026, 12, 10), inquiry.DesiredEndDate);
 
         var audit = await db.AuditEntries.AsNoTracking()
             .SingleAsync(x => x.Action == AuditActions.RoomRentalInquiryCreated && x.TargetEntityId == inquiry.Id);
@@ -66,7 +69,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         await SeedLeaseAsync(room.Id, factory.UtcNow.AddDays(-1), factory.UtcNow.AddDays(1));
 
         var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = (await response.Content.ReadFromJsonAsync<RoomRentalInquiryResultPayload>())!;
@@ -100,11 +104,53 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         var room = await SeedRoomAsync("Sala Inválida");
 
         var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName, whatsApp, professionOrCompany, note });
+            new { fullName, whatsApp, professionOrCompany, note, desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("INVALID_ROOM_RENTAL_INQUIRY", await response.Content.ReadAsStringAsync());
         await AssertNoRowsPersistedAsync();
+    }
+
+    public static IEnumerable<object?[]> InvalidDesiredDateBodies()
+    {
+        yield return new object?[] { null, "2026-12-10" };
+        yield return new object?[] { "2026-12-01", null };
+        yield return new object?[] { "2026-12-10", "2026-12-01" };
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidDesiredDateBodies))]
+    public async Task Invalid_desired_date_range_returns_400_and_persists_nothing(string? desiredStartDate, string? desiredEndDate)
+    {
+        await factory.ResetAsync();
+        var room = await SeedRoomAsync("Sala Datas Inválidas");
+
+        var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
+            new
+            {
+                fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate, desiredEndDate
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("INVALID_ROOM_RENTAL_INQUIRY", await response.Content.ReadAsStringAsync());
+        await AssertNoRowsPersistedAsync();
+    }
+
+    [Fact]
+    public async Task Desired_end_date_equal_to_start_date_is_accepted()
+    {
+        await factory.ResetAsync();
+        var room = await SeedRoomAsync("Sala Datas Iguais");
+
+        var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
+            new
+            {
+                fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-05", desiredEndDate = "2026-12-05"
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -179,7 +225,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         using var unconfigured = factory.WithConfig(("Whatsapp:FinanceiroPhoneNumber", ""));
 
         var response = await unconfigured.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Contains("ROOM_RENTAL_WHATSAPP_NOT_CONFIGURED", await response.Content.ReadAsStringAsync());
@@ -196,9 +243,11 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
             ("RateLimiting:RoomRentalInquiryIdentifierPermitLimit", "10000"));
 
         Assert.Equal(HttpStatusCode.OK, (await throttled.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999990001", professionOrCompany = "Clínica A", note = (string?)null })).StatusCode);
+            new { fullName = "Ana Souza", whatsApp = "+5569999990001", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" })).StatusCode);
         var response = await throttled.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Bruna Lima", whatsApp = "+5569999990002", professionOrCompany = "Clínica B", note = (string?)null });
+            new { fullName = "Bruna Lima", whatsApp = "+5569999990002", professionOrCompany = "Clínica B", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal((HttpStatusCode)429, response.StatusCode);
         Assert.Contains("TOO_MANY_REQUESTS", await response.Content.ReadAsStringAsync());
@@ -214,9 +263,11 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
             ("RateLimiting:RoomRentalInquiryIdentifierPermitLimit", "1"));
 
         Assert.Equal(HttpStatusCode.OK, (await throttled.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null })).StatusCode);
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" })).StatusCode);
         var response = await throttled.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal((HttpStatusCode)429, response.StatusCode);
         Assert.Contains("TOO_MANY_REQUESTS", await response.Content.ReadAsStringAsync());
@@ -252,7 +303,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         var capture = factory.CaptureLogs();
 
         var response = await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
-            new { fullName = "Verificação Confidencial", whatsApp = "+5569999999999", professionOrCompany = "Empresa Secreta", note = "Nota sigilosa" });
+            new { fullName = "Verificação Confidencial", whatsApp = "+5569999999999", professionOrCompany = "Empresa Secreta", note = "Nota sigilosa",
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = (await response.Content.ReadFromJsonAsync<RoomRentalInquiryResultPayload>())!;
@@ -267,7 +319,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
 
     private async Task<HttpResponseMessage> PostValidAsync(Guid roomId) =>
         await factory.Client.PostAsJsonAsync($"/api/totem/rooms/{roomId}/rental-inquiries",
-            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null });
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
 
     private async Task<HttpResponseMessage> PostRawAsync(Guid roomId, string json)
     {

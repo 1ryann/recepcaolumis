@@ -10,9 +10,11 @@ public sealed class RoomRentalInquiryDomainTests
         var roomId = Guid.NewGuid();
         var occurredAt = new DateTimeOffset(2026, 9, 14, 9, 0, 0, TimeSpan.FromHours(-4)).AddTicks(9);
         var availableFrom = new DateOnly(2026, 10, 1);
+        var desiredStart = new DateOnly(2026, 10, 5);
+        var desiredEnd = new DateOnly(2026, 10, 20);
 
         var inquiry = RoomRentalInquiry.Create(roomId, "  Ana Silva  ", "(65) 99999-1234", "  Clínica Ana  ", "  Preciso à tarde.  ",
-            PublicRoomAvailabilityStatus.AvailableSoon, availableFrom, occurredAt);
+            PublicRoomAvailabilityStatus.AvailableSoon, availableFrom, occurredAt, desiredStart, desiredEnd);
 
         Assert.NotEqual(Guid.Empty, inquiry.Id);
         Assert.Equal(roomId, inquiry.RoomId);
@@ -22,6 +24,8 @@ public sealed class RoomRentalInquiryDomainTests
         Assert.Equal("Preciso à tarde.", inquiry.Note);
         Assert.Equal(PublicRoomAvailabilityStatus.AvailableSoon, inquiry.PresentedAvailabilityStatus);
         Assert.Equal(availableFrom, inquiry.PresentedAvailableFrom);
+        Assert.Equal(desiredStart, inquiry.DesiredStartDate);
+        Assert.Equal(desiredEnd, inquiry.DesiredEndDate);
         Assert.Equal(RoomRentalInquiryStatus.New, inquiry.Status);
         Assert.Null(inquiry.LeaseId);
         Assert.Null(inquiry.ConvertedAt);
@@ -43,7 +47,8 @@ public sealed class RoomRentalInquiryDomainTests
     public void Create_rejects_missing_or_invalid_contact_data(string name, string profession, string? phone)
     {
         Assert.Throws<ArgumentException>(() => RoomRentalInquiry.Create(Guid.NewGuid(), name, phone!, profession, null,
-            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow));
+            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow,
+            DefaultDesiredStartDate, DefaultDesiredEndDate));
     }
 
     [Theory]
@@ -54,7 +59,8 @@ public sealed class RoomRentalInquiryDomainTests
     {
         Assert.Throws<ArgumentException>(() => RoomRentalInquiry.Create(Guid.NewGuid(), new string('N', nameLength), "65999991234",
             new string('P', professionLength), noteLength == 0 ? null : new string('x', noteLength),
-            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow));
+            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow,
+            DefaultDesiredStartDate, DefaultDesiredEndDate));
     }
 
     [Theory]
@@ -73,7 +79,29 @@ public sealed class RoomRentalInquiryDomainTests
         DateOnly? availableFrom = date is null ? null : DateOnly.Parse(date);
 
         Assert.Throws<ArgumentException>(() => RoomRentalInquiry.Create(Guid.NewGuid(), "Nome", "65999991234", "Profissão", null,
-            status, availableFrom, DateTimeOffset.UtcNow));
+            status, availableFrom, DateTimeOffset.UtcNow, DefaultDesiredStartDate, DefaultDesiredEndDate));
+    }
+
+    [Fact]
+    public void Create_accepts_desired_end_date_equal_to_start_date()
+    {
+        var sameDay = new DateOnly(2026, 10, 10);
+
+        var inquiry = RoomRentalInquiry.Create(Guid.NewGuid(), "Nome", "65999991234", "Profissão", null,
+            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow, sameDay, sameDay);
+
+        Assert.Equal(sameDay, inquiry.DesiredStartDate);
+        Assert.Equal(sameDay, inquiry.DesiredEndDate);
+    }
+
+    [Fact]
+    public void Create_rejects_desired_end_date_before_start_date()
+    {
+        var start = new DateOnly(2026, 10, 10);
+        var end = new DateOnly(2026, 10, 9);
+
+        Assert.Throws<ArgumentException>(() => RoomRentalInquiry.Create(Guid.NewGuid(), "Nome", "65999991234", "Profissão", null,
+            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow, start, end));
     }
 
     [Fact]
@@ -114,7 +142,11 @@ public sealed class RoomRentalInquiryDomainTests
         Assert.Throws<InvalidOperationException>(() => inquiry.Convert(Guid.NewGuid(), DateTimeOffset.UtcNow));
     }
 
+    private static readonly DateOnly DefaultDesiredStartDate = new(2026, 10, 1);
+    private static readonly DateOnly DefaultDesiredEndDate = new(2026, 10, 10);
+
     private static RoomRentalInquiry Create(string? note = null, Guid? roomId = null) =>
         RoomRentalInquiry.Create(roomId ?? Guid.NewGuid(), "Nome", "65999991234", "Profissão", note,
-            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow);
+            PublicRoomAvailabilityStatus.AvailableNow, null, DateTimeOffset.UtcNow,
+            DefaultDesiredStartDate, DefaultDesiredEndDate);
 }

@@ -173,6 +173,48 @@ public sealed class RoomRentalInquiryAdminTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task List_and_detail_include_the_desired_date_range_for_a_new_inquiry()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(new DateTimeOffset(2026, 11, 14, 15, 0, 0, TimeSpan.Zero));
+        var room = await SeedRoomAsync("Sala Datas Desejadas");
+        var inquiry = await SeedInquiryAsync(room.Id, "Ana Souza", factory.UtcNow, PublicRoomAvailabilityStatus.AvailableNow, null);
+
+        await LoginAsAsync(SystemRoles.Administrador, "inquiry-admin-desired-dates@lumis.test");
+        var page = (await (await factory.Client.GetAsync("/api/admin/room-rental-inquiries"))
+            .Content.ReadFromJsonAsync<InquiryPage>())!;
+        var listed = Assert.Single(page.Items);
+        Assert.Equal(new DateOnly(2026, 10, 1), listed.DesiredStartDate);
+        Assert.Equal(new DateOnly(2026, 10, 10), listed.DesiredEndDate);
+
+        var detail = (await (await factory.Client.GetAsync($"/api/admin/room-rental-inquiries/{inquiry.Id}"))
+            .Content.ReadFromJsonAsync<InquiryDetail>())!;
+        Assert.Equal(new DateOnly(2026, 10, 1), detail.DesiredStartDate);
+        Assert.Equal(new DateOnly(2026, 10, 10), detail.DesiredEndDate);
+    }
+
+    [Fact]
+    public async Task List_and_detail_tolerate_null_desired_dates_on_a_pre_existing_inquiry()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(new DateTimeOffset(2026, 11, 14, 15, 0, 0, TimeSpan.Zero));
+        var room = await SeedRoomAsync("Sala Interesse Antigo");
+        var inquiryId = await SeedLegacyInquiryWithNullDesiredDatesAsync(room.Id, "Ana Souza", factory.UtcNow);
+
+        await LoginAsAsync(SystemRoles.Administrador, "inquiry-admin-legacy-null-dates@lumis.test");
+        var page = (await (await factory.Client.GetAsync("/api/admin/room-rental-inquiries"))
+            .Content.ReadFromJsonAsync<InquiryPage>())!;
+        var listed = Assert.Single(page.Items);
+        Assert.Null(listed.DesiredStartDate);
+        Assert.Null(listed.DesiredEndDate);
+
+        var detail = (await (await factory.Client.GetAsync($"/api/admin/room-rental-inquiries/{inquiryId}"))
+            .Content.ReadFromJsonAsync<InquiryDetail>())!;
+        Assert.Null(detail.DesiredStartDate);
+        Assert.Null(detail.DesiredEndDate);
+    }
+
+    [Fact]
     public async Task Detail_of_a_nonexistent_inquiry_is_not_found()
     {
         await factory.ResetAsync();
@@ -221,10 +263,26 @@ public sealed class RoomRentalInquiryAdminTests(ModulesApiFactory factory)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var inquiry = RoomRentalInquiry.Create(roomId, fullName, "+5569999999999", "Clínica A", null,
-            status, availableFrom, occurredAt);
+            status, availableFrom, occurredAt, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10));
         db.RoomRentalInquiries.Add(inquiry);
         await db.SaveChangesAsync();
         return inquiry;
+    }
+
+    // Old inquiries created before this field existed have NULL desired dates in the database; reads
+    // must tolerate that rather than throwing. We insert directly via SQL (bypassing the domain's
+    // required-dates validation in Create) to simulate a genuinely pre-existing row.
+    private async Task<Guid> SeedLegacyInquiryWithNullDesiredDatesAsync(Guid roomId, string fullName, DateTimeOffset occurredAt)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inquiry = RoomRentalInquiry.Create(roomId, fullName, "+5569999999999", "Clínica A", null,
+            PublicRoomAvailabilityStatus.AvailableNow, null, occurredAt, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10));
+        db.RoomRentalInquiries.Add(inquiry);
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"RoomRentalInquiries\" SET \"DesiredStartDate\" = NULL, \"DesiredEndDate\" = NULL WHERE \"Id\" = {inquiry.Id}");
+        return inquiry.Id;
     }
 
     private async Task ConvertInquiryAsync(Guid inquiryId, Guid leaseId, DateTimeOffset occurredAt)
@@ -261,12 +319,14 @@ public sealed class RoomRentalInquiryAdminTests(ModulesApiFactory factory)
     private sealed record InquiryItem(
         Guid Id, Guid RoomId, string RoomName, string FullName, string WhatsApp, string ProfessionOrCompany,
         string? Note, string PresentedAvailabilityStatus, DateOnly? PresentedAvailableFrom,
-        string PresentedAvailabilityLabel, string Status, Guid? LeaseId, DateTimeOffset? ConvertedAt, DateTimeOffset CreatedAt);
+        string PresentedAvailabilityLabel, string Status, Guid? LeaseId, DateTimeOffset? ConvertedAt, DateTimeOffset CreatedAt,
+        DateOnly? DesiredStartDate, DateOnly? DesiredEndDate);
 
     private sealed record InquiryDetail(
         Guid Id, Guid RoomId, string RoomName, string FullName, string WhatsApp, string ProfessionOrCompany,
         string? Note, string PresentedAvailabilityStatus, DateOnly? PresentedAvailableFrom,
-        string PresentedAvailabilityLabel, string Status, Guid? LeaseId, DateTimeOffset? ConvertedAt, DateTimeOffset CreatedAt);
+        string PresentedAvailabilityLabel, string Status, Guid? LeaseId, DateTimeOffset? ConvertedAt, DateTimeOffset CreatedAt,
+        DateOnly? DesiredStartDate, DateOnly? DesiredEndDate);
 
     private sealed record ErrorPayload(string Code, string Message);
 }

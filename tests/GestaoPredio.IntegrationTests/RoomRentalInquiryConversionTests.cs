@@ -184,7 +184,8 @@ public sealed class RoomRentalInquiryConversionTests(ModulesApiFactory factory)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var inquiry = RoomRentalInquiry.Create(roomId, "Ana Souza", "+5569999999999", "Clínica A", null,
-            PublicRoomAvailabilityStatus.AvailableNow, null, factory.UtcNow);
+            PublicRoomAvailabilityStatus.AvailableNow, null, factory.UtcNow,
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10));
         db.RoomRentalInquiries.Add(inquiry);
         await db.SaveChangesAsync();
         return inquiry;
