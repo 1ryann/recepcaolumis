@@ -115,6 +115,28 @@ public static partial class LeaseEndpoints
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest(
             [request.TenantId], [request.RoomId], [request.ProfessionalId]), cancellationToken);
 
+        // Task 13: an optional RoomRentalInquiry conversion, done as the SAME creation transaction rather
+        // than a parallel endpoint. This pre-check is only a fast rejection for the common cases (missing/
+        // already-converted at read time) — the race-safe guarantee comes later from the conditional
+        // ExecuteUpdateAsync right before commit, not from this AsNoTracking snapshot.
+        if (request.RoomRentalInquiryId is { } inquiryId)
+        {
+            var inquirySnapshot = await db.RoomRentalInquiries.AsNoTracking()
+                .Where(x => x.Id == inquiryId)
+                .Select(x => new { x.Status })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (inquirySnapshot is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Results.NotFound();
+            }
+            if (inquirySnapshot.Status != RoomRentalInquiryStatus.New)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return AlreadyConverted();
+            }
+        }
+
         var tenantActive = await db.Tenants.AnyAsync(x => x.Id == request.TenantId && x.IsActive, cancellationToken);
         var professionalActive = await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, cancellationToken);
         var roomActive = await db.Rooms.AnyAsync(x => x.Id == request.RoomId && x.IsActive, cancellationToken);
@@ -173,12 +195,71 @@ public static partial class LeaseEndpoints
             lease.Id, AuditActions.LeaseCreated, now, context.TraceIdentifier,
             context.User.FindFirstValue(ClaimTypes.NameIdentifier), context.Connection.RemoteIpAddress?.ToString()));
 
+        // Flush the Lease/occurrences/LEASE_CREATED audit now (still inside the open transaction, not yet
+        // committed). Without this, ExecuteUpdateAsync below — a direct SQL UPDATE that runs immediately,
+        // bypassing the change tracker — would try to point the inquiry's LeaseId FK at a Lease row that
+        // does not exist in the database yet. When there is no inquiry to convert this is exactly the same
+        // single SaveChanges + Commit the handler always did; nothing changes for a plain lease creation.
         await db.SaveChangesAsync(cancellationToken);
+
+        if (request.RoomRentalInquiryId is { } convertingInquiryId)
+        {
+            // Race-safe conversion: a single conditional UPDATE re-checks Status == New at write time
+            // (not the earlier AsNoTracking read), so a concurrent winner is detected by affected-row
+            // count rather than by an optimistic-concurrency token on a loaded entity. This deliberately
+            // bypasses RoomRentalInquiry.Convert() — the domain method operates on a tracked instance and
+            // cannot give this affected-row-count guarantee. All three columns (Status/LeaseId/ConvertedAt)
+            // are set together because CK_RoomRentalInquiries_ConversionState requires them consistent.
+            var convertedAt = ToUtcMicroseconds(now);
+            var affected = await db.RoomRentalInquiries
+                .Where(x => x.Id == convertingInquiryId && x.Status == RoomRentalInquiryStatus.New)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, RoomRentalInquiryStatus.Converted)
+                    .SetProperty(x => x.LeaseId, lease.Id)
+                    .SetProperty(x => x.ConvertedAt, convertedAt), cancellationToken);
+            if (affected == 0)
+            {
+                // Lost the race: the Lease/occurrences/LEASE_CREATED audit flushed above were only ever
+                // written inside this still-open transaction — rolling back here discards all of it, so
+                // the loser's Lease never becomes visible to anyone.
+                await transaction.RollbackAsync(cancellationToken);
+                return AlreadyConverted();
+            }
+
+            db.AuditEntries.Add(new AuditEntry
+            {
+                Id = Guid.NewGuid(),
+                ActorUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier),
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                Action = AuditActions.RoomRentalInquiryConverted,
+                Result = "SUCCEEDED",
+                OccurredAt = now,
+                CorrelationId = context.TraceIdentifier,
+                TargetEntityType = "ROOM_RENTAL_INQUIRY",
+                TargetEntityId = convertingInquiryId
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         var names = await LoadNames(db, lease, cancellationToken);
         return Results.Created($"/api/admin/leases/{lease.Id}",
             lease.ToResponse(names.Tenant, names.Professional, names.Room, now));
+    }
+
+    private static IResult AlreadyConverted() => Results.Json(new ApiError(
+        "ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED", "O interesse de locação já foi convertido em uma locação."),
+        statusCode: StatusCodes.Status409Conflict);
+
+    // Mirrors the internal GestaoPredio.Domain.Common.TimestampNormalizer.ToUtcMicroseconds used by
+    // RoomRentalInquiry's own domain methods (not accessible across assemblies): Postgres' timestamptz
+    // stores microsecond precision, so ConvertedAt is truncated the same way CreatedAt already is.
+    private static DateTimeOffset ToUtcMicroseconds(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        var ticks = utc.Ticks - utc.Ticks % TimeSpan.TicksPerMicrosecond;
+        return new DateTimeOffset(ticks, TimeSpan.Zero);
     }
 
     private static IResult AvailabilityConflict(RoomAvailabilityConflict conflict) => conflict switch

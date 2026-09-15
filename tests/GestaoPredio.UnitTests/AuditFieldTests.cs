@@ -99,6 +99,8 @@ public sealed class AuditFieldTests
         Assert.Equal("LEASE", AuditTargetTypes.Lease);
         Assert.Equal("LEASE_CREATED", AuditActions.LeaseCreated);
         Assert.Equal("LEASE_ENDED", AuditActions.LeaseEnded);
+        Assert.Equal("ROOM_RENTAL_INQUIRY_CREATED", AuditActions.RoomRentalInquiryCreated);
+        Assert.Equal("ROOM_RENTAL_INQUIRY_CONVERTED", AuditActions.RoomRentalInquiryConverted);
     }
 
     [Fact]

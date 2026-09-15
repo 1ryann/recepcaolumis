@@ -11,7 +11,11 @@ public sealed record CreateLeaseRequest(
     DateTimeOffset BillingStartAt,
     int? BillingDueDay,
     DateTimeOffset OccupancyStartAt,
-    DateTimeOffset? OccupancyEndAt) : IStrictModuleRequest;
+    DateTimeOffset? OccupancyEndAt,
+    // Task 13: when present, the Create handler also converts this RoomRentalInquiry (Task 8/12) to
+    // this Lease in the same transaction. The Admin may pick a different RoomId than the inquiry's own —
+    // the inquiry's RoomId is never overwritten, it is kept only as the original request's audit record.
+    Guid? RoomRentalInquiryId = null) : IStrictModuleRequest;
 
 public sealed record UpdateLeaseRequest(
     Guid TenantId,

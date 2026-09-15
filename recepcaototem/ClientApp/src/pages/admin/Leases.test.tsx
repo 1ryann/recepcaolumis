@@ -1,13 +1,33 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from '../../api/client'
-import { leasesApi, professionalsApi, roomsApi, tenantsApi } from '../../api/modules'
+import { leasesApi, professionalsApi, roomRentalInquiriesApi, roomsApi, tenantsApi } from '../../api/modules'
 import { Leases, toInputDate } from './Leases'
 
 vi.mock('../../api/modules', () => ({
   leasesApi: { list: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn(), postpone: vi.fn(), cancel: vi.fn(), end: vi.fn() },
   tenantsApi: { list: vi.fn(), create: vi.fn() }, professionalsApi: { list: vi.fn() }, roomsApi: { list: vi.fn() },
+  roomRentalInquiriesApi: { get: vi.fn() },
 }))
+
+// The page reads ?inquiryId=/?leaseId= via useSearchParams and clears inquiryId after a successful
+// conversion via setSearchParams. Only these two hooks are overridden — every other export (routes,
+// Link, etc.) keeps its real implementation — so no <Router> wrapper is needed in these tests.
+let currentSearchParams = new URLSearchParams()
+const setSearchParamsSpy = vi.fn((updater: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
+  currentSearchParams = typeof updater === 'function' ? updater(currentSearchParams) : updater
+})
+vi.mock('react-router-dom', async (orig) => ({
+  ...(await orig<typeof import('react-router-dom')>()),
+  useSearchParams: () => [currentSearchParams, setSearchParamsSpy] as const,
+}))
+
+const inquiry = {
+  id: 'inquiry-1', roomId: 'room-1', roomName: 'Sala 101', fullName: 'Ana Souza', whatsApp: '+5569999999999',
+  professionOrCompany: 'Clínica A', note: null, presentedAvailabilityStatus: 'AVAILABLE_NOW' as const,
+  presentedAvailableFrom: null, presentedAvailabilityLabel: 'Disponível agora',
+  status: 'NEW' as const, leaseId: null, convertedAt: null, createdAt: '2026-11-14T15:00:00Z',
+}
 
 const lease = {
   id: 'lease-1', tenantId: 'tenant-1', tenantName: 'Clínica Aurora', professionalId: 'professional-1',
@@ -20,6 +40,7 @@ const lease = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  currentSearchParams = new URLSearchParams()
   vi.mocked(leasesApi.list).mockResolvedValue({ items: [lease], page: 1, pageSize: 20, totalCount: 1 })
   vi.mocked(tenantsApi.list).mockResolvedValue({ items: [{ id: 'tenant-1', name: 'Clínica Aurora', kind: 'LEGAL_ENTITY', isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 't' }], page: 1, pageSize: 100, totalCount: 1 })
   vi.mocked(professionalsApi.list).mockResolvedValue({ items: [{ id: 'professional-1', name: 'Ana Lima', profession: 'Fisio', whatsApp: '+5565999999999', isActive: true, hasPhoto: false, photoUrl: null, hasLinkedUser: false, createdAt: '', updatedAt: '', concurrencyToken: 'p' }], page: 1, pageSize: 100, totalCount: 1 })
@@ -92,4 +113,99 @@ test('reloads after a concurrency conflict', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Cancelar locação Clínica Aurora/i }))
   expect(await screen.findByRole('alert')).toHaveTextContent(/alterada por outra operação/i)
   expect(leasesApi.list).toHaveBeenCalledTimes(2)
+})
+
+test('?leaseId= opens the existing detail view via leasesApi.detail, not a second detail UI', async () => {
+  currentSearchParams = new URLSearchParams('leaseId=lease-1')
+  vi.mocked(leasesApi.detail).mockResolvedValue(lease)
+  render(<Leases />)
+  await waitFor(() => expect(leasesApi.detail).toHaveBeenCalledWith('lease-1'))
+  expect(await screen.findByText('Detalhes da locação')).toBeInTheDocument()
+  expect(screen.getAllByText('Clínica Aurora').length).toBeGreaterThan(0)
+})
+
+test('?inquiryId= opens the same Nova locação modal with the room preselected but still editable', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  render(<Leases />)
+  await waitFor(() => expect(roomRentalInquiriesApi.get).toHaveBeenCalledWith('inquiry-1'))
+  expect(await screen.findByRole('heading', { name: 'Nova locação' })).toBeInTheDocument()
+  const roomSelect = await screen.findByLabelText('Sala') as HTMLSelectElement
+  expect(roomSelect.value).toBe('room-1')
+  expect(roomSelect).not.toBeDisabled()
+  // Nothing else is inferred from the inquiry: professional, mode, value, due day and dates keep
+  // their normal empty/default state, exactly as when opening a plain "Nova locação".
+  expect((screen.getByLabelText('Profissional') as HTMLSelectElement).value).toBe('')
+  expect((screen.getByLabelText('Modalidade') as HTMLSelectElement).value).toBe('HOURLY')
+  expect((screen.getByLabelText('Valor contratado') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Dia de vencimento') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Início da cobrança') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Início da ocupação') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Fim da ocupação') as HTMLInputElement).value).toBe('')
+})
+
+test('the inquiry availability is shown as read-only context text, never bound to a field', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  render(<Leases />)
+  expect(await screen.findByText(/Disponível agora/)).toBeInTheDocument()
+  expect(screen.queryByDisplayValue('Disponível agora')).not.toBeInTheDocument()
+})
+
+test('Novo locatário prefills the name from the inquiry but leaves Kind for the Admin to choose', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  render(<Leases />)
+  await screen.findByRole('heading', { name: 'Nova locação' })
+  fireEvent.click(screen.getByRole('button', { name: /Novo locatário/i }))
+  expect(await screen.findByLabelText('Nome do locatário')).toHaveValue('Ana Souza')
+  expect(screen.getByLabelText('Tipo')).toHaveValue('INDIVIDUAL')
+})
+
+test('submitting a conversion includes roomRentalInquiryId, clears the param and opens the new lease detail', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  const created = { ...lease, id: 'lease-2', tenantId: 'tenant-1', tenantName: 'Clínica Aurora' }
+  vi.mocked(leasesApi.create).mockResolvedValue(created)
+  render(<Leases />)
+  await screen.findByRole('heading', { name: 'Nova locação' })
+  await screen.findByRole('option', { name: 'Clínica Aurora' })
+  fireEvent.change(screen.getByLabelText('Locatário'), { target: { value: 'tenant-1' } })
+  fireEvent.change(screen.getByLabelText('Profissional'), { target: { value: 'professional-1' } })
+  fireEvent.change(screen.getByLabelText('Valor contratado'), { target: { value: '150,50' } })
+  fireEvent.change(screen.getByLabelText('Início da cobrança'), { target: { value: '2026-09-06T10:00' } })
+  fireEvent.change(screen.getByLabelText('Início da ocupação'), { target: { value: '2026-09-07T10:00' } })
+  fireEvent.change(screen.getByLabelText('Fim da ocupação'), { target: { value: '2026-09-07T12:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Cadastrar locação' }))
+  await waitFor(() => expect(leasesApi.create).toHaveBeenCalledWith(
+    expect.objectContaining({ roomId: 'room-1', roomRentalInquiryId: 'inquiry-1' })))
+  await waitFor(() => expect(setSearchParamsSpy).toHaveBeenCalled())
+  expect(await screen.findByText('Detalhes da locação')).toBeInTheDocument()
+})
+
+test('a 404 while loading the inquiry surfaces through the existing error infrastructure', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-missing')
+  vi.mocked(roomRentalInquiriesApi.get).mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Interesse não encontrado.'))
+  render(<Leases />)
+  expect(await screen.findByText('Interesse não encontrado.')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Nova locação' })).not.toBeInTheDocument()
+})
+
+test('a 409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED on submit surfaces the error without silently closing the form', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  vi.mocked(leasesApi.create).mockRejectedValue(
+    new ApiError(409, 'ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED', 'O interesse já foi convertido.'))
+  render(<Leases />)
+  await screen.findByRole('heading', { name: 'Nova locação' })
+  await screen.findByRole('option', { name: 'Clínica Aurora' })
+  fireEvent.change(screen.getByLabelText('Locatário'), { target: { value: 'tenant-1' } })
+  fireEvent.change(screen.getByLabelText('Profissional'), { target: { value: 'professional-1' } })
+  fireEvent.change(screen.getByLabelText('Valor contratado'), { target: { value: '150,50' } })
+  fireEvent.change(screen.getByLabelText('Início da cobrança'), { target: { value: '2026-09-06T10:00' } })
+  fireEvent.change(screen.getByLabelText('Início da ocupação'), { target: { value: '2026-09-07T10:00' } })
+  fireEvent.change(screen.getByLabelText('Fim da ocupação'), { target: { value: '2026-09-07T12:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Cadastrar locação' }))
+  expect(await screen.findByText('O interesse já foi convertido.')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Nova locação' })).toBeInTheDocument()
 })

@@ -303,6 +303,9 @@ export interface LeaseInput {
   billingDueDay: number | null
   occupancyStartAt: string
   occupancyEndAt: string | null
+  // Task 13: present only when this create request also converts a RoomRentalInquiry (the same
+  // POST /api/admin/leases handler does both atomically) — omitted/null for a plain lease.
+  roomRentalInquiryId?: string | null
 }
 export interface LeaseListQuery {
   search?: string

@@ -42,6 +42,7 @@ public static class AuditActions
     public const string RoomActivated = "ROOM_ACTIVATED";
     public const string RoomDeactivated = "ROOM_DEACTIVATED";
     public const string RoomRentalInquiryCreated = "ROOM_RENTAL_INQUIRY_CREATED";
+    public const string RoomRentalInquiryConverted = "ROOM_RENTAL_INQUIRY_CONVERTED";
     public const string LeaseCreated = "LEASE_CREATED";
     public const string LeaseUpdated = "LEASE_UPDATED";
     public const string LeaseOccupancyPostponed = "LEASE_OCCUPANCY_POSTPONED";

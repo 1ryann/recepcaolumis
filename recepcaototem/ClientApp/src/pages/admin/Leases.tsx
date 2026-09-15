@@ -1,9 +1,11 @@
 import { CalendarDays, Pencil, Plus, Search } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
   type LeaseDto, type LeaseInput, type LeaseMode, type LeaseStatus, type PagedResponse,
-  leasesApi, professionalsApi, roomsApi, tenantsApi, type ProfessionalDto, type RoomDto, type TenantDto,
+  leasesApi, professionalsApi, roomRentalInquiriesApi, roomsApi, tenantsApi,
+  type ProfessionalDto, type RoomDto, type RoomRentalInquiryAdminDto, type TenantDto,
 } from '../../api/modules'
 import { EmptyState, PageHeader } from '../../components/PageElements'
 import { Modal } from '../../components/Modal'
@@ -37,6 +39,12 @@ const emptyForm: FormState = {
 }
 
 export function Leases() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Task 13: the Admin arrives here from the Interesses de locação page with ?inquiryId= (open the same
+  // Nova locação modal, room preselected) or ?leaseId= (open the existing detail view). conversionInquiryId
+  // is tracked separately from FormState so submit() can attach it without polluting the plain lease form.
+  const [conversionInquiryId, setConversionInquiryId] = useState<string | null>(null)
+  const [conversionInquiry, setConversionInquiry] = useState<RoomRentalInquiryAdminDto | null>(null)
   const [rawSearch, setRawSearch] = useState('')
   const search = useDebouncedValue(rawSearch.trim().replace(/\s+/g, ' ') || undefined)
   const [status, setStatus] = useState<LeaseStatus | 'all'>('all')
@@ -98,6 +106,9 @@ export function Leases() {
   }
   const openForm = async (lease: LeaseDto | null) => {
     setFormLease(lease)
+    // Opening the plain "Nova locação"/"Editar" flow always leaves any prior inquiry-conversion context
+    // behind; the ?inquiryId= effect below re-establishes it right after when that is how we got here.
+    setConversionInquiryId(null); setConversionInquiry(null)
     setForm(lease ? {
       tenantId: lease.tenantId, professionalId: lease.professionalId, roomId: lease.roomId, mode: lease.mode,
       contractedRate: String(lease.contractedRate).replace('.', ','), billingStartAt: toInputDate(lease.billingStartAt),
@@ -112,15 +123,21 @@ export function Leases() {
       setTenants(tenantPage.items); setProfessionals(professionalPage.items); setRooms(roomPage.items)
     } catch (reason) { await resolveFailure(reason) }
   }
+  const closeForm = () => { setFormLease(undefined); setConversionInquiryId(null); setConversionInquiry(null) }
+  const clearInquiryParam = () => setSearchParams(current => {
+    const next = new URLSearchParams(current); next.delete('inquiryId'); return next
+  }, { replace: true })
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const rate = parseRoomRate(form.contractedRate)
     if (rate === null) { setError('Informe um valor contratado válido, com no máximo duas casas decimais.'); return }
+    const isConversion = conversionInquiryId !== null && !formLease
     const input: LeaseInput = {
       tenantId: form.tenantId, professionalId: form.professionalId, roomId: form.roomId, mode: form.mode,
       contractedRate: rate, billingStartAt: toIso(form.billingStartAt),
       billingDueDay: form.billingDueDay ? Number(form.billingDueDay) : null,
       occupancyStartAt: toIso(form.occupancyStartAt), occupancyEndAt: form.occupancyEndAt ? toIso(form.occupancyEndAt) : null,
+      ...(isConversion ? { roomRentalInquiryId: conversionInquiryId } : {}),
     }
     setSaving(true)
     try {
@@ -128,6 +145,9 @@ export function Leases() {
       else {
         const created = await leasesApi.create(input)
         setResult(current => ({ ...current, items: [created, ...current.items], totalCount: current.totalCount + 1 }))
+        if (isConversion) {
+          clearInquiryParam(); setConversionInquiryId(null); setConversionInquiry(null); setDetail(created)
+        }
       }
       setFormLease(undefined)
     } catch (reason) { await resolveFailure(reason) } finally { setSaving(false) }
@@ -139,6 +159,11 @@ export function Leases() {
     event.preventDefault(); if (!endLease) return
     try { upsert(await leasesApi.end(endLease.id, endAt ? toIso(endAt) : null, endLease.concurrencyToken)); setEndLease(null) }
     catch (reason) { await resolveFailure(reason) }
+  }
+  const openNewTenant = () => {
+    // Editable prefill only: the inquiry's FullName seeds the initial value, never its Kind — the Admin
+    // always chooses INDIVIDUAL/LEGAL_ENTITY explicitly.
+    setTenantName(conversionInquiry?.fullName ?? ''); setNewTenant(true)
   }
   const createTenant = async (event: FormEvent) => {
     event.preventDefault()
@@ -156,6 +181,37 @@ export function Leases() {
   const showDetail = async (lease: LeaseDto) => {
     try { setDetail(await leasesApi.detail(lease.id)) } catch (reason) { await resolveFailure(reason) }
   }
+  // ?leaseId=: open the existing detail view fetched from the server — no second detail UI.
+  const leaseIdParam = searchParams.get('leaseId')
+  useEffect(() => {
+    if (!leaseIdParam) return
+    let active = true
+    void leasesApi.detail(leaseIdParam)
+      .then(found => { if (active) setDetail(found) })
+      .catch(reason => { if (active) void resolveFailure(reason) })
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaseIdParam])
+  // ?inquiryId=: reuse the same "Nova locação" modal/form with the requested room preselected (still
+  // editable) — no parallel contract form, no inference of Professional/Kind/contractual terms.
+  const inquiryIdParam = searchParams.get('inquiryId')
+  useEffect(() => {
+    if (!inquiryIdParam) return
+    let active = true
+    void (async () => {
+      try {
+        const found = await roomRentalInquiriesApi.get(inquiryIdParam)
+        if (!active) return
+        await openForm(null)
+        if (!active) return
+        setForm(current => ({ ...current, roomId: found.roomId }))
+        setConversionInquiryId(found.id)
+        setConversionInquiry(found)
+      } catch (reason) { if (active) await resolveFailure(reason) }
+    })()
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inquiryIdParam])
   const pages = Math.max(1, Math.ceil(result.totalCount / pageSize))
 
   return <div className="page-enter">
@@ -183,10 +239,12 @@ export function Leases() {
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
 
-    <Modal open={formLease !== undefined} onClose={() => setFormLease(undefined)} title={formLease ? 'Editar locação' : 'Nova locação'} subtitle="Informe o contrato e o período de ocupação." size="large">
-      <form className="simple-form" onSubmit={submit}><div className="fields-area full-fields">
+    <Modal open={formLease !== undefined} onClose={closeForm} title={formLease ? 'Editar locação' : 'Nova locação'} subtitle="Informe o contrato e o período de ocupação." size="large">
+      <form className="simple-form" onSubmit={submit}>
+        {conversionInquiry && <p className="form-hint">Interesse registrado: {conversionInquiry.presentedAvailabilityLabel}</p>}
+        <div className="fields-area full-fields">
         <label className="field-label">Locatário<select className="field-input" required value={form.tenantId} onChange={event => setForm(current => ({ ...current, tenantId: event.target.value }))}><option value="">Selecione</option>{tenants.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <button className="secondary-button" type="button" onClick={() => setNewTenant(true)}>Novo locatário</button>
+        <button className="secondary-button" type="button" onClick={openNewTenant}>Novo locatário</button>
         <label className="field-label">Profissional<select className="field-input" required value={form.professionalId} onChange={event => setForm(current => ({ ...current, professionalId: event.target.value }))}><option value="">Selecione</option>{professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="field-label">Sala<select className="field-input" required value={form.roomId} onChange={event => setForm(current => ({ ...current, roomId: event.target.value }))}><option value="">Selecione</option>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="field-label">Modalidade<select className="field-input" value={form.mode} onChange={event => setForm(current => ({ ...current, mode: event.target.value as LeaseMode }))}><option value="HOURLY">Por hora</option><option value="DAILY">Diária</option><option value="MONTHLY">Mensal</option></select></label>
@@ -195,7 +253,7 @@ export function Leases() {
         <label className="field-label">Início da cobrança<input className="field-input" required type="datetime-local" value={form.billingStartAt} onChange={event => setForm(current => ({ ...current, billingStartAt: event.target.value }))} /></label>
         <label className="field-label">Início da ocupação<input className="field-input" required type="datetime-local" value={form.occupancyStartAt} onChange={event => setForm(current => ({ ...current, occupancyStartAt: event.target.value }))} /></label>
         <label className="field-label">Fim da ocupação<input className="field-input" required={form.mode !== 'MONTHLY'} type="datetime-local" value={form.occupancyEndAt} onChange={event => setForm(current => ({ ...current, occupancyEndAt: event.target.value }))} /></label>
-      </div><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setFormLease(undefined)}>Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'Salvando…' : formLease ? 'Salvar alterações' : 'Cadastrar locação'}</button></div></form>
+        </div><div className="modal-actions"><button className="ghost-button" type="button" onClick={closeForm}>Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'Salvando…' : formLease ? 'Salvar alterações' : 'Cadastrar locação'}</button></div></form>
     </Modal>
     <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes da locação">{detail && <dl className="room-rates"><div><dt>Locatário</dt><dd>{detail.tenantName}</dd></div><div><dt>Profissional</dt><dd>{detail.professionalName}</dd></div><div><dt>Sala</dt><dd>{detail.roomName}</dd></div><div><dt>Status</dt><dd>{statusLabels[detail.status]}</dd></div></dl>}</Modal>
     <Modal open={postpone !== null} onClose={() => setPostpone(null)} title="Postergar ocupação"><form className="simple-form" onSubmit={savePostpone}><label className="field-label">Novo início da ocupação<input className="field-input" required type="datetime-local" value={postponeAt} onChange={event => setPostponeAt(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setPostpone(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar postergação</button></div></form></Modal>

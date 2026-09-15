@@ -125,6 +125,19 @@ test('tenant and lease clients use relative contracts and opaque concurrency tok
   expect(apiClient.get).toHaveBeenCalledWith('/api/professional/leases', { query: { page: 1, pageSize: 20 }, signal })
 })
 
+test('lease creation forwards the optional roomRentalInquiryId when converting an inquiry, and omits it otherwise', async () => {
+  const lease = {
+    tenantId: 't-1', professionalId: 'p-1', roomId: 'r-1', mode: 'HOURLY' as const,
+    contractedRate: 150.5, billingStartAt: '2026-09-06T10:00:00Z', billingDueDay: 10,
+    occupancyStartAt: '2026-09-07T10:00:00Z', occupancyEndAt: '2026-09-07T12:00:00Z',
+  }
+  await leasesApi.create(lease)
+  expect(apiClient.post).toHaveBeenLastCalledWith('/api/admin/leases', lease)
+
+  await leasesApi.create({ ...lease, roomRentalInquiryId: 'inquiry-1' })
+  expect(apiClient.post).toHaveBeenLastCalledWith('/api/admin/leases', { ...lease, roomRentalInquiryId: 'inquiry-1' })
+})
+
 test('reservation clients keep administrative and professional contracts separate', async () => {
   const signal = new AbortController().signal
   const period = { startAt: '2026-09-07T10:00:00Z', endAt: '2026-09-07T11:00:00Z' }

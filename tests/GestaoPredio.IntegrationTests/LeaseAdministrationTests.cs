@@ -41,6 +41,28 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
     }
 
     [Fact]
+    public async Task Creation_without_room_rental_inquiry_id_field_behaves_identically_to_a_plain_lease()
+    {
+        // Task 13 extension point: the request accepts an optional trailing RoomRentalInquiryId. A
+        // request that never mentions it at all must behave byte-for-byte like before the field existed.
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Gerente);
+
+        var response = await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = (await response.Content.ReadFromJsonAsync<LeasePayload>())!;
+        Assert.Equal("AGENDADA", created.Status);
+        Assert.NotEmpty(created.ConcurrencyToken);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Single(await db.LeaseOccurrences.ToListAsync());
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "LEASE_CREATED"));
+        Assert.Equal(0, await db.AuditEntries.CountAsync(x => x.Action == "ROOM_RENTAL_INQUIRY_CONVERTED"));
+    }
+
+    [Fact]
     public async Task Overlapping_room_or_professional_is_rejected_without_success_audit()
     {
         await factory.ResetAsync();
