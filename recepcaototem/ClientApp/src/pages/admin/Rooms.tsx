@@ -1,10 +1,11 @@
-import { Building2, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { Building2, Images, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type ModuleStatus, type PagedResponse, type RoomDto, roomsApi } from '../../api/modules'
 import { Modal } from '../../components/Modal'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
 import { RoomForm } from '../../features/rooms/RoomForm'
+import { RoomPhotoManager } from '../../features/rooms/RoomPhotoManager'
 import { formatBrl } from '../../features/rooms/money'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 
@@ -22,6 +23,9 @@ export function Rooms() {
   const [error, setError] = useState<string | null>(null)
   const [formRoom, setFormRoom] = useState<RoomDto | null | undefined>(undefined)
   const [saving, setSaving] = useState(false)
+  const [photoRoom, setPhotoRoom] = useState<RoomDto | null>(null)
+  const photoTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const closePhotoManager = () => { setPhotoRoom(null); photoTriggerRef.current?.focus() }
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       setError(null)
@@ -82,11 +86,12 @@ export function Rooms() {
               <div className="room-admin-heading"><span className="room-admin-icon"><Building2 size={20} /></span><div><strong>{room.name}</strong><StatusBadge status={room.isActive ? 'active' : 'inactive'} /></div></div>
               <p>{room.description || 'Sem descrição cadastrada.'}</p>
               <dl className="room-rates"><div><dt>Por hora</dt><dd>{formatBrl(room.hourlyRate)}</dd></div><div><dt>Diária</dt><dd>{formatBrl(room.dailyRate)}</dd></div></dl>
-              <div className="room-admin-actions"><button className="secondary-button" onClick={() => setFormRoom(room)} aria-label={`Editar ${room.name}`}><Pencil size={16} /> Editar</button><button className="ghost-button" disabled={saving} onClick={() => void toggle(room)} aria-label={`${room.isActive ? 'Desativar' : 'Ativar'} ${room.name}`}>{room.isActive ? <UserMinus size={16} /> : <UserPlus size={16} />}{room.isActive ? 'Desativar' : 'Ativar'}</button></div>
+              <div className="room-admin-actions"><button className="secondary-button" onClick={() => setFormRoom(room)} aria-label={`Editar ${room.name}`}><Pencil size={16} /> Editar</button><button className="secondary-button" onClick={(event) => { photoTriggerRef.current = event.currentTarget; setPhotoRoom(room) }} aria-label={`Gerenciar fotos de ${room.name}`}><Images size={16} /> Fotos</button><button className="ghost-button" disabled={saving} onClick={() => void toggle(room)} aria-label={`${room.isActive ? 'Desativar' : 'Ativar'} ${room.name}`}>{room.isActive ? <UserMinus size={16} /> : <UserPlus size={16} />}{room.isActive ? 'Desativar' : 'Ativar'}</button></div>
             </article>)}</div>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
     <Modal open={formRoom !== undefined} onClose={() => setFormRoom(undefined)} title={formRoom ? 'Editar sala' : 'Nova sala'} subtitle="As tarifas são informadas em reais e enviadas como números." size="large"><RoomForm room={formRoom ?? null} pending={saving} onCancel={() => setFormRoom(undefined)} onSubmit={save} /></Modal>
+    <Modal open={photoRoom !== null} onClose={closePhotoManager} title={photoRoom ? `Fotos — ${photoRoom.name}` : 'Fotos da sala'} size="large">{photoRoom && <RoomPhotoManager room={photoRoom} onClose={closePhotoManager} />}</Modal>
   </div>
 }

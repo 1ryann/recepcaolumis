@@ -1,12 +1,12 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
-  professionalVisitsApi, reservationsApi, roomsApi, tenantsApi, visitsApi, customerApi,
+  professionalVisitsApi, reservationsApi, roomsApi, roomPhotosApi, tenantsApi, visitsApi, customerApi,
   professionalAvailabilityApi, adminProfessionalAvailabilityApi, operatingHoursApi, roomBlocksApi,
   totemRoomApi } from './modules'
 
 vi.mock('./client', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn(), postPublic: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), putMultipart: vi.fn(), postMultipart: vi.fn(), postPublic: vi.fn() },
 }))
 
 beforeEach(() => vi.clearAllMocks())
@@ -67,6 +67,33 @@ test('room operations use server paging and opaque concurrency tokens', async ()
   })
   expect(apiClient.put).toHaveBeenCalledWith('/api/admin/rooms/r-1', expect.objectContaining({ concurrencyToken: 'rv' }))
   expect(apiClient.post).toHaveBeenCalledWith('/api/admin/rooms/r-1/activate', { concurrencyToken: 'rv2' })
+})
+
+test('room photo operations use dedicated endpoints, encode ids and send exact bodies', async () => {
+  const signal = new AbortController().signal
+  await roomPhotosApi.list('room 1', signal)
+  expect(apiClient.get).toHaveBeenCalledWith('/api/admin/rooms/room%201/photos', { signal })
+
+  await roomPhotosApi.list('room-1')
+  expect(apiClient.get).toHaveBeenLastCalledWith('/api/admin/rooms/room-1/photos', { signal: undefined })
+
+  const photo = new File(['image'], 'sala.png', { type: 'image/png' })
+  await roomPhotosApi.upload('room-1', photo)
+  expect(vi.mocked(apiClient.postMultipart).mock.calls[0][0]).toBe('/api/admin/rooms/room-1/photos')
+  const form = vi.mocked(apiClient.postMultipart).mock.calls[0][1]
+  expect(Array.from(form.keys())).toEqual(['file'])
+  const uploaded = form.get('file') as File
+  expect(uploaded.name).toBe('sala.png')
+  expect(uploaded.type).toBe('image/png')
+
+  await roomPhotosApi.remove('room 1', 'photo 1')
+  expect(apiClient.delete).toHaveBeenCalledWith('/api/admin/rooms/room%201/photos/photo%201', {})
+
+  await roomPhotosApi.reorder('room-1', ['photo-2', 'photo-1'])
+  expect(apiClient.put).toHaveBeenCalledWith('/api/admin/rooms/room-1/photos/reorder', { orderedPhotoIds: ['photo-2', 'photo-1'] })
+
+  await roomPhotosApi.setCover('room 1', 'photo 2')
+  expect(apiClient.post).toHaveBeenCalledWith('/api/admin/rooms/room%201/photos/photo%202/cover', {})
 })
 
 test('tenant and lease clients use relative contracts and opaque concurrency tokens', async () => {

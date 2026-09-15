@@ -234,6 +234,14 @@ export interface RoomInput {
   dailyRate: number
 }
 
+export interface RoomPhotoDto {
+  id: string
+  photoUrl: string
+  sortOrder: number
+  isCover: boolean
+  createdAt: string
+}
+
 export type TenantKind = 'INDIVIDUAL' | 'LEGAL_ENTITY'
 export interface TenantDto {
   id: string
@@ -490,6 +498,7 @@ export const dashboardApi = {
 
 const professionalPath = (id: string) => `/api/admin/professionals/${encodeURIComponent(id)}`
 const roomPath = (id: string) => `/api/admin/rooms/${encodeURIComponent(id)}`
+const roomPhotosPath = (roomId: string) => `${roomPath(roomId)}/photos`
 const tenantPath = (id: string) => `/api/admin/tenants/${encodeURIComponent(id)}`
 const leasePath = (id: string) => `/api/admin/leases/${encodeURIComponent(id)}`
 const reservationPath = (id: string) => `/api/admin/reservations/${encodeURIComponent(id)}`
@@ -554,6 +563,26 @@ export const roomsApi = {
   },
   changeStatus(id: string, active: boolean, concurrencyToken: string) {
     return apiClient.post<RoomDto>(`${roomPath(id)}/${active ? 'activate' : 'deactivate'}`, { concurrencyToken })
+  },
+}
+
+export const roomPhotosApi = {
+  list(roomId: string, signal?: AbortSignal) {
+    return apiClient.get<RoomPhotoDto[]>(roomPhotosPath(roomId), { signal })
+  },
+  upload(roomId: string, file: File) {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    return apiClient.postMultipart<RoomPhotoDto>(roomPhotosPath(roomId), form)
+  },
+  remove(roomId: string, photoId: string) {
+    return apiClient.delete<void>(`${roomPhotosPath(roomId)}/${encodeURIComponent(photoId)}`, {})
+  },
+  reorder(roomId: string, orderedPhotoIds: string[]) {
+    return apiClient.put<void>(`${roomPhotosPath(roomId)}/reorder`, { orderedPhotoIds })
+  },
+  setCover(roomId: string, photoId: string) {
+    return apiClient.post<void>(`${roomPhotosPath(roomId)}/${encodeURIComponent(photoId)}/cover`, {})
   },
 }
 

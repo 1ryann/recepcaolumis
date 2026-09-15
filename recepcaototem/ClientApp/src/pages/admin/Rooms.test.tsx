@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Rooms } from './Rooms'
-import { roomsApi } from '../../api/modules'
+import { roomsApi, roomPhotosApi } from '../../api/modules'
 
 vi.mock('../../api/modules', () => ({
   roomsApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), changeStatus: vi.fn() },
+  roomPhotosApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn(), reorder: vi.fn(), setCover: vi.fn() },
 }))
 
 const room = {
@@ -15,6 +16,7 @@ const room = {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(roomsApi.list).mockResolvedValue({ items: [room], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(roomPhotosApi.list).mockResolvedValue([])
 })
 
 test('loads room cards from the API and does not render operational mock concepts', async () => {
@@ -68,4 +70,16 @@ test('resets the server page on status and debounced search changes', async () =
   await waitFor(() => expect(roomsApi.list).toHaveBeenLastCalledWith({ search: undefined, status: 'inactive', page: 1, pageSize: 20 }, expect.any(AbortSignal)))
   fireEvent.change(screen.getByLabelText('Buscar salas'), { target: { value: '  sala  ' } })
   await waitFor(() => expect(roomsApi.list).toHaveBeenLastCalledWith({ search: 'sala', status: 'inactive', page: 1, pageSize: 20 }, expect.any(AbortSignal)), { timeout: 1000 })
+})
+
+test('opens the photo manager for a room and returns focus to the trigger on close', async () => {
+  render(<Rooms />)
+  await screen.findByText('Sala 101')
+  const trigger = screen.getByRole('button', { name: 'Gerenciar fotos de Sala 101' })
+  fireEvent.click(trigger)
+  expect(await screen.findByText('Fotos — Sala 101')).toBeInTheDocument()
+  await waitFor(() => expect(roomPhotosApi.list).toHaveBeenCalledWith('room-1'))
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+  await waitFor(() => expect(screen.queryByText('Fotos — Sala 101')).not.toBeInTheDocument())
+  expect(trigger).toHaveFocus()
 })
