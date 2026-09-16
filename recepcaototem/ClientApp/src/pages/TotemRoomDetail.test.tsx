@@ -51,6 +51,8 @@ function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Ana' } })
   fireEvent.change(screen.getByLabelText('WhatsApp'), { target: { value: '69993182032' } })
   fireEvent.change(screen.getByLabelText('Profissão/Empresa'), { target: { value: 'Fisioterapeuta' } })
+  fireEvent.change(screen.getByLabelText('Data de início desejada'), { target: { value: '2026-11-10' } })
+  fireEvent.change(screen.getByLabelText('Data de término desejada'), { target: { value: '2026-11-20' } })
 }
 
 test('loading shows a loading state before the detail resolves', () => {
@@ -106,14 +108,36 @@ test('shows the Soon label formatted without new Date for AVAILABLE_SOON', async
   expect(await screen.findByText('Disponível em breve — a partir de 20/11/2026')).toBeInTheDocument()
 })
 
-test('"Tenho interesse" opens the inquiry form with the three required fields and an optional note', async () => {
+test('"Tenho interesse" opens the inquiry modal with the required fields, the two desired dates, and an optional note', async () => {
   vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
   renderAt()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   fireEvent.click(await screen.findByRole('button', { name: 'Tenho interesse' }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
   expect(screen.getByLabelText('Nome')).toBeInTheDocument()
   expect(screen.getByLabelText('WhatsApp')).toBeInTheDocument()
   expect(screen.getByLabelText('Profissão/Empresa')).toBeInTheDocument()
+  expect(screen.getByLabelText('Data de início desejada')).toHaveAttribute('type', 'date')
+  expect(screen.getByLabelText('Data de término desejada')).toHaveAttribute('type', 'date')
   expect(screen.getByLabelText(/observação/i)).toBeInTheDocument()
+})
+
+test('the modal closes without navigating when the X button is clicked', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: 'Tenho interesse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(navigateSpy).not.toHaveBeenCalled()
+})
+
+test('the modal closes without navigating when Escape is pressed', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: 'Tenho interesse' }))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(navigateSpy).not.toHaveBeenCalled()
 })
 
 test('required fields block submission client-side without ever calling the API', async () => {
@@ -122,6 +146,18 @@ test('required fields block submission client-side without ever calling the API'
   fireEvent.click(await screen.findByRole('button', { name: 'Tenho interesse' }))
   fireEvent.click(screen.getByRole('button', { name: 'Enviar interesse' }))
   expect(await screen.findByRole('alert')).toBeInTheDocument()
+  expect(totemRoomApi.createInquiry).not.toHaveBeenCalled()
+})
+
+test('an end date before the start date is blocked client-side without ever calling the API', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: 'Tenho interesse' }))
+  fillRequiredFields()
+  fireEvent.change(screen.getByLabelText('Data de início desejada'), { target: { value: '2026-11-20' } })
+  fireEvent.change(screen.getByLabelText('Data de término desejada'), { target: { value: '2026-11-10' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar interesse' }))
+  expect(await screen.findByText('A data final não pode ser anterior à data inicial.')).toBeInTheDocument()
   expect(totemRoomApi.createInquiry).not.toHaveBeenCalled()
 })
 
@@ -153,7 +189,7 @@ test('submit is single-flight: a second click while pending does not call the AP
   await waitFor(() => expect(navigateSpy).toHaveBeenCalled())
 })
 
-test('a successful submit sends exactly four fields and navigates with the exact nav state', async () => {
+test('a successful submit sends exactly six fields and navigates with the exact nav state (no dates included)', async () => {
   vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
   vi.mocked(totemRoomApi.createInquiry).mockResolvedValue(inquiryResult)
   renderAt()
@@ -168,6 +204,14 @@ test('a successful submit sends exactly four fields and navigates with the exact
     },
   }))
   expect(totemRoomApi.createInquiry).toHaveBeenCalledWith('r1', {
-    fullName: 'Ana', whatsApp: '69993182032', professionOrCompany: 'Fisioterapeuta', note: null,
+    fullName: 'Ana',
+    whatsApp: '69993182032',
+    professionOrCompany: 'Fisioterapeuta',
+    note: null,
+    desiredStartDate: '2026-11-10',
+    desiredEndDate: '2026-11-20',
   })
+  // The modal closes on success too — it should not still be showing the form underneath
+  // the page that navigated away.
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

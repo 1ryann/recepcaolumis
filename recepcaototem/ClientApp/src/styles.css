@@ -2848,8 +2848,26 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 }
 .totem-room-detail-form .field-input:focus { border-color: var(--lumis-border-strong); box-shadow: 0 0 0 3px var(--lumis-border-soft); }
 .totem-room-detail-form textarea.field-input { height: auto; padding-block: 12px; resize: vertical; }
+.totem-room-detail-form input[type="date"].field-input { color-scheme: dark; }
 .totem-room-detail-form .form-error { color: #f0b8b8; border-color: rgba(226, 120, 120, .35); background: rgba(226, 120, 120, .08); }
 .totem-room-detail-form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
+
+/* RoomInterestModal (Task 4, room-rental UX fixes) — desired start/end date pair, laid
+   out side by side above the note field; the shared <Modal> is re-themed for this page's
+   dark kiosk background exactly like .totem-kiosk does above (Modal.tsx renders inline,
+   never via a portal, so this is a plain descendant selector). */
+.room-interest-modal-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.totem-room-detail .modal-backdrop { background: rgba(0, 0, 0, .6); }
+.totem-room-detail .modal-card { background: var(--lumis-surface-2); border: 1px solid var(--lumis-border-soft); box-shadow: 0 25px 70px rgba(0, 0, 0, .5); }
+.totem-room-detail .modal-header { border-bottom-color: var(--lumis-border-soft); }
+.totem-room-detail .modal-header h2 { color: var(--lumis-text-dim); }
+.totem-room-detail .modal-header p { color: var(--lumis-muted); }
+.totem-room-detail .icon-button { color: var(--lumis-muted); }
+.totem-room-detail .icon-button:hover { color: var(--lumis-text-dim); background: rgba(255, 255, 255, .08); }
+
+@media (max-width: 480px) {
+  .room-interest-modal-dates { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 900px) {
   .totem-room-detail-photo,.totem-room-detail-fallback { aspect-ratio: 4 / 3; min-height: clamp(220px, 38vh, 380px); }

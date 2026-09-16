@@ -898,6 +898,12 @@ export interface RoomRentalInquiryInput {
   whatsApp: string
   professionOrCompany: string
   note?: string | null
+  // `YYYY-MM-DD`, the native value format of `<input type="date">` — sent as-is, no manual
+  // parsing/formatting. Required (Task 4, room-rental UX fixes): the backend's
+  // `RoomRentalInquiryInput.TryValidate` 400s with INVALID_ROOM_RENTAL_INQUIRY when either
+  // is missing or `desiredEndDate < desiredStartDate`.
+  desiredStartDate: string
+  desiredEndDate: string
 }
 
 export interface RoomRentalInquiryResultDto {
