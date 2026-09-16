@@ -2662,7 +2662,11 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   z-index: 1;
   flex: 1;
   width: 100%;
-  max-width: 960px;
+  /* 1100px matches .totem-rooms-inner (the catalog this page is reached from) — bumped up
+     from 960px (room-rental UX fixes, Task 5) because the bigger gallery (Task 3) and the
+     leaner info column (Task 4 dropped the inline form) read as cramped/sparse at the old
+     width on a wide kiosk screen. */
+  max-width: 1100px;
   margin: 0 auto;
   padding-inline: clamp(16px, 4vw, 48px);
   padding-block: clamp(16px, 4vh, 40px) clamp(24px, 4vh, 40px);
@@ -2682,9 +2686,16 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-room-detail-content {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: clamp(20px, 3vw, 40px);
-  align-items: start;
+  /* Gallery:info ratio widened from 1.1:1 to 1.4:1 (Task 5, room-rental UX fixes) — the
+     Task 3 gallery (big photo + dots + thumbnail strip) now carries most of the page's
+     visual weight, while the Task 4 info column shrank to name/status/description/button
+     once the inline inquiry form moved into a modal, so it no longer needs near-equal
+     width. `align-items` is intentionally left at its grid default (stretch) rather than
+     `start`: the info column now stretches to the gallery's full height and centers its
+     own (shorter) content vertically via `.totem-room-detail-info`'s `justify-content`
+     below, instead of sitting pinned to the top with dead space trailing underneath it. */
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 56px);
   text-align: left;
 }
 .totem-room-detail-gallery { display: flex; flex-direction: column; gap: 12px; }
@@ -2827,7 +2838,13 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .totem-room-detail-lightbox-prev { left: clamp(-4px, -1.5vw, 12px); }
 .totem-room-detail-lightbox-next { right: clamp(-4px, -1.5vw, 12px); }
 
-.totem-room-detail-info { display: flex; flex-direction: column; gap: 14px; }
+.totem-room-detail-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(14px, 2vh, 22px);
+  min-height: 100%;
+}
 .totem-room-detail-title {
   margin: 0;
   font-size: clamp(22px, 2.8vw, 32px);
