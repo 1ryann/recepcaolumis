@@ -18,12 +18,14 @@ const newInquiry: RoomRentalInquiryAdminDto = {
   professionOrCompany: 'Clínica A', note: 'Prefere manhãs', presentedAvailabilityStatus: 'AVAILABLE_SOON',
   presentedAvailableFrom: '2026-11-16', presentedAvailabilityLabel: 'Disponível em breve — a partir de 16/11/2026',
   status: 'NEW', leaseId: null, convertedAt: null, createdAt: '2026-11-14T15:00:00Z',
+  desiredStartDate: '2026-11-10', desiredEndDate: '2026-11-20',
 }
 const convertedInquiry: RoomRentalInquiryAdminDto = {
   id: 'inquiry-2', roomId: 'room-2', roomName: 'Sala 101', fullName: 'Bruna Lima', whatsApp: '+5569999999998',
   professionOrCompany: 'Clínica B', note: null, presentedAvailabilityStatus: 'AVAILABLE_NOW',
   presentedAvailableFrom: null, presentedAvailabilityLabel: 'Disponível agora',
   status: 'CONVERTED', leaseId: 'lease-9', convertedAt: '2026-11-14T16:00:00Z', createdAt: '2026-11-14T14:00:00Z',
+  desiredStartDate: null, desiredEndDate: null,
 }
 
 beforeEach(() => {
@@ -85,6 +87,26 @@ test('Ver detalhes opens the detail modal fetched from the API', async () => {
   fireEvent.click(within(row).getByRole('button', { name: /ver detalhes/i }))
   await waitFor(() => expect(roomRentalInquiriesApi.get).toHaveBeenCalledWith('inquiry-1'))
   expect(await screen.findByText('Prefere manhãs')).toBeInTheDocument()
+})
+
+test('the detail modal shows the customer-requested period', async () => {
+  render(<RoomRentalInquiries />)
+  await screen.findByText('Ana Souza')
+  const row = screen.getByText('Ana Souza').closest('tr')!
+  fireEvent.click(within(row).getByRole('button', { name: /ver detalhes/i }))
+  expect(await screen.findByText('Período desejado')).toBeInTheDocument()
+  expect(screen.getByText('10/11/2026 até 20/11/2026')).toBeInTheDocument()
+})
+
+test('the detail modal falls back to "Não informado" for a legacy inquiry with no desired dates', async () => {
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(convertedInquiry)
+  render(<RoomRentalInquiries />)
+  await screen.findByText('Bruna Lima')
+  const row = screen.getByText('Bruna Lima').closest('tr')!
+  fireEvent.click(within(row).getByRole('button', { name: /ver detalhes/i }))
+  await waitFor(() => expect(roomRentalInquiriesApi.get).toHaveBeenCalledWith('inquiry-2'))
+  expect(await screen.findByText('Período desejado')).toBeInTheDocument()
+  expect(screen.getByText('Não informado')).toBeInTheDocument()
 })
 
 test('shows an error with retry when loading fails, and an empty state with no results', async () => {

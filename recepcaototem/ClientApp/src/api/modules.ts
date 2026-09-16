@@ -258,6 +258,10 @@ export interface RoomRentalInquiryAdminDto {
   leaseId: string | null
   convertedAt: string | null
   createdAt: string
+  // DateOnly ("YYYY-MM-DD") strings, null only for inquiries created before this feature
+  // existed (final fix wave, room-rental UX fixes).
+  desiredStartDate: string | null
+  desiredEndDate: string | null
 }
 
 export type TenantKind = 'INDIVIDUAL' | 'LEGAL_ENTITY'

@@ -27,6 +27,7 @@ const inquiry = {
   professionOrCompany: 'Clínica A', note: null, presentedAvailabilityStatus: 'AVAILABLE_NOW' as const,
   presentedAvailableFrom: null, presentedAvailabilityLabel: 'Disponível agora',
   status: 'NEW' as const, leaseId: null, convertedAt: null, createdAt: '2026-11-14T15:00:00Z',
+  desiredStartDate: '2026-11-10', desiredEndDate: '2026-11-20',
 }
 
 const lease = {

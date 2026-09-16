@@ -80,7 +80,7 @@ test('a generic failure shows an error message with a working retry', async () =
 // lightbox) lives in RoomPhotoGallery.test.tsx now that the gallery is its own component
 // (Task 3, room-rental UX fixes) — this is just an integration smoke test confirming the
 // page wires the room's photos into it correctly.
-test('renders photoUrls in the exact order received with a working thumbnail selector', async () => {
+test('renders photoUrls in the exact order received with one thumbnail button per photo', async () => {
   vi.mocked(totemRoomApi.detail).mockResolvedValue(room)
   renderAt()
   const main = await screen.findByAltText('Foto da sala Sala Alfa')

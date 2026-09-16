@@ -12,6 +12,19 @@ const formatDateTime = (value: string) => new Date(value).toLocaleString('pt-BR'
   timeZone: 'America/Porto_Velho', dateStyle: 'short', timeStyle: 'short',
 })
 
+// DateOnly comes over the wire as a bare "YYYY-MM-DD" string. Parsing it with `new Date`
+// would read it as UTC midnight and can roll to the previous/next day once converted to
+// local time — split it by hand instead, matching TotemRoomsCatalog.tsx's/TotemRoomDetail.tsx's
+// `dateLabel` (final fix wave, room-rental UX fixes).
+const dateLabel = (value: string) => {
+  const [year, month, day] = value.split('-')
+  return `${day}/${month}/${year}`
+}
+const desiredPeriodLabel = (inquiry: RoomRentalInquiryAdminDto) =>
+  inquiry.desiredStartDate && inquiry.desiredEndDate
+    ? `${dateLabel(inquiry.desiredStartDate)} até ${dateLabel(inquiry.desiredEndDate)}`
+    : 'Não informado'
+
 export function RoomRentalInquiries() {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
@@ -86,6 +99,7 @@ export function RoomRentalInquiries() {
         <div><dt>Profissão/Empresa</dt><dd>{detail.professionOrCompany}</dd></div>
         <div><dt>Sala</dt><dd><a className="text-link" href="/admin/salas">{detail.roomName}</a></dd></div>
         <div><dt>Disponibilidade</dt><dd>{detail.presentedAvailabilityLabel}</dd></div>
+        <div><dt>Período desejado</dt><dd>{desiredPeriodLabel(detail)}</dd></div>
         <div><dt>Observação</dt><dd>{detail.note || 'Sem observação.'}</dd></div>
         <div><dt>Recebido em</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
         {detail.status === 'CONVERTED' && detail.convertedAt && <div><dt>Convertido em</dt><dd>{formatDateTime(detail.convertedAt)}</dd></div>}
