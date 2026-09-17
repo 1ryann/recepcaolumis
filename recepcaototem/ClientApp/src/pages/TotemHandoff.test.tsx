@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemApi } from '../api/modules'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemHandoff } from './TotemHandoff'
 
 // `qrcode` is mocked so the QR effect resolves synchronously (no canvas in jsdom) and the
@@ -49,13 +50,13 @@ const clickAndFlush = (el: HTMLElement) => act(async () => {
 
 function renderWithState(state: Record<string, unknown> | undefined) {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: '/totem/handoff', state }]}>
+    <ThemeProvider><MemoryRouter initialEntries={[{ pathname: '/totem/handoff', state }]}>
       <Routes>
         <Route path="/totem/handoff" element={<TotemHandoff />} />
         <Route path="/totem" element={<div>totem home</div>} />
         <Route path="/totem/profissionais" element={<div>totem profissionais</div>} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter></ThemeProvider>,
   )
 }
 

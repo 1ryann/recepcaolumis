@@ -3,12 +3,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import { Home } from './Home'
 import { useSession } from '../auth/SessionProvider'
+import { ThemeProvider } from '../theme/ThemeProvider'
 
 vi.mock('../auth/SessionProvider', () => ({ useSession: vi.fn() }))
 
 function renderWith(session: { status: string; user: { roles: string[] } | null }) {
   vi.mocked(useSession).mockReturnValue(session as never)
-  return render(<MemoryRouter><Home /></MemoryRouter>)
+  return render(<ThemeProvider><MemoryRouter><Home /></MemoryRouter></ThemeProvider>)
 }
 
 const anonymous = { status: 'anonymous', user: null }

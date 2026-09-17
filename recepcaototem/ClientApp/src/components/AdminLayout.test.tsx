@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import { AdminLayout } from './AdminLayout'
 import { useSession } from '../auth/SessionProvider'
+import { ThemeProvider } from '../theme/ThemeProvider'
 
 vi.mock('../auth/SessionProvider', () => ({ useSession: vi.fn() }))
 
@@ -17,13 +18,15 @@ vi.mocked(useSession).mockReturnValue({
 
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route path="interesses-locacao" element={<p>Página de interesses</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route path="interesses-locacao" element={<p>Página de interesses</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   )
 }
 

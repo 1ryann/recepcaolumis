@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 import { LumisPageShell } from '../features/lumis/LumisPageShell'
+import { useTheme } from '../theme/ThemeProvider'
 
 const navItems = [
   { to: '/admin', label: 'Visão geral', icon: LayoutDashboard, end: true },
@@ -26,6 +27,7 @@ export function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const session = useSession()
+  const { theme } = useTheme()
   const name = session.user?.displayName || session.user?.email || 'Usuário'
   const initials = name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
   const role = session.user?.roles[0] ?? ''
@@ -36,7 +38,7 @@ export function AdminLayout() {
       <div className="admin-shell">
         <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
           <div className="sidebar-brand">
-              <img className="sidebar-logo" src="/lumis-logo-transparent.png" alt="LUMIS" />
+              <img className="sidebar-logo" src={theme === 'dark' ? '/lumis-logo-transparent.png' : '/lumis-logo-dark.png'} alt="LUMIS" />
             <span className="sr-only">LUMIS Administração</span>
             <button className="mobile-close icon-button" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
           </div>

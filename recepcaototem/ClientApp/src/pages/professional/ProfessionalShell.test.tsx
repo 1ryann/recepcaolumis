@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { useSession } from '../../auth/SessionProvider'
+import { ThemeProvider } from '../../theme/ThemeProvider'
 import { apiClient } from '../../api/client'
 import { professionalReservationsApi, professionalVisitsApi } from '../../api/modules'
 import { ProfessionalShell } from './ProfessionalHome'
@@ -22,14 +23,16 @@ const emptyPage = { items: [], page: 1, pageSize: 50, totalCount: 0 }
 
 function renderShell(entry = '/profissional') {
   return render(
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/profissional" element={<ProfessionalShell />}>
-          <Route index element={<div>conteúdo do painel</div>} />
-          <Route path="agenda" element={<div>conteúdo de agenda</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/profissional" element={<ProfessionalShell />}>
+            <Route index element={<div>conteúdo do painel</div>} />
+            <Route path="agenda" element={<div>conteúdo de agenda</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   )
 }
 
@@ -43,10 +46,20 @@ beforeEach(() => {
   logout.mockClear()
 })
 
-test('renders the LUMIS logo with the correct alt text', async () => {
+test('renders the LUMIS logo with the correct alt text, theme-aware asset', async () => {
+  // No stored preference and no matchMedia in jsdom => ThemeProvider falls back to 'dark'
+  // (see getSystemTheme), so the dark (white-on-transparent) wordmark is expected here.
   renderShell()
   const logo = await screen.findByAltText('LUMIS')
   expect(logo).toHaveAttribute('src', '/lumis-logo-transparent.png')
+})
+
+test('renders the light wordmark asset when the theme is explicitly light', async () => {
+  localStorage.setItem('lumis-theme', 'light')
+  renderShell()
+  const logo = await screen.findByAltText('LUMIS')
+  expect(logo).toHaveAttribute('src', '/lumis-logo-dark.png')
+  localStorage.removeItem('lumis-theme')
 })
 
 test('nav has exactly the real professional routes, in a nav landmark', async () => {

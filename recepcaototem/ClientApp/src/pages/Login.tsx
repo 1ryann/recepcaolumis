@@ -5,6 +5,7 @@ import { apiClient, ApiError } from '../api/client'
 import { homeForRoles } from '../auth/roleRoutes'
 import { safeCustomerReturnUrl } from '../auth/returnUrl'
 import { LumisPageShell } from '../features/lumis/LumisPageShell'
+import { LumisLogo } from '../theme/LumisLogo'
 
 type Audience = 'admin' | 'customer' | 'professional'
 const COPY: Record<Audience, { eyebrow: string; text: string }> = {
@@ -53,7 +54,7 @@ export function Login({ audience = 'admin' }: { audience?: Audience }) {
   return (
     <LumisPageShell className="lumis-login">
       <main className="lumis-login-card">
-        <img className="lumis-login-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={124} height={38} />
+        <LumisLogo className="lumis-login-logo" alt="LUMIS" width={124} height={38} />
         <span className="lumis-login-eyebrow">{eyebrow}</span>
         <h1 className="lumis-login-title">Bem-vindo de volta</h1>
         {text && <p className="lumis-login-text">{text}</p>}

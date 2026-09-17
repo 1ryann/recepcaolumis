@@ -6,6 +6,7 @@ import { useSession } from '../../auth/SessionProvider'
 import { customerApi, type CustomerProfileDto, type PagedResponse, type ReservationDto } from '../../api/modules'
 import { ApiError } from '../../api/client'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
+import { LumisLogo } from '../../theme/LumisLogo'
 
 const customerNavItems = [
   { to: '/cliente', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -32,7 +33,7 @@ function CustomerShell() {
       <div className="customer-shell">
         <aside className={`customer-sidebar ${open ? 'is-open' : ''}`}>
           <div className="customer-sidebar-brand">
-            <Link to="/cliente" onClick={closeMenu}><img className="customer-sidebar-logo" src="/lumis-logo-transparent.png" alt="LUMIS" /></Link>
+            <Link to="/cliente" onClick={closeMenu}><LumisLogo className="customer-sidebar-logo" alt="LUMIS" /></Link>
           </div>
           <nav className="customer-sidebar-nav" aria-label="Navegação do cliente">
             {customerNavItems.map(({ to, label, icon: Icon, end }) => (

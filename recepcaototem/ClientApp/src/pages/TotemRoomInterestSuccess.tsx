@@ -2,6 +2,7 @@ import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { LumisBackground } from '../features/lumis/LumisBackground'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // `/totem/salas/:id/interesse` — the static hand-off screen shown right after a room
 // rental inquiry is submitted successfully on TotemRoomDetail.tsx. Everything it needs
@@ -77,9 +78,8 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
           onClick={() => navigate('/totem')}
           aria-label="Voltar ao início"
         >
-          <img
+          <LumisLogo
             className="totem-room-interest-logo"
-            src="/lumis-logo-transparent.png"
             alt="LUMIS"
             width={132}
             height={40}

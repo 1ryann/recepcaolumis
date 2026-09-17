@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import QRCode from 'qrcode'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemRoomInterestSuccess } from './TotemRoomInterestSuccess'
 
 // `qrcode` is mocked the same way TotemHandoff.test.tsx mocks it, so the QR effect
@@ -32,13 +33,13 @@ const validState = () => ({
 
 function renderWithState(state: Record<string, unknown> | undefined) {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: '/totem/salas/r1/interesse', state }]}>
+    <ThemeProvider><MemoryRouter initialEntries={[{ pathname: '/totem/salas/r1/interesse', state }]}>
       <Routes>
         <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
         <Route path="/totem/salas" element={<div>catalogo</div>} />
         <Route path="/totem" element={<div>totem home</div>} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter></ThemeProvider>,
   )
 }
 

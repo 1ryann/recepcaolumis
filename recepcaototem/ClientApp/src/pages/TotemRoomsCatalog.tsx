@@ -5,6 +5,7 @@ import { totemRoomApi, type PublicRoomCardDto } from '../api/modules'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { BlurFade } from '../features/totem/magic/BlurFade'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // The `/totem/salas` screen — the public room-rental catalog reached from the "Alugar
 // sala" CTA on `/totem/profissionais`. Anyone can view it without a check-in code; all
@@ -118,9 +119,8 @@ export function TotemRoomsCatalog() {
           onClick={() => navigate('/totem')}
           aria-label="Voltar ao início"
         >
-          <img
+          <LumisLogo
             className="totem-rooms-logo"
-            src="/lumis-logo-transparent.png"
             alt="LUMIS"
             width={132}
             height={40}

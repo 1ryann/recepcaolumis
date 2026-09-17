@@ -6,6 +6,7 @@ import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { TotemProfessionalCarousel } from '../features/totem/TotemProfessionalCarousel'
 import { BlurFade } from '../features/totem/magic/BlurFade'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // The `/totem/profissionais` screen. A visitor without a check-in code lands here from
 // `/totem`, picks one professional in the coverflow carousel, and a second tap on the
@@ -97,9 +98,8 @@ export function TotemProfessionals() {
           onClick={() => navigate('/totem')}
           aria-label="Voltar ao início"
         >
-          <img
+          <LumisLogo
             className="totem-professionals-logo"
-            src="/lumis-logo-transparent.png"
             alt="LUMIS"
             width={132}
             height={40}

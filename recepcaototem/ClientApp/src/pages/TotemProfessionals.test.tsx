@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemApi } from '../api/modules'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemProfessionals } from './TotemProfessionals'
 
 // `useNavigate` is spied so every navigation target can be asserted directly — in
@@ -37,11 +38,11 @@ const handoff = {
   professionalName: 'Ana Souza', profession: 'Fisio',
 }
 const renderAt = () => render(
-  <MemoryRouter initialEntries={['/totem/profissionais']}>
+  <ThemeProvider><MemoryRouter initialEntries={['/totem/profissionais']}>
     <Routes>
       <Route path="/totem/profissionais" element={<TotemProfessionals />} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter></ThemeProvider>,
 )
 const noClienteNav = () => {
   for (const call of navigateSpy.mock.calls) {

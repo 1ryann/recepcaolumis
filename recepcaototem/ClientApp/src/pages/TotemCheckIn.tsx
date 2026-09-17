@@ -10,6 +10,7 @@ import { normalizeToken } from '../features/totem/normalizeToken'
 import { SixDigitCode } from '../features/totem/SixDigitCode'
 import { isComplete6 } from '../features/totem/digits6'
 import { useQrScanner } from '../features/totem/useQrScanner'
+import { LumisLogo } from '../theme/LumisLogo'
 
 type Segment = 'scan' | 'manual'
 type Source = 'scan' | 'manual'
@@ -108,7 +109,7 @@ export function TotemCheckIn() {
 
     <div className="totem-kiosk-topbar">
       <button type="button" className="totem-back" aria-label="Voltar" onClick={goHome}>← Voltar</button>
-      <img src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
+      <LumisLogo alt="LUMIS" width={132} height={40} />
       <KioskClock />
     </div>
 

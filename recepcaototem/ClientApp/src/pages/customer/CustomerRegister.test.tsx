@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { vi } from 'vitest'
 import { customerApi } from '../../api/modules'
+import { ThemeProvider } from '../../theme/ThemeProvider'
 import { CustomerRegister } from './CustomerRegister'
 
 vi.mock('../../api/modules', async (orig) => ({
@@ -15,10 +16,10 @@ function LoginSink() {
 }
 
 function renderAt(entry: string) {
-  return render(<MemoryRouter initialEntries={[entry]}><Routes>
+  return render(<ThemeProvider><MemoryRouter initialEntries={[entry]}><Routes>
     <Route path="/cliente/cadastro" element={<CustomerRegister />} />
     <Route path="/cliente/login" element={<LoginSink />} />
-  </Routes></MemoryRouter>)
+  </Routes></MemoryRouter></ThemeProvider>)
 }
 
 function fillValidForm() {

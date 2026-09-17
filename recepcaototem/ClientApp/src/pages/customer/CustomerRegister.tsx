@@ -5,6 +5,7 @@ import { ApiError } from '../../api/client'
 import { customerApi } from '../../api/modules'
 import { safeCustomerReturnUrl } from '../../auth/returnUrl'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
+import { LumisLogo } from '../../theme/LumisLogo'
 
 const passwordHint = 'Use pelo menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'
 
@@ -46,7 +47,7 @@ export function CustomerRegister() {
   return (
     <LumisPageShell className="lumis-login">
       <main className="lumis-login-card lumis-auth-surface is-wide">
-        <img className="lumis-login-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={124} height={38} />
+        <LumisLogo className="lumis-login-logo" alt="LUMIS" width={124} height={38} />
         <span className="lumis-login-eyebrow">ÁREA DO CLIENTE</span>
         <h1 className="lumis-login-title">Criar sua conta</h1>
         <p className="lumis-login-text">Tenha seu próximo atendimento sempre à mão.</p>

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemEntry } from './TotemEntry'
 
 // Two deviations from the task brief's verbatim snippet, both forced by dependency
@@ -21,13 +22,13 @@ vi.stubGlobal('matchMedia', (q: string) => ({
 }))
 
 const renderAt = () => render(
-  <MemoryRouter initialEntries={['/totem']}>
+  <ThemeProvider><MemoryRouter initialEntries={['/totem']}>
     <Routes>
       <Route path="/totem" element={<TotemEntry />} />
       <Route path="/totem/check-in" element={<div>CHECKIN</div>} />
       <Route path="/totem/profissionais" element={<div>CARROSSEL</div>} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter></ThemeProvider>,
 )
 
 test('asks only how to continue, with two options and one support line', () => {

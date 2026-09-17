@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import { totemApi } from '../api/modules'
 import { useQrScanner } from '../features/totem/useQrScanner'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemCheckIn } from './TotemCheckIn'
 
 vi.mock('../features/totem/useQrScanner')
@@ -33,17 +34,17 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers())
 
-const renderPage = () => render(<MemoryRouter><TotemCheckIn /></MemoryRouter>)
+const renderPage = () => render(<ThemeProvider><MemoryRouter><TotemCheckIn /></MemoryRouter></ThemeProvider>)
 
 // Like renderPage() but also mounts a /totem sink, so navigation away from the
 // check-in route can be asserted by the presence of "ENTRY".
 const renderWithTotem = () => render(
-  <MemoryRouter initialEntries={['/totem/check-in']}>
+  <ThemeProvider><MemoryRouter initialEntries={['/totem/check-in']}>
     <Routes>
       <Route path="/totem/check-in" element={<TotemCheckIn />} />
       <Route path="/totem" element={<div>ENTRY</div>} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter></ThemeProvider>,
 )
 
 test('renders the trimmed kiosk shell: brand and a live clock', () => {

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { useSession } from '../../auth/SessionProvider'
+import { ThemeProvider } from '../../theme/ThemeProvider'
 import { customerApi, type CustomerProfileDto } from '../../api/modules'
 import { CustomerShell } from './CustomerHome'
 
@@ -17,15 +18,17 @@ const profile: CustomerProfileDto = {
 
 function renderShell(entry = '/cliente') {
   return render(
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/cliente" element={<CustomerShell />}>
-          <Route index element={<div>conteúdo do painel</div>} />
-          <Route path="agendamentos" element={<div>conteúdo de agendamentos</div>} />
-          <Route path="agendar" element={<div>conteúdo de agendar</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/cliente" element={<CustomerShell />}>
+            <Route index element={<div>conteúdo do painel</div>} />
+            <Route path="agendamentos" element={<div>conteúdo de agendamentos</div>} />
+            <Route path="agendar" element={<div>conteúdo de agendar</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   )
 }
 
@@ -37,10 +40,24 @@ beforeEach(() => {
   logout.mockClear()
 })
 
-test('renders the LUMIS logo with the correct alt text', async () => {
+test('renders the LUMIS logo with the correct alt text, and swaps the asset by theme', async () => {
+  // No matchMedia stub is set up in this suite, so ThemeProvider's getSystemTheme() falls back
+  // to 'dark' (matches window.matchMedia throwing in jsdom) — the sidebar therefore renders the
+  // white-on-transparent wordmark by default.
   renderShell()
   const logo = await screen.findByAltText('LUMIS')
   expect(logo).toHaveAttribute('src', '/lumis-logo-transparent.png')
+})
+
+test('renders the dark-ink logo asset when the manual theme preference is light', async () => {
+  localStorage.setItem('lumis-theme', 'light')
+  try {
+    renderShell()
+    const logo = await screen.findByAltText('LUMIS')
+    expect(logo).toHaveAttribute('src', '/lumis-logo-dark.png')
+  } finally {
+    localStorage.removeItem('lumis-theme')
+  }
 })
 
 test('nav has exactly 3 links pointing at the real customer routes', async () => {

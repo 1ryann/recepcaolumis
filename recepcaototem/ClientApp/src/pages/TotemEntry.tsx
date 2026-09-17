@@ -4,6 +4,7 @@ import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { BlurFade } from '../features/totem/magic/BlurFade'
 import { MagicCard } from '../features/totem/magic/MagicCard'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // The `/totem` decision screen. It asks one question — "Como deseja continuar?" — and
 // routes to the code-based check-in or the professional carousel. No QR field and no code
@@ -17,9 +18,8 @@ export function TotemEntry() {
       <LumisBackground />
       <div className="totem-entry-inner">
         <BlurFade>
-          <img
+          <LumisLogo
             className="totem-entry-logo"
-            src="/lumis-logo-transparent.png"
             alt="LUMIS"
             width={132}
             height={40}

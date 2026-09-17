@@ -5,6 +5,7 @@ import { totemApi } from '../api/modules'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { usePrefersReducedMotion } from '../features/totem/magic/usePrefersReducedMotion'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // `/totem/handoff` — the Totem side of the booking handoff. The visitor picked a
 // professional on `/totem/profissionais`; "Continuar" opened a handoff and navigated
@@ -162,7 +163,7 @@ function TotemHandoffScreen({ nav }: { nav: HandoffNavState }) {
       <LumisBackground />
 
       <header className="totem-handoff-bar">
-        <img src="/lumis-logo-transparent.png" alt="LUMIS" width={120} height={36} />
+        <LumisLogo alt="LUMIS" width={120} height={36} />
         <KioskClock />
       </header>
 

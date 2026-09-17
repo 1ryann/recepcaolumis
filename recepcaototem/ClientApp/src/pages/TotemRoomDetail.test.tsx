@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import { totemRoomApi, type PublicRoomDetailDto, type RoomRentalInquiryResultDto } from '../api/modules'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemRoomDetail } from './TotemRoomDetail'
 
 // `useNavigate` is spied so the post-submit navigation target and its exact nav-state
@@ -21,11 +22,11 @@ vi.mock('../api/modules', async (orig) => ({
 afterEach(() => vi.clearAllMocks())
 
 const renderAt = (id = 'r1') => render(
-  <MemoryRouter initialEntries={[`/totem/salas/${id}`]}>
+  <ThemeProvider><MemoryRouter initialEntries={[`/totem/salas/${id}`]}>
     <Routes>
       <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter></ThemeProvider>,
 )
 
 const room: PublicRoomDetailDto = {

@@ -2,6 +2,7 @@ import { ArrowRight, CalendarDays, Stethoscope } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 import { LumisBackground } from '../features/lumis/LumisBackground'
+import { LumisLogo } from '../theme/LumisLogo'
 
 // The official public entrance of Lumis. It is a portal, not a dashboard and not the
 // Totem: three deliberate ways in (Cliente, Profissional, equipe). It stays a valid
@@ -35,7 +36,7 @@ export function Home() {
       <LumisBackground />
       <div className="home-inner">
         <header className="home-head">
-          <img className="home-logo" src="/lumis-logo-transparent.png" alt="LUMIS" width={132} height={40} />
+          <LumisLogo className="home-logo" alt="LUMIS" width={132} height={40} />
         </header>
 
         <section className="home-hero">

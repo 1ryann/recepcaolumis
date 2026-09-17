@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { totemRoomApi, type PublicRoomCardDto } from '../api/modules'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { TotemRoomsCatalog } from './TotemRoomsCatalog'
 
 // `useNavigate` is spied so navigation targets can be asserted directly — in particular
@@ -21,11 +22,11 @@ beforeEach(() => {})
 afterEach(() => vi.clearAllMocks())
 
 const renderAt = () => render(
-  <MemoryRouter initialEntries={['/totem/salas']}>
+  <ThemeProvider><MemoryRouter initialEntries={['/totem/salas']}>
     <Routes>
       <Route path="/totem/salas" element={<TotemRoomsCatalog />} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter></ThemeProvider>,
 )
 
 const roomNow: PublicRoomCardDto = {

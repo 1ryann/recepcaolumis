@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router-dom'
 import { vi } from 'vitest'
 import { SessionProvider } from '../auth/SessionProvider'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { apiClient, ApiError } from '../api/client'
 import { Login } from './Login'
 
@@ -26,13 +27,15 @@ async function renderLogin(audience: Audience = 'admin', entry?: string) {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
   const path = pathFor[audience]
   const utils = render(
-    <MemoryRouter initialEntries={[entry ?? path]}>
-      <SessionProvider>
-        <Routes>
-          <Route path={path} element={<Login audience={audience} />} />
-        </Routes>
-      </SessionProvider>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[entry ?? path]}>
+        <SessionProvider>
+          <Routes>
+            <Route path={path} element={<Login audience={audience} />} />
+          </Routes>
+        </SessionProvider>
+      </MemoryRouter>
+    </ThemeProvider>,
   )
   await screen.findByRole('heading', { name: /bem-vindo de volta/i })
   return utils
@@ -41,7 +44,7 @@ async function renderLogin(audience: Audience = 'admin', entry?: string) {
 test.each([['CUSTOMER', '/cliente'], ['PROFISSIONAL', '/profissional'], ['PROFESSIONAL_APPLICANT', '/profissional/aguardando'], ['ADMINISTRADOR', '/admin'], ['GERENTE', '/recepcao']])('redirects fresh %s session to %s regardless of login presentation', async (role, destination) => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user(role))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/cliente/login']}><SessionProvider><Routes><Route path="/cliente/login" element={<Login audience="customer" />} /><Route path={destination} element={<p>correct destination</p>} /></Routes></SessionProvider></MemoryRouter>)
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login']}><SessionProvider><Routes><Route path="/cliente/login" element={<Login audience="customer" />} /><Route path={destination} element={<p>correct destination</p>} /></Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'test@example.test' } })
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'test-only' } })
@@ -52,11 +55,11 @@ test.each([['CUSTOMER', '/cliente'], ['PROFISSIONAL', '/profissional'], ['PROFES
 test('customer login with a safe returnUrl navigates there', async () => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user('CUSTOMER'))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
     <Route path="/cliente/agendar" element={<BookingSink />} />
     <Route path="/cliente" element={<p>customer home</p>} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('booking sink professionalId=x')).toBeInTheDocument()
@@ -65,11 +68,11 @@ test('customer login with a safe returnUrl navigates there', async () => {
 test('customer login ignores an unsafe returnUrl and uses homeForRoles', async () => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user('CUSTOMER'))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/cliente/login?returnUrl=%2F%2Fevil.com']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login?returnUrl=%2F%2Fevil.com']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
     <Route path="/cliente" element={<p>customer home</p>} />
     <Route path="/cliente/agendar" element={<BookingSink />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('customer home')).toBeInTheDocument()
@@ -79,11 +82,11 @@ test('customer login ignores an unsafe returnUrl and uses homeForRoles', async (
 test('mustChangePassword wins over returnUrl', async () => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue({ ...user('CUSTOMER'), mustChangePassword: true })
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
     <Route path="/change-password" element={<p>change password page</p>} />
     <Route path="/cliente/agendar" element={<BookingSink />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('change password page')).toBeInTheDocument()
@@ -92,11 +95,11 @@ test('mustChangePassword wins over returnUrl', async () => {
 test('admin login ignores returnUrl entirely', async () => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user('ADMINISTRADOR'))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
     <Route path="/login" element={<Login audience="admin" />} />
     <Route path="/admin" element={<p>admin panel</p>} />
     <Route path="/cliente/agendar" element={<BookingSink />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('admin panel')).toBeInTheDocument()
@@ -106,10 +109,10 @@ test('admin login ignores returnUrl entirely', async () => {
 test('submits the entered credentials to the session login', async () => {
   vi.mocked(apiClient.get).mockRejectedValueOnce(new ApiError(401, 'UNAUTHORIZED', '')).mockResolvedValue(user('ADMINISTRADOR'))
   vi.mocked(apiClient.post).mockResolvedValue(undefined)
-  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
     <Route path="/login" element={<Login audience="admin" />} />
     <Route path="/admin" element={<p>admin panel</p>} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   await screen.findByText('admin panel')
@@ -119,9 +122,9 @@ test('submits the entered credentials to the session login', async () => {
 test('shows an inline error when the credentials are rejected', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
   vi.mocked(apiClient.post).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
-  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
     <Route path="/login" element={<Login audience="admin" />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('E-mail ou senha inválidos.')).toBeInTheDocument()
@@ -130,9 +133,9 @@ test('shows an inline error when the credentials are rejected', async () => {
 test('shows the cooldown message after too many attempts (429)', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
   vi.mocked(apiClient.post).mockRejectedValue(new ApiError(429, 'TOO_MANY_REQUESTS', ''))
-  render(<MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/login']}><SessionProvider><Routes>
     <Route path="/login" element={<Login audience="admin" />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
   fillAndSubmitLogin()
   expect(await screen.findByText('Muitas tentativas. Aguarde alguns instantes e tente novamente.')).toBeInTheDocument()
@@ -140,18 +143,18 @@ test('shows the cooldown message after too many attempts (429)', async () => {
 
 test('the "Criar conta" link carries an encoded returnUrl when present', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
-  render(<MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   const link = await screen.findByRole('link', { name: /criar conta/i })
   expect(link).toHaveAttribute('href', '/cliente/cadastro?returnUrl=%2Fcliente%2Fagendar%3FprofessionalId%3Dx')
 })
 
 test('the "Criar conta" link stays plain when no returnUrl is present', async () => {
   vi.mocked(apiClient.get).mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', ''))
-  render(<MemoryRouter initialEntries={['/cliente/login']}><SessionProvider><Routes>
+  render(<ThemeProvider><MemoryRouter initialEntries={['/cliente/login']}><SessionProvider><Routes>
     <Route path="/cliente/login" element={<Login audience="customer" />} />
-  </Routes></SessionProvider></MemoryRouter>)
+  </Routes></SessionProvider></MemoryRouter></ThemeProvider>)
   const link = await screen.findByRole('link', { name: /criar conta/i })
   expect(link).toHaveAttribute('href', '/cliente/cadastro')
 })
@@ -213,8 +216,11 @@ test('customer login does not claim when the returnUrl has no handoff', async ()
 
 test('sober look: no decorative icons, textual show/hide password control', async () => {
   const { container } = await renderLogin('customer')
-  // the only <svg> allowed anywhere is none — no envelope / lock / shield / eye / arrow icons
-  expect(container.querySelectorAll('svg')).toHaveLength(0)
+  // No envelope / lock / shield / eye / arrow icons anywhere on the login card itself. The
+  // sitewide ThemeToggle (rendered once by LumisPageShell, present on every themed page) does
+  // carry a sun/moon <svg> — that's not a decorative login-form icon, so it's excluded here.
+  const decorativeIcons = Array.from(container.querySelectorAll('svg')).filter((svg) => !svg.closest('.theme-toggle'))
+  expect(decorativeIcons).toHaveLength(0)
   const toggle = screen.getByRole('button', { name: /mostrar/i })
   fireEvent.click(toggle)
   expect(screen.getByRole('button', { name: /ocultar/i })).toBeInTheDocument()

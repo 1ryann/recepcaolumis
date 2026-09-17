@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminLayout } from '../components/AdminLayout'
+import { ReceptionLayout } from '../components/ReceptionLayout'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { ChangePassword } from '../pages/ChangePassword'
 import { Login } from '../pages/Login'
@@ -68,10 +69,14 @@ export default function DevelopmentApp() {
           </Route>
         </Route>
         <Route element={<ProtectedRoute allowedRoles={['PROFESSIONAL_APPLICANT']} />}><Route path="/profissional/aguardando" element={<ProfessionalApplicationStatus />} /></Route>
-        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao" element={<ReceptionMonitor />} /></Route>
-        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} /></Route>
-        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/profissionais" element={<Professionals />} /></Route>
-        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}><Route path="/recepcao/configuracoes" element={<Settings />} /></Route>
+        <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR', 'GERENTE']} />}>
+          <Route element={<ReceptionLayout />}>
+            <Route path="/recepcao" element={<ReceptionMonitor />} />
+            <Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} />
+            <Route path="/recepcao/profissionais" element={<Professionals />} />
+            <Route path="/recepcao/configuracoes" element={<Settings />} />
+          </Route>
+        </Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />

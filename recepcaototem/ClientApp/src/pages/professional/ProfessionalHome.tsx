@@ -5,6 +5,7 @@ import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-rout
 import { useSession } from '../../auth/SessionProvider'
 import { professionalAvailabilityApi, professionalReservationsApi, professionalVisitsApi, type AvailabilityIntervalDto, type ProfessionalAvailabilityDto, type ReservationDto, type VisitDto } from '../../api/modules'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
+import { LumisLogo } from '../../theme/LumisLogo'
 
 type ProfessionalContext = { reservations: ReservationDto[], visits: VisitDto[], loading: boolean, error: string }
 const nav = [
@@ -46,7 +47,7 @@ export function ProfessionalShell() {
       <div className="professional-shell">
         <aside className={`professional-sidebar ${open ? 'is-open' : ''}`}>
           <div className="professional-sidebar-brand">
-            <Link to="/profissional" onClick={closeMenu}><img className="professional-sidebar-logo" src="/lumis-logo-transparent.png" alt="LUMIS" /></Link>
+            <Link to="/profissional" onClick={closeMenu}><LumisLogo className="professional-sidebar-logo" alt="LUMIS" /></Link>
           </div>
           <div className="professional-intro">
             <span>Área do profissional</span>
