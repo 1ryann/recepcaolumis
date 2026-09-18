@@ -28,6 +28,19 @@ test('reservations use the real screen on both route trees', async () => {
   expect(reservationsSource).toContain('professionalReservationsApi.list')
 })
 
+test('the room rental flow is routed identically on both route trees', async () => {
+  const developmentSource = await import('./dev/DevelopmentApp.tsx?raw').then(module => module.default)
+  for (const route of [
+    '<Route path="/totem/salas" element={<TotemRoomsCatalog />} />',
+    '<Route path="/totem/salas/:id" element={<TotemRoomDetail />} />',
+    '<Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />',
+    '<Route path="interesses-locacao" element={<RoomRentalInquiries />} />',
+  ]) {
+    expect(appSource).toContain(route)
+    expect(developmentSource).toContain(route)
+  }
+})
+
 test('leases use the real screen on both route trees', async () => {
   const developmentSource = await import('./dev/DevelopmentApp.tsx?raw').then(module => module.default)
   expect(appSource).toContain('<Leases />')

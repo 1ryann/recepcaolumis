@@ -21,6 +21,10 @@ import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { TotemEntry } from '../pages/TotemEntry'
 import { TotemHandoff } from '../pages/TotemHandoff'
 import { TotemProfessionals } from '../pages/TotemProfessionals'
+import { TotemRoomsCatalog } from '../pages/TotemRoomsCatalog'
+import { TotemRoomDetail } from '../pages/TotemRoomDetail'
+import { TotemRoomInterestSuccess } from '../pages/TotemRoomInterestSuccess'
+import { RoomRentalInquiries } from '../pages/admin/RoomRentalInquiries'
 import { ProfessionalDashboard, ProfessionalShell } from '../pages/professional/ProfessionalHome'
 import { ProfessionalAgenda } from '../pages/professional/ProfessionalAgenda'
 import { ProfessionalRegistration } from '../pages/professional/ProfessionalRegistration'
@@ -47,6 +51,9 @@ export default function DevelopmentApp() {
         <Route path="/totem/check-in" element={<TotemCheckIn />} />
         <Route path="/totem/profissionais" element={<TotemProfessionals />} />
         <Route path="/totem/handoff" element={<TotemHandoff />} />
+        <Route path="/totem/salas" element={<TotemRoomsCatalog />} />
+        <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
+        <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
           <Route path="/cliente" element={<CustomerShell />}>
@@ -83,6 +90,7 @@ export default function DevelopmentApp() {
             <Route path="salas" element={<Rooms />} />
             <Route path="profissionais" element={<Professionals />} />
             <Route path="locacoes" element={<Leases />} />
+            <Route path="interesses-locacao" element={<RoomRentalInquiries />} />
             <Route path="reservas" element={<Reservations />} />
             <Route path="visitas" element={<Visits />} />
             <Route path="recepcao" element={<ReceptionMonitor />} />
