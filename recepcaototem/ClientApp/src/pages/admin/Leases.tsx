@@ -21,6 +21,8 @@ const statusLabels: Record<LeaseStatus, string> = {
 const modeLabels: Record<LeaseMode, string> = { MONTHLY: 'Mensal', DAILY: 'Diária', HOURLY: 'Por hora' }
 const formatBrl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('pt-BR') : 'Sem término definido'
+// Inquiry desired dates are civil dates (yyyy-MM-dd), never instants: format them without going through Date/timezones.
+const civilDateLabel = (value: string) => { const [year, month, day] = value.split('-'); return `${day}/${month}/${year}` }
 export const toInputDate = (value: string | null) => {
   if (!value) return ''
   const date = new Date(value)
@@ -55,6 +57,7 @@ export function Leases() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [formLease, setFormLease] = useState<LeaseDto | null | undefined>(undefined)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [tenants, setTenants] = useState<TenantDto[]>([])
@@ -123,7 +126,11 @@ export function Leases() {
       setTenants(tenantPage.items); setProfessionals(professionalPage.items); setRooms(roomPage.items)
     } catch (reason) { await resolveFailure(reason) }
   }
-  const closeForm = () => { setFormLease(undefined); setConversionInquiryId(null); setConversionInquiry(null) }
+  // Closing without saving abandons the conversion too: drop ?inquiryId= so a refresh does not reopen it.
+  const closeForm = () => {
+    if (conversionInquiryId !== null || searchParams.has('inquiryId')) clearInquiryParam()
+    setFormLease(undefined); setConversionInquiryId(null); setConversionInquiry(null)
+  }
   const clearInquiryParam = () => setSearchParams(current => {
     const next = new URLSearchParams(current); next.delete('inquiryId'); return next
   }, { replace: true })
@@ -202,6 +209,16 @@ export function Leases() {
       try {
         const found = await roomRentalInquiriesApi.get(inquiryIdParam)
         if (!active) return
+        // Already converted: never offer a second conversion — show the lease it produced instead.
+        if (found.status === 'CONVERTED') {
+          clearInquiryParam()
+          setNotice('Este interesse já foi convertido em uma locação.')
+          if (found.leaseId) {
+            const converted = await leasesApi.detail(found.leaseId)
+            if (active) setDetail(converted)
+          }
+          return
+        }
         await openForm(null)
         if (!active) return
         setForm(current => ({ ...current, roomId: found.roomId }))
@@ -235,6 +252,7 @@ export function Leases() {
                 {lease.status === 'ATIVA' && <button className="ghost-button" aria-label={`Encerrar locação ${lease.tenantName}`} onClick={() => { setEndLease(lease); setEndAt('') }}>Encerrar</button>}
               </div></td></tr>)}
             </tbody></table></div>}
+      {notice && <p className="form-hint" role="status">{notice}</p>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
@@ -242,6 +260,7 @@ export function Leases() {
     <Modal open={formLease !== undefined} onClose={closeForm} title={formLease ? 'Editar locação' : 'Nova locação'} subtitle="Informe o contrato e o período de ocupação." size="large">
       <form className="simple-form" onSubmit={submit}>
         {conversionInquiry && <p className="form-hint">Interesse registrado: {conversionInquiry.presentedAvailabilityLabel}</p>}
+        {conversionInquiry?.desiredStartDate && conversionInquiry.desiredEndDate && <p className="form-hint">Período desejado: {civilDateLabel(conversionInquiry.desiredStartDate)} até {civilDateLabel(conversionInquiry.desiredEndDate)}</p>}
         <div className="fields-area full-fields">
         <label className="field-label">Locatário<select className="field-input" required value={form.tenantId} onChange={event => setForm(current => ({ ...current, tenantId: event.target.value }))}><option value="">Selecione</option>{tenants.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <button className="secondary-button" type="button" onClick={openNewTenant}>Novo locatário</button>

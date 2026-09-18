@@ -153,6 +153,51 @@ test('the inquiry availability is shown as read-only context text, never bound t
   expect(screen.queryByDisplayValue('Disponível agora')).not.toBeInTheDocument()
 })
 
+test('the desired period from the inquiry is shown as context only, never prefilling a contract field', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  render(<Leases />)
+  expect(await screen.findByText('Período desejado: 10/11/2026 até 20/11/2026')).toBeInTheDocument()
+  expect((screen.getByLabelText('Início da ocupação') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Fim da ocupação') as HTMLInputElement).value).toBe('')
+})
+
+test('an inquiry without a desired period (pre-existing row) shows no period line', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue({ ...inquiry, desiredStartDate: null, desiredEndDate: null })
+  render(<Leases />)
+  await screen.findByRole('heading', { name: 'Nova locação' })
+  expect(screen.queryByText(/Período desejado/)).not.toBeInTheDocument()
+})
+
+test('closing the Nova locação modal without saving removes inquiryId from the URL', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1&page=2')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
+  render(<Leases />)
+  await screen.findByRole('heading', { name: 'Nova locação' })
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Nova locação' })).not.toBeInTheDocument())
+  expect(currentSearchParams.get('inquiryId')).toBeNull()
+  // Unrelated params survive.
+  expect(currentSearchParams.get('page')).toBe('2')
+  expect(leasesApi.create).not.toHaveBeenCalled()
+})
+
+test('a CONVERTED inquiry never reopens the conversion form: it clears inquiryId, explains why and opens the existing lease', async () => {
+  currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
+  vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue({
+    ...inquiry, status: 'CONVERTED' as const, leaseId: 'lease-1', convertedAt: '2026-11-15T10:00:00Z',
+  })
+  vi.mocked(leasesApi.detail).mockResolvedValue(lease)
+  render(<Leases />)
+  expect(await screen.findByRole('heading', { name: 'Detalhes da locação' })).toBeInTheDocument()
+  expect(leasesApi.detail).toHaveBeenCalledWith('lease-1')
+  expect(screen.getByText('Este interesse já foi convertido em uma locação.')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Nova locação' })).not.toBeInTheDocument()
+  expect(currentSearchParams.get('inquiryId')).toBeNull()
+  expect(leasesApi.create).not.toHaveBeenCalled()
+})
+
 test('Novo locatário prefills the name from the inquiry but leaves Kind for the Admin to choose', async () => {
   currentSearchParams = new URLSearchParams('inquiryId=inquiry-1')
   vi.mocked(roomRentalInquiriesApi.get).mockResolvedValue(inquiry)
