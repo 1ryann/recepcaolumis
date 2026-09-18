@@ -23,7 +23,7 @@ public sealed class ModulePersistenceTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var occurredAt = DateTimeOffset.UtcNow;
+        var occurredAt = factory.UtcNow;
         var professional = Professional.Create(
             new string('ß', 200),
             new string('ß', 150),

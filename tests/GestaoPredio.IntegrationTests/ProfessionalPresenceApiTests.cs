@@ -22,7 +22,7 @@ public sealed class ProfessionalPresenceApiTests(ModulesApiFactory factory)
         var (email, professional) = await SeedLinkedProfessionalAsync();
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
 
-        var before = DateTimeOffset.UtcNow;
+        var before = factory.UtcNow;
         var first = await factory.PostWithCsrfAsync("/api/professional/presence/qr", new { });
         first.EnsureSuccessStatusCode();
         var firstPayload = await first.Content.ReadFromJsonAsync<QrPayload>();
@@ -65,7 +65,7 @@ public sealed class ProfessionalPresenceApiTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(professional.Id, DateTimeOffset.UtcNow.AddMinutes(-5)));
+            db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(professional.Id, factory.UtcNow.AddMinutes(-5)));
             await db.SaveChangesAsync();
         }
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
@@ -106,8 +106,8 @@ public sealed class ProfessionalPresenceApiTests(ModulesApiFactory factory)
         var email = $"presence-{Guid.NewGuid():N}@lumis.test";
         var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
         var professional = Professional.Create("Presença API", "Fisioterapia",
-            $"699{Random.Shared.Next(10000000, 99999999)}", DateTimeOffset.UtcNow);
-        professional.LinkUser(user.Id, DateTimeOffset.UtcNow);
+            $"699{Random.Shared.Next(10000000, 99999999)}", factory.UtcNow);
+        professional.LinkUser(user.Id, factory.UtcNow);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.Professionals.Add(professional);

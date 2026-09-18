@@ -88,7 +88,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         // Pin the clock to mid-morning so the [start, start+1h] booking window never straddles
         // civil midnight in America/Porto_Velho (which would make the professional "unavailable").
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho");
-        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime);
+        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(factory.UtcNow, zone).DateTime);
         factory.FreezeTime(new DateTimeOffset(
             TimeZoneInfo.ConvertTimeToUtc(localToday.ToDateTime(new TimeOnly(9, 0), DateTimeKind.Unspecified), zone),
             TimeSpan.Zero));
@@ -191,7 +191,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync(withVisit: false);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now,
             TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")).DateTime);
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -217,7 +217,7 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(seed.ProfessionalId, DateTimeOffset.UtcNow.AddMinutes(-10)));
+            db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(seed.ProfessionalId, factory.UtcNow.AddMinutes(-10)));
             await db.SaveChangesAsync();
         }
         await LoginAsync(seed.Manager);

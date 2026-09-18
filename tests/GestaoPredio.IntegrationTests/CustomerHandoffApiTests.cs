@@ -57,7 +57,7 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var seed = await SeedCustomerAsync();
         var prof = await factory.SeedActiveProfessionalAsync();
-        factory.FreezeTime(DateTimeOffset.UtcNow);
+        factory.FreezeTime(factory.UtcNow);
         var b = await CreateHandoffAsync(prof);
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
 
@@ -213,7 +213,7 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
         {
             var mdb = mutate.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var reservation = await mdb.Reservations.SingleAsync(x => x.Id == reservationId);
-            reservation.Cancel(reservation.RequestedByUserId, DateTimeOffset.UtcNow);
+            reservation.Cancel(reservation.RequestedByUserId, factory.UtcNow);
             await mdb.SaveChangesAsync();
         }
 
@@ -331,7 +331,7 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
     {
         var a = await ArrangeBookableHandoffAsync();
         // ResetAsync (inside the arrange) unfreezes, so pin the clock only afterwards.
-        factory.FreezeTime(DateTimeOffset.UtcNow.AddMinutes(21));   // past claim's grace + hard ceiling
+        factory.FreezeTime(factory.UtcNow.AddMinutes(21));   // past claim's grace + hard ceiling
 
         var res = await factory.PostWithCsrfAsync(CreatePath, Body(a));
         Assert.Equal(HttpStatusCode.Gone, res.StatusCode);
@@ -399,7 +399,7 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, (await factory.PostWithCsrfAsync(
             "/api/customer/booking-handoffs/resolve", new { handoffToken = b.HandoffToken })).StatusCode);
 
-        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero).AddHours(14);
+        var start = new DateTimeOffset(factory.UtcNow.UtcDateTime.Date.AddDays(1), TimeSpan.Zero).AddHours(14);
         var created = await factory.PostWithCsrfAsync(CreatePath, new
         {
             professionalId,
@@ -465,13 +465,13 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
 
         // 14:00Z == 10:00 in America/Porto_Velho (the configured operational zone), well inside the
         // 00:00-23:59 default operating hours and on the same local day as its 15:00Z end.
-        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero).AddHours(14);
+        var start = new DateTimeOffset(factory.UtcNow.UtcDateTime.Date.AddDays(1), TimeSpan.Zero).AddHours(14);
         return new BookableHandoff(seed.Email, seed.Password, professionalId, b.HandoffToken, start);
     }
 
     private async Task<Guid> SeedActiveProfessionalWithRoomAsync()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala Handoff {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create($"Profissional Handoff {Guid.NewGuid():N}", "Fisioterapia",
             $"659{Random.Shared.Next(10000000, 99999999)}", now);
@@ -498,7 +498,7 @@ public sealed class CustomerHandoffApiTests(ModulesApiFactory factory)
         var phone = $"+55699{Random.Shared.Next(10_000_000, 99_999_999)}";
         var user = await factory.CreateUserAsync($"handoff-customer-{Guid.NewGuid():N}@lumis.test", password,
             [SystemRoles.Customer], displayName: name);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var customer = Customer.Create(name, phone, now);
         customer.LinkUser(user.Id, now);
         await using var scope = factory.Services.CreateAsyncScope();

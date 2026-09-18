@@ -183,6 +183,7 @@ public sealed class VisitApiTests(ModulesApiFactory factory)
             (await factory.PostWithCsrfAsync($"/api/admin/visits/{ended.Id}/correct",
                 new { status = "IN_SERVICE", reason = " ", concurrencyToken = ended.ConcurrencyToken })).StatusCode);
 
+        factory.AdvanceTime(TimeSpan.FromMinutes(1));
         var response = await factory.PostWithCsrfAsync($"/api/admin/visits/{ended.Id}/correct", new
         {
             status = "IN_SERVICE", reason = "Encerramento lançado por engano", concurrencyToken = ended.ConcurrencyToken
@@ -242,6 +243,8 @@ public sealed class VisitApiTests(ModulesApiFactory factory)
 
     private async Task<VisitPayload> TransitionAsync(VisitPayload visit, string action)
     {
+        // Each transition happens later than the previous one, as it would in real use.
+        factory.AdvanceTime(TimeSpan.FromMinutes(1));
         var response = await factory.PostWithCsrfAsync($"/api/admin/visits/{visit.Id}/{action}",
             new { concurrencyToken = visit.ConcurrencyToken });
         response.EnsureSuccessStatusCode();
@@ -258,7 +261,7 @@ public sealed class VisitApiTests(ModulesApiFactory factory)
             [SystemRoles.Administrador]);
         var manager = await factory.CreateUserAsync($"manager-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Gerente]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, now);
         var otherRoom = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional dono", "Fisioterapia", "+5565999999999", now);

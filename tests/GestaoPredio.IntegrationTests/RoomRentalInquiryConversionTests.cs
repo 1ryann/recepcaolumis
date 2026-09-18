@@ -164,10 +164,10 @@ public sealed class RoomRentalInquiryConversionTests(ModulesApiFactory factory)
         Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "LEASE_CREATED"));
     }
 
-    private static CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value, Guid? inquiryId) => new(
+    private CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value, Guid? inquiryId) => new(
         value.Tenant.Id, value.Professional.Id, value.Room.Id, "HOURLY", 150.50m,
-        DateTimeOffset.UtcNow.AddDays(-1), 10, DateTimeOffset.UtcNow.AddDays(1),
-        DateTimeOffset.UtcNow.AddDays(1).AddHours(2), inquiryId);
+        factory.UtcNow.AddDays(-1), 10, factory.UtcNow.AddDays(1),
+        factory.UtcNow.AddDays(1).AddHours(2), inquiryId);
 
     private async Task<Room> SeedRoomAsync(string name)
     {
@@ -216,7 +216,7 @@ public sealed class RoomRentalInquiryConversionTests(ModulesApiFactory factory)
 
     private async Task<(Tenant Tenant, Professional Professional, Room Room)> SeedResourcesAsync()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create($"Locatário Teste {Guid.NewGuid():N}", TenantKind.Individual, now);
         var professional = Professional.Create($"Profissional Teste {Guid.NewGuid():N}", "Teste", NextPhone(), now);
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 100m, 500m, now);

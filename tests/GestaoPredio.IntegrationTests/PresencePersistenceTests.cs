@@ -16,7 +16,7 @@ public sealed class PresencePersistenceTests(ModulesApiFactory factory)
     public async Task Presence_tokens_and_reschedule_tokens_round_trip_with_row_versions()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Presença", "Clínica", "69999990000", now);
         var room = Room.Create("Sala Presença", null, 1, 50m, now);
         var customer = Customer.Create("Cliente Presença", "69988887777", now);
@@ -56,7 +56,7 @@ public sealed class PresencePersistenceTests(ModulesApiFactory factory)
     public async Task A_second_open_presence_for_the_same_professional_is_rejected_by_the_partial_unique_index()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Presença Única", "Clínica", "69999990001", now);
 
         await using var scope = factory.Services.CreateAsyncScope();
@@ -73,7 +73,7 @@ public sealed class PresencePersistenceTests(ModulesApiFactory factory)
     public async Task Existing_reservations_and_exceptions_default_the_new_columns()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Default Colunas", "Clínica", "69999990002", now);
         var room = Room.Create("Sala Default", null, 1, 50m, now);
         var reservation = Reservation.CreateApproved(room.Id, professional.Id, now.AddHours(2), now.AddHours(3), "seed", now);

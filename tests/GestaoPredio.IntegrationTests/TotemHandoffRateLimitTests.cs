@@ -42,7 +42,7 @@ internal static class HandoffTestSupport
     public static async Task<Guid> SeedActiveProfessionalAsync(
         this ModulesApiFactory factory, string? name = null, string? profession = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create(
             name ?? $"Profissional Handoff {Guid.NewGuid():N}",
             profession ?? "Fisioterapia",

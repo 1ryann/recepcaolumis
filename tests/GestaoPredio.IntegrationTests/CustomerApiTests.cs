@@ -54,7 +54,7 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     public async Task Customer_cancel_and_reschedule_require_the_current_xmin_token()
     {
         await factory.ResetAsync();
-        var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddHours(4));
+        var seed = await SeedCustomerReservationAsync(factory.UtcNow.AddHours(4));
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
 
         var detail = (await (await factory.Client.GetAsync($"/api/customer/reservations/{seed.ReservationId}")).Content
@@ -91,14 +91,14 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     public async Task Customer_reschedule_revokes_the_old_qr_token()
     {
         await factory.ResetAsync();
-        var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddMinutes(-10));
+        var seed = await SeedCustomerReservationAsync(factory.UtcNow.AddMinutes(-10));
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
         var issued = (await (await factory.PostWithCsrfAsync(
             $"/api/customer/reservations/{seed.ReservationId}/check-in-token", new { }))
             .Content.ReadFromJsonAsync<TokenPayload>())!;
         var detail = (await (await factory.Client.GetAsync($"/api/customer/reservations/{seed.ReservationId}")).Content
             .ReadFromJsonAsync<ReservationPayload>())!;
-        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var start = factory.UtcNow.AddHours(2);
         var response = await factory.PostWithCsrfAsync($"/api/customer/reservations/{seed.ReservationId}/reschedule",
             new { professionalId = seed.ProfessionalId, startAt = start, endAt = start.AddHours(1), concurrencyToken = detail.ConcurrencyToken });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -114,7 +114,7 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     public async Task Totem_qr_checkin_creates_one_waiting_visit_and_is_idempotent()
     {
         await factory.ResetAsync();
-        var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddMinutes(-10));
+        var seed = await SeedCustomerReservationAsync(factory.UtcNow.AddMinutes(-10));
         var recorder = factory.Services.GetRequiredService<GestaoPredio.Infrastructure.Notifications.DemoNotificationRecorder>();
         recorder.Clear();
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
@@ -167,7 +167,7 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     public async Task Administrative_cancellation_revokes_an_issued_qr_token()
     {
         await factory.ResetAsync();
-        var seed = await SeedCustomerReservationAsync(DateTimeOffset.UtcNow.AddMinutes(-10));
+        var seed = await SeedCustomerReservationAsync(factory.UtcNow.AddMinutes(-10));
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
         var issued = (await (await factory.PostWithCsrfAsync(
             $"/api/customer/reservations/{seed.ReservationId}/check-in-token", new { }))
@@ -192,7 +192,7 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
         var password = "Valid-Password-123!";
         var user = await factory.CreateUserAsync($"customer-{Guid.NewGuid():N}@lumis.test", password,
             [GestaoPredio.Domain.Security.SystemRoles.Customer], displayName: "Carlos Oliveira");
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala QR {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional QR", "Fisioterapia", $"659{Random.Shared.Next(10000000, 99999999)}", now);
         var customer = Customer.Create("Carlos Oliveira", "+5569999999999", now);

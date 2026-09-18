@@ -36,6 +36,8 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
         var current = (await (await factory.Client.GetAsync("/api/admin/operating-hours"))
             .Content.ReadFromJsonAsync<SchedulePayload>())!;
         Assert.Equal(created.ConcurrencyToken, current.ConcurrencyToken);
+        // A later edit gets a later UpdatedAt; with an unmoved frozen clock the schedule row would not change.
+        factory.AdvanceTime(TimeSpan.FromMinutes(1));
         var changed = await factory.PutWithCsrfAsync("/api/admin/operating-hours",
             ScheduleBody(created.ConcurrencyToken, mondayClose: "17:00"));
         changed.EnsureSuccessStatusCode();
@@ -116,15 +118,15 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
         var first = await SeedResourcesAsync();
         var second = await SeedResourcesAsync();
         var reservation = Reservation.CreateApproved(first.Room.Id, first.Professional.Id,
-            MondayAtEight, MondayAtEight.AddHours(1), "seed", DateTimeOffset.UtcNow);
+            MondayAtEight, MondayAtEight.AddHours(1), "seed", factory.UtcNow);
         var lease = Lease.Create(second.Tenant.Id, second.Professional.Id, second.Room.Id,
-            LeaseMode.Hourly, 100, DateTimeOffset.UtcNow, null,
-            MondayAtEight, MondayAtEight.AddHours(1), null, DateTimeOffset.UtcNow);
+            LeaseMode.Hourly, 100, factory.UtcNow, null,
+            MondayAtEight, MondayAtEight.AddHours(1), null, factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             db.AddRange(reservation, lease,
-                LeaseOccurrence.Create(lease.Id, MondayAtEight, MondayAtEight.AddHours(1), DateTimeOffset.UtcNow));
+                LeaseOccurrence.Create(lease.Id, MondayAtEight, MondayAtEight.AddHours(1), factory.UtcNow));
             await db.SaveChangesAsync();
         }
         await LoginAsync(SystemRoles.Gerente);
@@ -144,7 +146,7 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var room = await db.Rooms.SingleAsync(value => value.Id == first.Room.Id);
-            room.Deactivate(DateTimeOffset.UtcNow);
+            room.Deactivate(factory.UtcNow);
             db.Reservations.Remove(reservation);
             await db.SaveChangesAsync();
         }
@@ -264,7 +266,7 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
         var reserved = await SeedResourcesAsync();
         var leaseResources = await SeedResourcesAsync();
         var reservation = Reservation.CreateApproved(reserved.Room.Id, reserved.Professional.Id,
-            MondayAtEight, MondayAtEight.AddHours(1), "seed", DateTimeOffset.UtcNow);
+            MondayAtEight, MondayAtEight.AddHours(1), "seed", factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -328,7 +330,7 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
 
     private async Task<(Tenant Tenant, Professional Professional, Room Room)> SeedResourcesAsync()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create($"Locatário {Guid.NewGuid():N}", TenantKind.Individual, now);
         var professional = Professional.Create($"Profissional {Guid.NewGuid():N}", "Teste", "65999990002", now);
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 100, 500, now);

@@ -17,7 +17,7 @@ namespace GestaoPredio.IntegrationTests;
 [Collection(ModulesDatabaseCollection.Name)]
 public sealed class ReschedulingApiTests(ModulesApiFactory factory)
 {
-    private static readonly DateOnly Date = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+    private DateOnly Date => DateOnly.FromDateTime(factory.UtcNow.UtcDateTime).AddDays(30);
 
     [Fact]
     public async Task Resolve_returns_the_reschedule_context_without_pii()
@@ -122,7 +122,7 @@ public sealed class ReschedulingApiTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var blocker = Reservation.CreateApproved(seed.Room.Id, seed.Professional.Id, startAt, endAt,
-                "seed", DateTimeOffset.UtcNow);
+                "seed", factory.UtcNow);
             db.Reservations.Add(blocker);
             await db.SaveChangesAsync();
             blockerId = blocker.Id;
@@ -162,7 +162,7 @@ public sealed class ReschedulingApiTests(ModulesApiFactory factory)
 
     private async Task<Seed> SeedCancelledReservationAsync(bool expired = false, bool totemCustomer = false)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var schedule = OperatingHoursSchedule.Create(now);
         var professional = Professional.Create("Reagendar API", "Fisioterapia",
             $"699{Random.Shared.Next(10000000, 99999999)}", now);

@@ -62,7 +62,7 @@ public sealed class ProfessionalAvailabilityReservationMutationTests(ModulesApiF
 
     private async Task<(Professional Professional, Room Room)> SeedResourcesAsync(bool custom, bool addCustomMonday)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Profissional Agenda", "Terapia", $"699{Random.Shared.Next(10000000, 99999999)}", now);
         if (custom) professional.SetAvailabilityMode(ProfessionalAvailabilityMode.Custom, now);
         var room = Room.Create($"Sala Agenda {Guid.NewGuid():N}", null, 3, 75m, now);
@@ -78,7 +78,7 @@ public sealed class ProfessionalAvailabilityReservationMutationTests(ModulesApiF
 
     private async Task SeedOperatingHoursAsync()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var schedule = OperatingHoursSchedule.Create(now);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

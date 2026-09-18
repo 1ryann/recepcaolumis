@@ -43,7 +43,7 @@ public sealed partial class CheckInManualCodeTests(ModulesApiFactory factory)
 
         Assert.Matches(new Regex("^\\d{6}$"), issue.ManualCode);
         Assert.NotEqual(issue.ManualCode, issue.Token);
-        Assert.True(issue.ExpiresAt > DateTimeOffset.UtcNow, "the issued credential must not already be expired");
+        Assert.True(issue.ExpiresAt > factory.UtcNow, "the issued credential must not already be expired");
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -493,8 +493,8 @@ internal static class CheckInManualCodeFixtureExtensions
         var user = await factory.CreateUserAsync($"checkin-{Guid.NewGuid():N}@lumis.test", password,
             [SystemRoles.Customer], displayName: "Cliente Check-in");
 
-        var now = DateTimeOffset.UtcNow;
-        var startAt = DateTimeOffset.UtcNow.AddMinutes(-10); // check-in window is open now
+        var now = factory.UtcNow;
+        var startAt = factory.UtcNow.AddMinutes(-10); // check-in window is open now
         var room = Room.Create($"Sala Check-in {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional Check-in", "Fisioterapia",
             $"659{Random.Shared.Next(10_000_000, 99_999_999)}", now);
@@ -528,7 +528,7 @@ internal static class CheckInManualCodeFixtureExtensions
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.CheckInTokens
             .Where(x => x.ReservationId == ctx.ReservationId)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddHours(-1)));
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ExpiresAt, factory.UtcNow.AddHours(-1)));
 
         return new StaleCheckInContext(issue.ManualCode, ctx.ReservationId);
     }

@@ -22,7 +22,7 @@ public sealed class ProfessionalReservationRangeTests(ModulesApiFactory factory)
         var seed = await SeedProfessionalWithReservationsAsync(todayCount: 3, otherDayCount: 5);
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, Password)).StatusCode);
 
-        var from = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        var from = new DateTimeOffset(factory.UtcNow.UtcDateTime.Date, TimeSpan.Zero);
         var to = from.AddDays(1);
         var page = await factory.Client.GetFromJsonAsync<PagedReservations>(
             $"/api/professional/reservations?status=all&from={Iso(from)}&to={Iso(to)}&page=1&pageSize=1");
@@ -39,7 +39,7 @@ public sealed class ProfessionalReservationRangeTests(ModulesApiFactory factory)
         var seed = await SeedProfessionalWithReservationsAsync(todayCount: 1, otherDayCount: 1);
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, Password)).StatusCode);
 
-        var to = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        var to = new DateTimeOffset(factory.UtcNow.UtcDateTime.Date, TimeSpan.Zero);
         var from = to.AddDays(1);
         var response = await factory.Client.GetAsync(
             $"/api/professional/reservations?from={Iso(from)}&to={Iso(to)}");
@@ -110,12 +110,12 @@ public sealed class ProfessionalReservationRangeTests(ModulesApiFactory factory)
     {
         var user = await factory.CreateUserAsync($"prof-range-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Profissional range", "Fisioterapia", "+5565999999999", now);
         professional.LinkUser(user.Id, now);
         var room = Room.Create($"Sala range {Guid.NewGuid():N}", null, 10m, 50m, now);
 
-        var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        var today = new DateTimeOffset(factory.UtcNow.UtcDateTime.Date, TimeSpan.Zero);
         var reservations = new List<Reservation>();
         for (var i = 0; i < todayCount; i++)
         {

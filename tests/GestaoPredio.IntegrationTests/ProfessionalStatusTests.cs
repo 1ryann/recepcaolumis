@@ -41,6 +41,7 @@ public sealed class ProfessionalStatusTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await LoginAsAsync(role, $"status-{role.ToLowerInvariant()}@lumis.test");
         var created = await CreateAsync();
+        factory.AdvanceTime(TimeSpan.FromSeconds(1));
 
         var deactivatedResponse = await factory.PostWithCsrfAsync(
             $"/api/admin/professionals/{created.Id}/deactivate", new { concurrencyToken = created.ConcurrencyToken });
@@ -121,7 +122,7 @@ public sealed class ProfessionalStatusTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var professional = await db.Professionals.SingleAsync(x => x.Id == created.Id);
-            professional.LinkUser(linkedUser.Id, DateTimeOffset.UtcNow);
+            professional.LinkUser(linkedUser.Id, factory.UtcNow);
             await db.SaveChangesAsync();
         }
         var current = await GetAsync(created.Id);

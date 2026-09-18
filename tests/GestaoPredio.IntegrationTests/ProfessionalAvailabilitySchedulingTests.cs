@@ -17,7 +17,7 @@ public sealed class ProfessionalAvailabilitySchedulingTests(ModulesApiFactory fa
     public async Task Central_service_applies_mode_global_intersection_and_exceptions()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Agenda Central", "Psicologia", "69999990001", now);
         var room = Room.Create("Sala Agenda Central", null, 4, 100m, now);
         var schedule = OperatingHoursSchedule.Create(now);
@@ -65,7 +65,7 @@ public sealed class ProfessionalAvailabilitySchedulingTests(ModulesApiFactory fa
     public async Task Missing_operating_hours_fails_closed_for_query_and_confirmation()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Sem Expediente", "Clínica", "69999990002", now);
         var room = Room.Create("Sala Sem Expediente", null, 4, 100m, now);
         await using (var scope = factory.Services.CreateAsyncScope())

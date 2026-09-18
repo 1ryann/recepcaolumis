@@ -68,9 +68,12 @@ public sealed class ProfessionalUserLinkTests(ModulesApiFactory factory)
         var linked = await LinkAsync(professional, firstUser.Id);
         var same = await LinkAsync(linked, firstUser.Id);
         Assert.Equal(linked.ConcurrencyToken, same.ConcurrencyToken);
+        // Audits are asserted in OccurredAt order, so each audited operation must happen at a later instant.
+        factory.AdvanceTime(TimeSpan.FromSeconds(1));
         var replaced = await LinkAsync(same, secondUser.Id);
         Assert.NotEqual(same.ConcurrencyToken, replaced.ConcurrencyToken);
 
+        factory.AdvanceTime(TimeSpan.FromSeconds(1));
         var unlinkedResponse = await factory.DeleteWithCsrfAsync($"/api/admin/professionals/{professional.Id}/user-link",
             new { concurrencyToken = replaced.ConcurrencyToken });
         Assert.Equal(HttpStatusCode.OK, unlinkedResponse.StatusCode);

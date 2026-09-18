@@ -79,11 +79,26 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private readonly TestTimeProvider _clock = new();
 
-    /// <summary>The instant the server currently sees. Equals <see cref="DateTimeOffset.UtcNow"/> unless frozen.</summary>
+    /// <summary>
+    /// The instant every test starts from after <see cref="ResetAsync"/>: 08:00 on a Thursday in
+    /// America/Porto_Velho. Tests seed bookings relative to "now" (up to +14h plus a 1h slot), so a
+    /// wall-clock "now" made them fail whenever a slot crossed local midnight; a fixed morning anchor keeps
+    /// every relative slot inside the same civil day, whatever time the suite actually runs.
+    /// </summary>
+    public static readonly DateTimeOffset DefaultTestInstant = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The instant the server currently sees. Tests derive every timestamp from this, never from the wall clock.</summary>
     public DateTimeOffset UtcNow => _clock.GetUtcNow();
 
-    /// <summary>Pin the server clock to <paramref name="value"/> for a single test. Cleared by <see cref="ResetAsync"/>.</summary>
+    /// <summary>Pin the server clock to <paramref name="value"/> for a single test. <see cref="ResetAsync"/> re-pins it to <see cref="DefaultTestInstant"/>.</summary>
     public void FreezeTime(DateTimeOffset value) => _clock.Freeze(value);
+
+    /// <summary>
+    /// Move the frozen server clock forward. For tests that assert a later operation gets a later
+    /// timestamp (UpdatedAt, history order, timestamp-derived tokens): the frozen clock would otherwise
+    /// hand both operations the same instant.
+    /// </summary>
+    public void AdvanceTime(TimeSpan by) => _clock.Freeze(_clock.GetUtcNow() + by);
 
     /// <summary>Return the server to the real system clock.</summary>
     public void UnfreezeTime() => _clock.UseSystemClock();
@@ -181,7 +196,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     public async Task ResetAsync()
     {
-        UnfreezeTime();
+        FreezeTime(DefaultTestInstant);
         await using var scope = Services.CreateAsyncScope();
         await ResetDatabaseAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
         await EnsureRolesAsync(scope.ServiceProvider);
@@ -200,7 +215,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         if (await db.OperatingHoursSchedules.AnyAsync()) return;
-        var schedule = OperatingHoursSchedule.Create(DateTimeOffset.UtcNow);
+        var schedule = OperatingHoursSchedule.Create(UtcNow);
         db.OperatingHoursSchedules.Add(schedule);
         foreach (var day in Enum.GetValues<DayOfWeek>())
             db.OperatingHourIntervals.AddRange(OperatingHourInterval.CreateDay(schedule.Id, day,

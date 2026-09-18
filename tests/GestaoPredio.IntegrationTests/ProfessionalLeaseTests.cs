@@ -52,7 +52,7 @@ public sealed class ProfessionalLeaseTests(ModulesApiFactory factory)
 
     private async Task<(Guid Owned, Guid Foreign)> SeedLeasesAsync(string ownerUserId, string otherUserId)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create("Locatário", TenantKind.Individual, now);
         var room1 = Room.Create($"Sala {Guid.NewGuid():N}", null, 10m, 100m, now);
         var room2 = Room.Create($"Sala {Guid.NewGuid():N}", null, 10m, 100m, now);

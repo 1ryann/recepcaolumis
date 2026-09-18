@@ -27,10 +27,10 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         await LoginAsync(factory.Client, "photo-unavailable@lumis.test");
-        var professional = Professional.Create("Ana", "Fisio", "65999999999", DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Ana", "Fisio", "65999999999", factory.UtcNow);
         var metadata = PrivateFile.Create(Guid.NewGuid().ToString("N"), "image/png", 10,
-            PrivateFilePurposes.ProfessionalPhoto, DateTimeOffset.UtcNow);
-        professional.SetPhoto(metadata.Id, DateTimeOffset.UtcNow);
+            PrivateFilePurposes.ProfessionalPhoto, factory.UtcNow);
+        professional.SetPhoto(metadata.Id, factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -52,7 +52,7 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var admin = await factory.CreateUserAsync("photo-race@lumis.test", Password, [SystemRoles.Administrador]);
-        var professional = Professional.Create("Race", "Fisio", "65999999999", DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Race", "Fisio", "65999999999", factory.UtcNow);
         Guid previousFileId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -62,9 +62,9 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
             var staged = await storage.StageAsync(source, 5 * 1024 * 1024, CancellationToken.None);
             var key = await storage.CommitAsync(staged, CancellationToken.None);
             var previousFile = PrivateFile.Create(key, "image/png", TestImageData.Png().Length,
-                PrivateFilePurposes.ProfessionalPhoto, DateTimeOffset.UtcNow);
+                PrivateFilePurposes.ProfessionalPhoto, factory.UtcNow);
             previousFileId = previousFile.Id;
-            professional.SetPhoto(previousFile.Id, DateTimeOffset.UtcNow);
+            professional.SetPhoto(previousFile.Id, factory.UtcNow);
             db.PrivateFiles.Add(previousFile);
             db.Professionals.Add(professional);
             await db.SaveChangesAsync();
@@ -115,7 +115,7 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var admin = await factory.CreateUserAsync("photo-cleanup@lumis.test", Password, [SystemRoles.Administrador]);
-        var professional = Professional.Create("Cleanup", "Fisio", "65999999999", DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Cleanup", "Fisio", "65999999999", factory.UtcNow);
         string previousKey;
         Guid previousFileId;
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -125,9 +125,9 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
             var staged = await storage.StageAsync(source, 5 * 1024 * 1024, CancellationToken.None);
             previousKey = await storage.CommitAsync(staged, CancellationToken.None);
             var previous = PrivateFile.Create(previousKey, "image/png", TestImageData.Png().Length,
-                PrivateFilePurposes.ProfessionalPhoto, DateTimeOffset.UtcNow);
+                PrivateFilePurposes.ProfessionalPhoto, factory.UtcNow);
             previousFileId = previous.Id;
-            professional.SetPhoto(previous.Id, DateTimeOffset.UtcNow);
+            professional.SetPhoto(previous.Id, factory.UtcNow);
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             db.AddRange(previous, professional);
             await db.SaveChangesAsync();
@@ -175,7 +175,7 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var admin = await factory.CreateUserAsync("photo-restage-failure@lumis.test", Password, [SystemRoles.Administrador]);
-        var professional = Professional.Create("Restage", "Fisio", "65999999999", DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Restage", "Fisio", "65999999999", factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -248,7 +248,8 @@ public sealed class ProfessionalPhotoFailureTests(ModulesApiFactory factory)
             await using var scope = scopes.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var entity = await db.Professionals.SingleAsync(x => x.Id == professionalId, ct);
-            entity.Update(entity.Name, entity.Profession, entity.WhatsApp, DateTimeOffset.UtcNow.AddSeconds(1));
+            entity.Update(entity.Name, entity.Profession, entity.WhatsApp,
+                scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow().AddSeconds(1));
             await db.SaveChangesAsync(ct);
             return key;
         }

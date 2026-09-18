@@ -19,7 +19,7 @@ public sealed class ReservationConflictTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create("Sala Reserva", null, 10, 50, now);
         var professional = Professional.Create("Ana Reserva", "Fisioterapia", "+5565999999999", now);
         db.AddRange(room, professional);
@@ -49,7 +49,7 @@ public sealed class ReservationConflictTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create("Sala Locação", null, 10, 50, now);
         var professional = Professional.Create("Bruno Locação", "Psicologia", "+5565988888888", now);
         var tenant = Tenant.Create("Locatário", TenantKind.Individual, now);
@@ -84,7 +84,7 @@ public sealed class ReservationConflictTests(ModulesApiFactory factory)
         var detector = new PostgreSqlReservationConflictDetector(db);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => detector.FindConflictAsync(
-            Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(1),
+            Guid.NewGuid(), Guid.NewGuid(), factory.UtcNow, factory.UtcNow.AddHours(1),
             null, CancellationToken.None));
     }
 }

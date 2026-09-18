@@ -129,7 +129,7 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var room = await db.Rooms.SingleAsync(x => x.Id == resources.Room.Id);
-        room.Deactivate(DateTimeOffset.UtcNow);
+        room.Deactivate(factory.UtcNow);
         await db.SaveChangesAsync();
         Assert.Equal(HttpStatusCode.BadRequest,
             (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).StatusCode);
@@ -213,7 +213,7 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var lease = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
             LeaseMode.Hourly, 120m, now.AddDays(-2), null, now.AddHours(-1), now.AddHours(3), null, now.AddDays(-2));
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -250,7 +250,7 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var current = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
             LeaseMode.Hourly, 100m, now.AddDays(-1), null, now.AddHours(-1), now.AddHours(1), null, now.AddDays(-1));
         var future = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
@@ -279,7 +279,7 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var expired = Lease.Create(resources.Tenant.Id, resources.Professional.Id, resources.Room.Id,
             LeaseMode.Hourly, 100m, now.AddDays(-2), null, now.AddDays(-1).AddHours(-1), now.AddDays(-1), null, now.AddDays(-2));
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -298,14 +298,14 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
         Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.TargetEntityId == expired.Id && x.Action == "LEASE_ENDED"));
     }
 
-    private static CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(
+    private CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(
         value.Tenant.Id, value.Professional.Id, value.Room.Id, "HOURLY", 150.50m,
-        DateTimeOffset.UtcNow.AddDays(-1), 10, DateTimeOffset.UtcNow.AddDays(1),
-        DateTimeOffset.UtcNow.AddDays(1).AddHours(2));
+        factory.UtcNow.AddDays(-1), 10, factory.UtcNow.AddDays(1),
+        factory.UtcNow.AddDays(1).AddHours(2));
 
     private async Task<(Tenant Tenant, Professional Professional, Room Room)> SeedResourcesAsync()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create("Locatário Teste", TenantKind.Individual, now);
         var professional = Professional.Create("Profissional Teste", "Teste", "65999990002", now);
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 100m, 500m, now);

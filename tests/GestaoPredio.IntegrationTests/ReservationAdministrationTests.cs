@@ -21,7 +21,7 @@ public sealed class ReservationAdministrationTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
         await LoginAsync(SystemRoles.Gerente);
-        var start = DateTimeOffset.UtcNow.AddDays(2);
+        var start = factory.UtcNow.AddDays(2);
 
         var response = await factory.PostWithCsrfAsync("/api/admin/reservations",
             new { resources.RoomId, resources.ProfessionalId, startAt = start, endAt = start.AddHours(1) });
@@ -52,7 +52,7 @@ public sealed class ReservationAdministrationTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
         await LoginAsync(SystemRoles.Administrador);
-        var start = DateTimeOffset.UtcNow.AddDays(2);
+        var start = factory.UtcNow.AddDays(2);
         var body = new { resources.RoomId, resources.ProfessionalId, startAt = start, endAt = start.AddHours(1) };
         (await factory.PostWithCsrfAsync("/api/admin/reservations", body)).EnsureSuccessStatusCode();
 
@@ -71,7 +71,7 @@ public sealed class ReservationAdministrationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var resources = await SeedResourcesAsync();
-        var start = DateTimeOffset.UtcNow.AddDays(2);
+        var start = factory.UtcNow.AddDays(2);
         var body = new { resources.RoomId, resources.ProfessionalId, startAt = start, endAt = start.AddHours(1) };
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await factory.PostWithCsrfAsync("/api/admin/reservations", body)).StatusCode);
@@ -94,7 +94,7 @@ public sealed class ReservationAdministrationTests(ModulesApiFactory factory)
     private async Task<(Guid RoomId, Guid ProfessionalId)> SeedResourcesAsync()
     {
         await factory.SeedDefaultOperatingHoursAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional Reserva", "Fisioterapia", "+5565999999999", now);
         await using var scope = factory.Services.CreateAsyncScope();

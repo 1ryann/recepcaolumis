@@ -209,7 +209,7 @@ public sealed class ProfessionalSelfPhotoTests(ModulesApiFactory factory)
             HandleCookies = true
         });
         var userB = await factory.CreateUserAsync("self-photo-b@lumis.test", Password, [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professionalB = Professional.Create("Beto", "Fisio", "+5511988887777", now);
         professionalB.LinkUser(userB.Id, now);
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -244,7 +244,7 @@ public sealed class ProfessionalSelfPhotoTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         using var childFactory = factory.WithConfig(("RateLimiting:PhotoUploadIdentifierPermitLimit", "1"));
         var user = await factory.CreateUserAsync("self-photo-ratelimit@lumis.test", Password, [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Rate", "Fisio", "+5511977776666", now);
         professional.LinkUser(user.Id, now);
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -276,7 +276,7 @@ public sealed class ProfessionalSelfPhotoTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var user = await factory.CreateUserAsync("self-photo-midflight@lumis.test", Password, [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Mid", "Fisio", "+5511966665555", now);
         professional.LinkUser(user.Id, now);
         Guid previousFileId;
@@ -334,7 +334,7 @@ public sealed class ProfessionalSelfPhotoTests(ModulesApiFactory factory)
     private async Task<Professional> CreateLinkedProfessionalAsync(string email)
     {
         var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Ana Souza", "Fisioterapia", "+5511999999999", now);
         professional.LinkUser(user.Id, now);
         await using (var scope = factory.Services.CreateAsyncScope())

@@ -112,8 +112,8 @@ public sealed class UserPasswordResetTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var target = await CreateTargetAsync(roles: [SystemRoles.Profissional], mustChangePassword: false);
 
-        var professional = Professional.Create("Alvo Vinculado", "Fisio", "65999990007", DateTimeOffset.UtcNow);
-        professional.LinkUser(target.Id, DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Alvo Vinculado", "Fisio", "65999990007", factory.UtcNow);
+        professional.LinkUser(target.Id, factory.UtcNow);
         string stampBefore;
         await using (var scope = factory.Services.CreateAsyncScope())
         {

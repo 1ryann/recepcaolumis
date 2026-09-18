@@ -25,7 +25,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var beatriz = Professional.Create("Beatriz Silva", "Nutricionista", "+5569999990001", now);
             var ana = Professional.Create("Ana Souza", "Fisioterapeuta", "+5569999990002", now);
             var inactive = Professional.Create("Zeca Inativo", "Psicólogo", "+5569999990003", now);
@@ -62,7 +62,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var a = Professional.Create("A Atende", "X", "+5569999991001", now);
             var b = Professional.Create("B Presente", "X", "+5569999991002", now);
             var c = Professional.Create("C Ausente", "X", "+5569999991003", now);
@@ -94,7 +94,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var p = Professional.Create("So Presenca", "X", "+5569999992001", now);
             db.Professionals.Add(p);
             db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(p.Id, now));
@@ -115,7 +115,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var p = Professional.Create("Com Foto", "X", "+5569999993001", now);
             // Adapted: PhotoFileId is a real FK to PrivateFiles, so seed the file row first.
             var photo = PrivateFile.Create(Guid.NewGuid().ToString("N"), "image/png", 10,
@@ -141,7 +141,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var professional = Professional.Create("Test Professional", "X", "+5569999995001", now);
             var photoFileId = await SeedPhotoFileAsync(db);
             professional.SetPhoto(photoFileId, now);
@@ -168,7 +168,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             var a = Professional.Create("Ativo Foto", "X", "+5569999994001", now);
             var b = Professional.Create("Inativo Foto", "X", "+5569999994002", now);
             var c = Professional.Create("Ativo Sem Foto", "X", "+5569999994003", now);
@@ -200,7 +200,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Ativo Foto Rotulo Errado", "X", "+5569999994101", now);
         var photoId = await SeedPhotoFileAsync(db);
         professional.SetPhoto(photoId, now);
@@ -262,7 +262,7 @@ public sealed class TotemProfessionalsCarouselTests(ModulesApiFactory factory)
         var staged = await storage.StageAsync(source, 5 * 1024 * 1024, CancellationToken.None);
         var key = await storage.CommitAsync(staged, CancellationToken.None);
         var file = PrivateFile.Create(key, "image/png", bytes.Length,
-            PrivateFilePurposes.ProfessionalPhoto, DateTimeOffset.UtcNow);
+            PrivateFilePurposes.ProfessionalPhoto, factory.UtcNow);
         db.PrivateFiles.Add(file);
         return file.Id;
     }

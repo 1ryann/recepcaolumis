@@ -49,8 +49,8 @@ public sealed class EligibleProfessionalUserTests(ModulesApiFactory factory)
         await factory.CreateUserAsync("prof-admin@lumis.test", Password, [SystemRoles.Profissional, SystemRoles.Administrador], displayName: "Ana Mixed Admin");
         await factory.CreateUserAsync("inactive-prof@lumis.test", Password, [SystemRoles.Profissional], isActive: false, displayName: "Ana Inactive");
         var linked = await factory.CreateUserAsync("linked-prof@lumis.test", Password, [SystemRoles.Profissional], displayName: "Ana Linked");
-        var professional = Professional.Create("Linked", "Fisio", "65999999999", DateTimeOffset.UtcNow);
-        professional.LinkUser(linked.Id, DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Linked", "Fisio", "65999999999", factory.UtcNow);
+        professional.LinkUser(linked.Id, factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

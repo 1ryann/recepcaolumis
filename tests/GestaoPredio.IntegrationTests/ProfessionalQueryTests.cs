@@ -47,11 +47,11 @@ public sealed class ProfessionalQueryTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         await SeedAsync(
-            Professional.Create("Ána Zeta", "Fisióterapia", "65999999991", DateTimeOffset.UtcNow),
-            Professional.Create("ana Alfa", "FISIOTERAPIA", "65999999992", DateTimeOffset.UtcNow),
-            Professional.Create("Bruno", "Odontologia", "65999999993", DateTimeOffset.UtcNow));
-        var inactive = Professional.Create("Ana Inativa", "Fisioterapia", "65999999994", DateTimeOffset.UtcNow);
-        inactive.Deactivate(DateTimeOffset.UtcNow);
+            Professional.Create("Ána Zeta", "Fisióterapia", "65999999991", factory.UtcNow),
+            Professional.Create("ana Alfa", "FISIOTERAPIA", "65999999992", factory.UtcNow),
+            Professional.Create("Bruno", "Odontologia", "65999999993", factory.UtcNow));
+        var inactive = Professional.Create("Ana Inativa", "Fisioterapia", "65999999994", factory.UtcNow);
+        inactive.Deactivate(factory.UtcNow);
         await SeedAsync(inactive);
         await LoginAsAsync(SystemRoles.Administrador, "admin-search@lumis.test");
 
@@ -98,7 +98,7 @@ public sealed class ProfessionalQueryTests(ModulesApiFactory factory)
     public async Task Detail_returns_approved_projection_only_and_missing_is_not_found()
     {
         await factory.ResetAsync();
-        var professional = Professional.Create("Ana", "Psicóloga", "(65) 99999-9999", DateTimeOffset.UtcNow);
+        var professional = Professional.Create("Ana", "Psicóloga", "(65) 99999-9999", factory.UtcNow);
         await SeedAsync(professional);
         await LoginAsAsync(SystemRoles.Administrador, "admin-detail@lumis.test");
 

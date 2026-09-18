@@ -16,7 +16,8 @@ public sealed class WhatsappMessagePersistenceTests(ModulesApiFactory factory)
     private const string MessageId = "wamid.HBgMNTU2OTk5NTM4MDA3FQIAERgSMUZFRkQwNDFEMkE5QzA4NUEwAA==";
     private const string PhoneNumberId = "1004060849466823";
     private const string WabaId = "1500039464855591";
-    private static readonly DateTimeOffset Start = new(2026, 9, 17, 18, 0, 0, TimeSpan.Zero);
+    // Just before the server's frozen clock, so server-stamped UpdatedAt is never earlier than CreatedAt.
+    private static readonly DateTimeOffset Start = ModulesApiFactory.DefaultTestInstant.AddMinutes(-30);
 
     [Fact]
     public async Task Accepted_send_is_persisted_once_even_if_the_same_wamid_is_recorded_again()

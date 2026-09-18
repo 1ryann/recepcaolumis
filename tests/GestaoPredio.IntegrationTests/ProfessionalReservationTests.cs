@@ -27,7 +27,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seeded = await SeedLinkedProfessionalsAsync();
-        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var start = factory.UtcNow.AddHours(2);
         await LoginAsync(seeded.OwnerEmail);
 
         var response = await factory.PostWithCsrfAsync("/api/professional/reservations",
@@ -59,7 +59,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var seeded = await SeedLinkedProfessionalsAsync();
         await LoginAsync(seeded.OwnerEmail);
-        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var start = factory.UtcNow.AddHours(2);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await factory.PostWithCsrfAsync("/api/professional/reservations", new
             {
@@ -72,8 +72,8 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
         var tooSoon = await factory.PostWithCsrfAsync("/api/professional/reservations", new
         {
             roomId = seeded.OwnerRoomId,
-            startAt = DateTimeOffset.UtcNow.AddMinutes(30),
-            endAt = DateTimeOffset.UtcNow.AddHours(2)
+            startAt = factory.UtcNow.AddMinutes(30),
+            endAt = factory.UtcNow.AddHours(2)
         });
         Assert.Equal(HttpStatusCode.BadRequest, tooSoon.StatusCode);
         Assert.Equal("INVALID_RESERVATION", (await tooSoon.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
@@ -83,7 +83,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     public async Task Unlinked_professional_gets_empty_list_and_cannot_create()
     {
         await factory.ResetAsync();
-        var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, DateTimeOffset.UtcNow);
+        var room = Room.Create($"Sala {Guid.NewGuid():N}", null, 10, 50, factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -96,7 +96,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
         var page = (await (await factory.Client.GetAsync("/api/professional/reservations"))
             .Content.ReadFromJsonAsync<ReservationPage>())!;
         Assert.Empty(page.Items);
-        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var start = factory.UtcNow.AddHours(2);
         Assert.Equal(HttpStatusCode.NotFound,
             (await factory.PostWithCsrfAsync("/api/professional/reservations",
                 new { roomId = room.Id, startAt = start, endAt = start.AddHours(1) })).StatusCode);
@@ -107,7 +107,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seeded = await SeedLinkedProfessionalsAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -148,7 +148,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
             HandleCookies = true
         });
         await LoginAsync(client, seeded.OwnerEmail);
-        var start = DateTimeOffset.UtcNow.AddHours(2);
+        var start = factory.UtcNow.AddHours(2);
         var requestTask = PostWithCsrfAsync(client, "/api/professional/reservations",
             new { roomId = seeded.OwnerRoomId, startAt = start, endAt = start.AddHours(1) });
 
@@ -157,7 +157,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var professional = await db.Professionals.SingleAsync(value => value.Id == seeded.OwnerProfessionalId);
-            professional.UnlinkUser(DateTimeOffset.UtcNow);
+            professional.UnlinkUser(factory.UtcNow);
             await db.SaveChangesAsync();
         }
         blockingLock.Release.TrySetResult();
@@ -177,7 +177,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seeded = await SeedLinkedProfessionalsAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var customer = Customer.Create("Ana Beatriz", "+5565977777777", now);
         var reservation = Reservation.CreateApproved(seeded.OwnerRoomId, seeded.OwnerProfessionalId,
             now.AddDays(1), now.AddDays(1).AddHours(1), "admin", now, customer.Id);
@@ -207,7 +207,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seeded = await SeedLinkedProfessionalsAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var reservation = Reservation.CreateApproved(seeded.OwnerRoomId, seeded.OwnerProfessionalId,
             now.AddDays(1), now.AddDays(1).AddHours(1), "admin", now);
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -231,7 +231,7 @@ public sealed class ProfessionalReservationTests(ModulesApiFactory factory)
             [SystemRoles.Profissional]);
         var other = await factory.CreateUserAsync($"other-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var ownerProfessional = Professional.Create("Profissional dono", "Fisioterapia", "+5565999999999", now);
         ownerProfessional.LinkUser(owner.Id, now);
         var otherProfessional = Professional.Create("Outro profissional", "Psicologia", "+5565988888888", now);

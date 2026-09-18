@@ -102,7 +102,7 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, seed.Soon.Id, "Visitante", "seed",
-                DateTimeOffset.UtcNow.AddMinutes(-5), seed.CustomerId);
+                factory.UtcNow.AddMinutes(-5), seed.CustomerId);
             db.Visits.Add(visit);
             await db.SaveChangesAsync();
             visitId = visit.Id;
@@ -169,7 +169,7 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
     {
         var email = $"incident-{Guid.NewGuid():N}@lumis.test";
         var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Imprevisto API", "Fisioterapia",
             $"699{Random.Shared.Next(10000000, 99999999)}", now);
         professional.LinkUser(user.Id, now);
@@ -196,8 +196,8 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         var email = $"incident-noop-{Guid.NewGuid():N}@lumis.test";
         var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
         var professional = Professional.Create("Imprevisto Vazio", "Psicologia",
-            $"699{Random.Shared.Next(10000000, 99999999)}", DateTimeOffset.UtcNow);
-        professional.LinkUser(user.Id, DateTimeOffset.UtcNow);
+            $"699{Random.Shared.Next(10000000, 99999999)}", factory.UtcNow);
+        professional.LinkUser(user.Id, factory.UtcNow);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.Professionals.Add(professional);
@@ -209,7 +209,7 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(professionalId, DateTimeOffset.UtcNow.AddMinutes(-10)));
+        db.ProfessionalPresences.Add(ProfessionalPresence.StartByQr(professionalId, factory.UtcNow.AddMinutes(-10)));
         await db.SaveChangesAsync();
     }
 

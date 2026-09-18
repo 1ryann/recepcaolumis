@@ -21,7 +21,7 @@ public sealed class ProfessionalAvailabilityExceptionApiTests(ModulesApiFactory 
     public async Task Operations_manage_exceptions_with_overlap_concurrency_warning_and_audit()
     {
         await factory.ResetAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Exceção API", "Clínica", "69999993333", now);
         var room = Room.Create("Sala Exceção", null, 3, 80m, now);
         var schedule = OperatingHoursSchedule.Create(now);

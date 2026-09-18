@@ -121,10 +121,10 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var professional = await SeedProfessionalAsync();
         await SeedOperatingHoursAsync(new(8, 0), new(18, 0));
-        var room = Room.Create("Sala preservada", null, 4, 90m, DateTimeOffset.UtcNow);
+        var room = Room.Create("Sala preservada", null, 4, 90m, factory.UtcNow);
         var startAt = Utc(new DateOnly(2027, 1, 4), new TimeOnly(15, 0));
         var reservation = Reservation.CreateApproved(room.Id, professional.Id, startAt,
-            startAt.AddHours(1), "seed", DateTimeOffset.UtcNow);
+            startAt.AddHours(1), "seed", factory.UtcNow);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -151,8 +151,8 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
     private async Task<Professional> SeedProfessionalAsync(string? userId = null)
     {
         var professional = Professional.Create("Agenda API", "Psicologia",
-            $"699{Random.Shared.Next(10000000, 99999999)}", DateTimeOffset.UtcNow);
-        if (userId is not null) professional.LinkUser(userId, DateTimeOffset.UtcNow);
+            $"699{Random.Shared.Next(10000000, 99999999)}", factory.UtcNow);
+        if (userId is not null) professional.LinkUser(userId, factory.UtcNow);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.Professionals.Add(professional);
@@ -162,7 +162,7 @@ public sealed class ProfessionalAvailabilityApiTests(ModulesApiFactory factory)
 
     private async Task SeedOperatingHoursAsync(TimeOnly start, TimeOnly end)
     {
-        var schedule = OperatingHoursSchedule.Create(DateTimeOffset.UtcNow);
+        var schedule = OperatingHoursSchedule.Create(factory.UtcNow);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.OperatingHoursSchedules.Add(schedule);

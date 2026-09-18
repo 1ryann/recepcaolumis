@@ -41,11 +41,11 @@ public sealed class RoomQueryTests(ModulesApiFactory factory)
     public async Task Search_status_paging_and_normalized_order_are_stable()
     {
         await factory.ResetAsync();
-        var alpha = Room.Create("Sála Alfa", null, 10m, 20m, DateTimeOffset.UtcNow);
-        var beta = Room.Create("sala Beta", null, 10m, 20m, DateTimeOffset.UtcNow);
-        var inactive = Room.Create("Sala Inativa", null, 10m, 20m, DateTimeOffset.UtcNow);
-        inactive.Deactivate(DateTimeOffset.UtcNow);
-        await SeedAsync(alpha, beta, inactive, Room.Create("Consultório", null, 0m, 0m, DateTimeOffset.UtcNow));
+        var alpha = Room.Create("Sála Alfa", null, 10m, 20m, factory.UtcNow);
+        var beta = Room.Create("sala Beta", null, 10m, 20m, factory.UtcNow);
+        var inactive = Room.Create("Sala Inativa", null, 10m, 20m, factory.UtcNow);
+        inactive.Deactivate(factory.UtcNow);
+        await SeedAsync(alpha, beta, inactive, Room.Create("Consultório", null, 0m, 0m, factory.UtcNow));
         await LoginAsAsync(SystemRoles.Gerente, "room-query-search@lumis.test");
 
         var active = (await (await factory.Client.GetAsync(
@@ -79,7 +79,7 @@ public sealed class RoomQueryTests(ModulesApiFactory factory)
     public async Task Detail_returns_only_approved_fields_and_missing_is_not_found()
     {
         await factory.ResetAsync();
-        var room = Room.Create("Sala 1", "Clara", 100.50m, 800m, DateTimeOffset.UtcNow);
+        var room = Room.Create("Sala 1", "Clara", 100.50m, 800m, factory.UtcNow);
         await SeedAsync(room);
         await LoginAsAsync(SystemRoles.Administrador, "room-query-detail@lumis.test");
         var response = await factory.Client.GetAsync($"/api/admin/rooms/{room.Id}");

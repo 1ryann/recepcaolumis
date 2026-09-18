@@ -47,7 +47,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Visitante atual",
             seed.Manager.Id, now.AddHours(-2));
         visit.StartService(seed.Manager.Id, now.AddHours(-2).AddMinutes(5));
@@ -71,7 +71,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create("Clínica ocorrência", TenantKind.LegalEntity, now.AddDays(-2));
         var lease = Lease.Create(tenant.Id, seed.Professional.Id, seed.Room.Id, LeaseMode.Hourly,
             100, now.AddDays(-1), null, now.AddHours(-1), now.AddHours(2), null, now.AddDays(-1));
@@ -96,7 +96,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var tenant = Tenant.Create("Clínica Alfa", TenantKind.LegalEntity, now.AddDays(-10));
         var lease = Lease.Create(tenant.Id, seed.Professional.Id, seed.Room.Id, LeaseMode.Hourly,
             100, now.AddDays(-2), null, now.AddHours(-2), now.AddMinutes(-5), null, now.AddDays(-2));
@@ -128,7 +128,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stored = await db.Visits.SingleAsync(item => item.Id == visit.Id);
-            stored.End(seed.Manager.Id, DateTimeOffset.UtcNow);
+            stored.End(seed.Manager.Id, factory.UtcNow);
             await db.SaveChangesAsync();
         }
 
@@ -168,7 +168,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
             seed.Manager.Id, now.AddMinutes(-10));
         await AddAsync(visit);
@@ -190,7 +190,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
             seed.Manager.Id, now.AddMinutes(-10));
         await AddAsync(visit, ProfessionalPresence.StartByQr(seed.Professional.Id, now.AddMinutes(-15)));
@@ -208,7 +208,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now,
             TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho")).DateTime);
         var incident = ProfessionalAvailabilityException.Create(seed.Professional.Id, localDate, false,
@@ -235,7 +235,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var reservation = Reservation.CreateApproved(seed.Room.Id, seed.Professional.Id,
             now.AddMinutes(-30), now.AddMinutes(30), seed.Manager.Id, now.AddHours(-1));
         reservation.Cancel("PROFESSIONAL_INCIDENT", now, ReservationCancellationReason.ProfessionalUnavailable);
@@ -258,7 +258,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var waiting = Visit.Arrive(seed.Professional.Id, seed.Room.Id, null, "Cliente aguardando",
             seed.Manager.Id, now.AddMinutes(-10));
         var inService = Visit.Arrive(seed.OtherProfessional.Id, seed.Room.Id, null, "Cliente em atendimento",
@@ -295,7 +295,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
             [SystemRoles.Profissional]);
         var manager = await factory.CreateUserAsync($"alert-manager-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Gerente]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala alerta {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional alertas", "Fisioterapia", "+5565999999999", now);
         professional.LinkUser(owner.Id, now);
@@ -307,7 +307,7 @@ public sealed class OperationalAlertApiTests(ModulesApiFactory factory)
     private async Task<(Reservation Reservation, Visit Visit)> AddEndedReservationVisitAsync(
         Seed seed, bool startService)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var reservation = Reservation.CreateApproved(seed.Room.Id, seed.Professional.Id,
             now.AddHours(-2), now.AddMinutes(-5), seed.Manager.Id, now.AddHours(-3));
         var visit = Visit.Arrive(seed.Professional.Id, seed.Room.Id, reservation.Id, "Visitante",

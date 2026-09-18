@@ -26,12 +26,12 @@ public sealed class DashboardApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         var admin = await factory.CreateUserAsync($"dashboard-admin-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Administrador]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var room = Room.Create($"Sala dashboard {Guid.NewGuid():N}", null, 50m, 200m, now);
         var professional = Professional.Create("Profissional dashboard", "Fisioterapia", "+5565999999999", now);
         var tenant = Tenant.Create("Cliente dashboard", TenantKind.Individual, now.AddDays(-10));
         var lease = Lease.Create(tenant.Id, professional.Id, room.Id, LeaseMode.Hourly, 50m,
-            now.AddDays(-1), DateTimeOffset.UtcNow.Day, now.AddHours(-2), now.AddHours(2), null, now.AddDays(-1));
+            now.AddDays(-1), factory.UtcNow.Day, now.AddHours(-2), now.AddHours(2), null, now.AddDays(-1));
         var reservation = Reservation.CreateApproved(room.Id, professional.Id, now.AddMinutes(30),
             now.AddHours(1), admin.Id, now.AddMinutes(-5));
         var visit = Visit.Arrive(professional.Id, room.Id, reservation.Id, "Visitante dashboard", admin.Id,

@@ -88,7 +88,7 @@ public sealed class TotemPresenceApiTests(ModulesApiFactory factory)
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var now = DateTimeOffset.UtcNow;
+            var now = factory.UtcNow;
             db.ProfessionalPresenceTokens.Add(ProfessionalPresenceToken.Create(
                 professional.Id, SHA256.HashData(raw), now.AddMinutes(-10), now.AddMinutes(-5)));
             await db.SaveChangesAsync();
@@ -115,7 +115,7 @@ public sealed class TotemPresenceApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var present = Professional.Create("Presente Livre", "Fisioterapia", "69990000001", now);
         var absent = Professional.Create("Ausente", "Psicologia", "69990000002", now);
         var blocked = Professional.Create("Presente Bloqueado", "Nutrição", "69990000003", now);
@@ -174,8 +174,8 @@ public sealed class TotemPresenceApiTests(ModulesApiFactory factory)
         var email = $"totem-presence-{Guid.NewGuid():N}@lumis.test";
         var user = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional]);
         var professional = Professional.Create("Totem Presença", "Fisioterapia",
-            $"699{Random.Shared.Next(10000000, 99999999)}", DateTimeOffset.UtcNow);
-        professional.LinkUser(user.Id, DateTimeOffset.UtcNow);
+            $"699{Random.Shared.Next(10000000, 99999999)}", factory.UtcNow);
+        professional.LinkUser(user.Id, factory.UtcNow);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.Professionals.Add(professional);

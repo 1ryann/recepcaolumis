@@ -36,7 +36,7 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var prof = await factory.SeedActiveProfessionalAsync();
-        factory.FreezeTime(DateTimeOffset.UtcNow);
+        factory.FreezeTime(factory.UtcNow);
         var b = await CreateHandoffAsync(prof);
         var p = await factory.Client.PostAsJsonAsync($"/api/totem/booking-handoffs/{b.Id}/status", new { statusToken = b.StatusToken });
         Assert.Equal("PENDING", (await p.Content.ReadFromJsonAsync<StatusBody>())!.Status);
@@ -113,7 +113,7 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var prof = await factory.SeedActiveProfessionalAsync();
-        factory.FreezeTime(DateTimeOffset.UtcNow);
+        factory.FreezeTime(factory.UtcNow);
         var b = await CreateHandoffAsync(prof);
 
         // Move the server clock past the 5-minute window so the status handler's lazy-expiry
@@ -155,7 +155,7 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var prof = await factory.SeedActiveProfessionalAsync();
-        factory.FreezeTime(DateTimeOffset.UtcNow);
+        factory.FreezeTime(factory.UtcNow);
         var b = await CreateHandoffAsync(prof);
         factory.FreezeTime(factory.UtcNow.AddMinutes(6));   // both handlers will try to fold Pending -> Expired
 
@@ -300,14 +300,14 @@ public sealed class TotemBookingHandoffApiTests(ModulesApiFactory factory)
     }
 
     /// <summary>
-    /// The brief freezes <c>DateTimeOffset.UtcNow</c> directly; the domain normalizes persisted
+    /// The brief freezes <c>factory.UtcNow</c> directly; the domain normalizes persisted
     /// instants to microsecond precision, so an exact <c>ExpiresAt</c> / <c>StartedAt</c> equality
     /// assertion would be flaky against a sub-microsecond wall-clock tick. Anchoring the frozen
     /// clock to a whole second removes that without changing any window arithmetic.
     /// </summary>
-    private static DateTimeOffset SecondAlignedUtcNow()
+    private DateTimeOffset SecondAlignedUtcNow()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         return new DateTimeOffset(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
     }
 

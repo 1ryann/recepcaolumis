@@ -92,7 +92,7 @@ public sealed class ProfessionalProfileTests(ModulesApiFactory factory)
     {
         var user = await factory.CreateUserAsync($"prof-{Guid.NewGuid():N}@lumis.test", Password,
             [SystemRoles.Profissional]);
-        var now = DateTimeOffset.UtcNow;
+        var now = factory.UtcNow;
         var professional = Professional.Create("Ana Souza", "Fisioterapia", "+5511999999999", now);
         professional.LinkUser(user.Id, now);
         await using (var scope = factory.Services.CreateAsyncScope())
