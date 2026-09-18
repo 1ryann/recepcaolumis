@@ -282,7 +282,9 @@ Limite de 8 fotos: validado na aplicação antes do `INSERT` (`db.RoomPhotos.Cou
 | PUT | `/{roomId}/photos/reorder` | `AntiforgeryFilter` | `{ orderedPhotoIds: Guid[] }` — reescreve `SortOrder` de todas as fotos da sala numa transação |
 | POST | `/{roomId}/photos/{photoId}/cover` | `AntiforgeryFilter` | — (define esta como capa; desmarca a anterior na mesma transação) |
 
-Reaproveita `IProfessionalPhotoValidator`/`IImageNormalizer` (webp, mesmo limite de tamanho — novo `Storage:RoomPhotoMaxBytes`, sugestão de default igual ao de profissional, 5 MB, ajustável). Streaming de leitura (pública, para o catálogo) segue o padrão de `TotemEndpoints.ProfessionalPhoto`/`ProfessionalPhotoStreaming.StreamAsync`, cache `"public, max-age=31536000, immutable"`, URL versionada por `PhotoFileId` (`?v=<id>`) igual ao já usado — mesma lição do bug de cache do Totem já corrigido nesta branch.
+Reaproveita `IProfessionalPhotoValidator`/`IImageNormalizer` (webp, mesmo limite de tamanho — novo `Storage:RoomPhotoMaxBytes`, sugestão de default igual ao de profissional, 5 MB, ajustável). Streaming de leitura (pública, para o catálogo) segue o padrão de `TotemEndpoints.ProfessionalPhoto`/`ProfessionalPhotoStreaming.StreamAsync`, URL versionada por `PhotoFileId` (`?v=<id>`) igual ao já usado — mesma lição do bug de cache do Totem já corrigido nesta branch.
+
+**Cache público das fotos de sala (revisão 2026-09-18): `"public, max-age=3600"` — 1 hora, intencional.** Diferente da foto de profissional, a foto de sala só pode ser servida enquanto a sala estiver no catálogo público: quando um lease torna a sala `OCCUPIED` (§5.1), a rota pública passa a responder 404. Um cache `immutable` de 1 ano manteria essas fotos visíveis em navegadores e intermediários muito depois de a sala sair do catálogo; 1 hora limita essa janela. A URL versionada continua garantindo que uma foto trocada nunca reaproveite o cache da anterior. A rota Admin continua `"private, no-store"`.
 
 ### 6.4 UI Admin (`Rooms.tsx` + novo `RoomPhotoManager`)
 
@@ -436,7 +438,7 @@ Montada como `string`, então `Uri.EscapeDataString(...)` no parâmetro `text` �
 |---|---|---|---|
 | GET | `/api/totem/rooms` | `CustomerPublicRateLimiter` (reaproveitado) | → `PublicRoomCard[]` |
 | GET | `/api/totem/rooms/{id:guid}` | idem | → `PublicRoomDetail` |
-| GET | `/api/totem/rooms/{id:guid}/photos/{photoId:guid}` | idem (streaming de imagem, cache longo, mesmo padrão de foto de profissional) | binário |
+| GET | `/api/totem/rooms/{id:guid}/photos/{photoId:guid}` | idem (streaming de imagem, cache público de 1 hora — `public, max-age=3600`, intencional, ver §6.3) | binário |
 | POST | `/api/totem/rooms/{id:guid}/rental-inquiries` | `RoomRentalInquiryRateLimiter` (novo) | `RoomRentalInquiryRequest` → `RoomRentalInquiryResult(InquiryId, WhatsappUrl, PresentedAvailabilityLabel)` |
 
 Todas `.AllowAnonymous()`, todas registradas junto de `MapTotemEndpoints` (ou uma extensão nova `MapTotemRoomEndpoints`, mantendo `TotemEndpoints.cs` do tamanho atual — decisão de organização de arquivo, não afeta contrato).
