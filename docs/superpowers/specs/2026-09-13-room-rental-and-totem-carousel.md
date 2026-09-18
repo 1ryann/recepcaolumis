@@ -440,8 +440,10 @@ Montada como `string`, então `Uri.EscapeDataString(...)` no parâmetro `text` �
 |---|---|---|---|
 | GET | `/api/totem/rooms` | `CustomerPublicRateLimiter` (reaproveitado) | → `PublicRoomCard[]` |
 | GET | `/api/totem/rooms/{id:guid}` | idem | → `PublicRoomDetail` |
-| GET | `/api/totem/rooms/{id:guid}/photos/{photoId:guid}` | idem (streaming de imagem, cache público de 1 hora — `public, max-age=3600`, intencional, ver §6.3) | binário |
+| GET | `/api/totem/rooms/{id:guid}/photos/{photoId:guid}` | `RoomPhotoRateLimiter` (próprio — ver nota abaixo); streaming de imagem, cache público de 1 hora — `public, max-age=3600`, intencional, ver §6.3 | binário |
 | POST | `/api/totem/rooms/{id:guid}/rental-inquiries` | `RoomRentalInquiryRateLimiter` (novo) | `RoomRentalInquiryRequest` → `RoomRentalInquiryResult(InquiryId, WhatsappUrl, PresentedAvailabilityLabel)` |
+
+**Nota (revisão 2026-09-18) — limiter das fotos públicas:** a rota de bytes das fotos não usa o `CustomerPublicRateLimiter`. Uma galeria carrega várias imagens por visita, e dividir o mesmo orçamento do catálogo JSON fazia a navegação normal se autolimitar. Ela usa o limiter próprio `RoomPhotoRateLimiter`, com dois buckets (IP e foto): `RateLimiting:RoomPhotoIpPermitLimit` = 90, `RoomPhotoIdentifierPermitLimit` = 90, `RoomPhotoWindowSeconds` = 60 (`appsettings.json`). Esgotar um orçamento não afeta o outro (coberto por `PublicRoomCatalogTests`).
 
 Todas `.AllowAnonymous()`, todas registradas junto de `MapTotemEndpoints` (ou uma extensão nova `MapTotemRoomEndpoints`, mantendo `TotemEndpoints.cs` do tamanho atual — decisão de organização de arquivo, não afeta contrato).
 
@@ -464,7 +466,8 @@ Zero mudança em tabelas existentes além do CHECK de `PrivateFiles` (nenhuma co
 
 | Superfície | Auth | Rate limit | Antiforgery |
 |---|---|---|---|
-| `GET /api/totem/rooms`, `/{id}`, `/{id}/photos/{photoId}` | anônimo | `CustomerPublicRateLimiter` | não (sem sessão) |
+| `GET /api/totem/rooms`, `/{id}` | anônimo | `CustomerPublicRateLimiter` | não (sem sessão) |
+| `GET /api/totem/rooms/{id}/photos/{photoId}` | anônimo | `RoomPhotoRateLimiter` (próprio, ver §9) | não (sem sessão) |
 | `POST /api/totem/rooms/{id}/rental-inquiries` | anônimo | `RoomRentalInquiryRateLimiter` (novo, mais restritivo) | não (sem sessão) |
 | `GET/POST/DELETE/PUT /api/admin/rooms/{id}/photos*` | `"Operations"` | não (mesma convenção do CRUD de salas hoje, que também não tem rate limiter dedicado) | sim, mutações |
 | `GET /api/admin/room-rental-inquiries`, `/{id:guid}` | `"Operations"` | não (leitura autenticada) | não (GET) |
@@ -508,7 +511,7 @@ Nenhuma alteração nas políticas de autorização existentes (`"Operations"`, 
 7. **`HourlyRate`/`DailyRate` removidos de `PublicRoomCard`/`PublicRoomDetail`** — o fluxo público é de interesse, não de preço/contratação online. `RoomResponse` (Admin) continua com os valores normalmente.
 8. O backend monta e devolve a URL final do WhatsApp; o frontend nunca hardcoda nem monta essa URL.
 9. **A experiência pós-interesse é uma tela própria "Continue no WhatsApp" com QR Code** (reaproveitando a geração de QR de `TotemHandoff.tsx`, sem a máquina de polling/status/expiração daquela tela, que não se aplica aqui) — não um `window.open` isolado como a versão anterior desta spec propunha.
-10. Novo rate limiter dedicado só para o `POST` de interesse; leitura pública reaproveita `CustomerPublicRateLimiter` como o resto do Totem já faz.
+10. Novo rate limiter dedicado para o `POST` de interesse; a leitura pública de lista/detalhe reaproveita `CustomerPublicRateLimiter` como o resto do Totem já faz. **Revisão 2026-09-18:** os bytes das fotos públicas usam um limiter próprio, `RoomPhotoRateLimiter` (ver §9).
 11. **Arquitetura de touch do carrossel** muda de Pointer Events customizados para scroll nativo + `scroll-snap`, **reaproveitando a derivação `onScroll`+`requestAnimationFrame` já existente e correta** — `IntersectionObserver` foi removido desta spec por não ser necessário (a lógica atual de achar o card mais próximo do centro nunca foi a causa do bug). `touch-action: pan-x pan-y` explicitamente, nunca um valor que bloqueie pan vertical.
 12. Ajuste visual (carrossel maior, palco mais para baixo) é resolvido por estrutura/`clamp()`/`gap`/`min-height`, nunca por `position:absolute`/`transform` arbitrário — conforme pedido explícito.
 13. **Configuração do WhatsApp do Financeiro**: obrigatória via `ValidateOnStart()` só em staging/produção (não em Development, que não pode quebrar por appsettings versionado vazio); testes usam configuração própria, nunca dependem do valor real; número real nunca commitado; qualquer mudança futura de variável de ambiente no Railway exige autorização explícita separada.
