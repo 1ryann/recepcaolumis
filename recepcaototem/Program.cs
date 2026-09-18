@@ -17,6 +17,7 @@ using GestaoPredio.Infrastructure.Finance;
 using GestaoPredio.Infrastructure.Dashboard;
 using GestaoPredio.Infrastructure.Notifications;
 using GestaoPredio.Infrastructure.AccessControl;
+using GestaoPredio.Infrastructure.Whatsapp;
 using GestaoPredio.Infrastructure.Customers;
 using GestaoPredio.Application.Customers;
 using GestaoPredio.Application.Leases;
@@ -53,6 +54,7 @@ using recepcaototem.Features.Totem;
 using recepcaototem.Features.Reception;
 using recepcaototem.Features.AccessControl;
 using recepcaototem.Features.ProfessionalRegistrations;
+using recepcaototem.Features.Whatsapp;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -116,6 +118,7 @@ builder.Services.AddScoped<IFinancialSummaryReader, PostgreSqlFinancialSummaryRe
 builder.Services.AddScoped<IDashboardReader, PostgreSqlDashboardReader>();
 builder.Services.AddLumisNotifications(builder.Configuration, builder.Environment);
 builder.Services.AddLumisAccessControl(builder.Configuration, builder.Environment);
+builder.Services.AddLumisWhatsApp(builder.Configuration, builder.Environment);
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -220,6 +223,7 @@ app.MapTotemRoomEndpoints();
 app.MapRoomRentalInquiryEndpoints();
 app.MapReceptionEndpoints();
 app.MapAccessControlEndpoints();
+app.MapWhatsappEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

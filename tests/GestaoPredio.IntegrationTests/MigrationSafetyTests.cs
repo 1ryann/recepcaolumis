@@ -51,6 +51,43 @@ public sealed class MigrationSafetyTests
     }
 
     [Fact]
+    public void WhatsApp_migration_creates_only_its_own_table_with_the_unique_wamid_index()
+    {
+        using var db = new DesignTimeDbContextFactory().CreateDbContext([]);
+        var assembly = db.GetService<IMigrationsAssembly>();
+        var metadata = Assert.Single(assembly.Migrations, x => x.Key.EndsWith("_AddWhatsAppMessages", StringComparison.Ordinal));
+        Assert.True(string.CompareOrdinal(metadata.Key, "20260915231152_AddDesiredDatesToRoomRentalInquiry") > 0);
+        var migration = assembly.CreateMigration(metadata.Value, "Npgsql.EntityFrameworkCore.PostgreSQL");
+
+        var table = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>());
+        Assert.Equal("WhatsAppMessages", table.Name);
+        Assert.Empty(table.ForeignKeys);
+        Assert.Equal(["CK_WhatsAppMessages_Direction", "CK_WhatsAppMessages_FailureFields", "CK_WhatsAppMessages_Status"],
+            table.CheckConstraints.Select(x => x.Name).Order().ToArray());
+        Assert.DoesNotContain(table.Columns, x =>
+            x.Name.Contains("Token", StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Contains("Secret", StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Contains("Payload", StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Contains("Body", StringComparison.OrdinalIgnoreCase));
+        var unique = Assert.Single(migration.UpOperations.OfType<CreateIndexOperation>(), x => x.IsUnique);
+        Assert.Equal("UX_WhatsAppMessages_MessageId", unique.Name);
+        Assert.Equal(["MessageId"], unique.Columns);
+        Assert.All(migration.UpOperations, operation =>
+        {
+            switch (operation)
+            {
+                case CreateTableOperation created: Assert.Equal("WhatsAppMessages", created.Name); break;
+                case CreateIndexOperation index: Assert.Equal("WhatsAppMessages", index.Table); break;
+                default: Assert.Fail($"Unexpected migration operation: {operation.GetType().Name}"); break;
+            }
+            Assert.False(operation.IsDestructiveChange);
+        });
+        var dropped = Assert.Single(migration.DownOperations.OfType<DropTableOperation>());
+        Assert.Equal("WhatsAppMessages", dropped.Name);
+        Assert.Single(migration.DownOperations);
+    }
+
+    [Fact]
     public void Room_rental_SQL_preserves_existing_columns_and_history()
     {
         using var db = new DesignTimeDbContextFactory().CreateDbContext([]);

@@ -8,6 +8,7 @@ using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Tenants;
 using GestaoPredio.Domain.Visits;
+using GestaoPredio.Domain.Whatsapp;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.ProfessionalRegistrations;
 using GestaoPredio.Infrastructure.Identity;
@@ -42,6 +43,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<ProfessionalPresenceToken> ProfessionalPresenceTokens => Set<ProfessionalPresenceToken>();
  public DbSet<RescheduleToken> RescheduleTokens => Set<RescheduleToken>();
  public DbSet<TotemBookingHandoff> TotemBookingHandoffs => Set<TotemBookingHandoff>();
+ public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
  protected override void OnModelCreating(ModelBuilder builder) {
   base.OnModelCreating(builder);
   builder.HasPostgresExtension("extensions", "unaccent");
@@ -72,6 +74,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.ApplyConfiguration(new ProfessionalPresenceTokenConfiguration());
   builder.ApplyConfiguration(new RescheduleTokenConfiguration());
   builder.ApplyConfiguration(new TotemBookingHandoffConfiguration());
+  builder.ApplyConfiguration(new WhatsAppMessageConfiguration());
   // Preserve the existing Identity schema and composite key sizes.
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.LoginProvider).HasMaxLength(128);
   builder.Entity<IdentityUserLogin<string>>().Property(x => x.ProviderKey).HasMaxLength(128);

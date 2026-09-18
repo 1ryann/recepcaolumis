@@ -269,6 +269,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private static async Task ResetDatabaseAsync(ApplicationDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"WhatsAppMessages\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomRentalInquiries\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomPhotos\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"ProfessionalAvailabilityExceptions\"");
