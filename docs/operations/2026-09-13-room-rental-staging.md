@@ -13,9 +13,23 @@
 
 ## Status
 
-**PREPARAÇÃO LOCAL APROVADA.** **STAGING NÃO ALTERADO.** Nenhuma migration foi aplicada a nenhum banco real, nenhuma
-variável de ambiente foi lida ou alterada, nenhum push/deploy/PR foi executado. Todos os itens remotos abaixo
-permanecem **PENDENTES DE AUTORIZAÇÃO** explícita e separada.
+> **Atualização 2026-09-18 — este status foi superado.** O texto original de 2026-09-13 continua logo abaixo como
+> registro histórico. Estado atual, segundo confirmação do usuário (operador) nesta branch:
+>
+> - **Banco de staging (Supabase `xpblbvrmljtvyltvvnpd`):** todas as 17 migrations PostgreSQL da branch aplicadas.
+>   `20260914054052_RoomPhotosAndRentalInquiries` já constava como aplicada quando o estado real foi conferido;
+>   `20260915231152_AddDesiredDatesToRoomRentalInquiry` e `20260918020844_AddWhatsAppMessages` foram aplicadas
+>   depois, com autorização explícita do usuário, e validadas por ele no SQL Editor.
+> - **Código:** `origin/codex/reception-backend` está em `c4f5fe0`. Os commits locais posteriores (relógio fixo nos
+>   testes, período desejado na mensagem do WhatsApp, volta automática da tela de sucesso, ajustes no modal de Nova
+>   locação e documentação) **não foram enviados** — chegam ao staging só depois de um push autorizado.
+> - **Continuam sem confirmação registrada** (ver "Pendências para staging"): volume persistente de
+>   `Storage__PrivateFilesPath`, `Whatsapp__FinanceiroPhoneNumber` preenchido, preflight de grants `anon`/`authenticated`
+>   da Data API nas tabelas novas, backup/restauração, health e smoke do fluxo em staging.
+
+**Registro original (2026-09-13):** **PREPARAÇÃO LOCAL APROVADA.** **STAGING NÃO ALTERADO.** Nenhuma migration foi
+aplicada a nenhum banco real, nenhuma variável de ambiente foi lida ou alterada, nenhum push/deploy/PR foi executado.
+Todos os itens remotos abaixo permanecem **PENDENTES DE AUTORIZAÇÃO** explícita e separada.
 
 ## Tabela de gates
 
@@ -252,10 +266,14 @@ proíbe `Down`/rollback improvisado após dados reais.
 - `Whatsapp__FinanceiroPhoneNumber` com número real configurado em staging.
 - Preflight de grants do Supabase Data API para `RoomPhotos`/`RoomRentalInquiries`.
 - Backup do Supabase staging confirmado e restauração testada.
-- Aplicação da migration `20260914054052_RoomPhotosAndRentalInquiries` em staging (via Session pooler).
-- Verificação pós-migration (`__EFMigrationsHistory`, tabelas, checks, índices).
-- Deploy do commit em Railway e publicação do SHA correspondente.
+- ~~Aplicação da migration `20260914054052_RoomPhotosAndRentalInquiries` em staging (via Session pooler).~~
+  **Concluído** (atualização 2026-09-18): as 17 migrations estão aplicadas no staging, incluindo
+  `AddDesiredDatesToRoomRentalInquiry` e `AddWhatsAppMessages`, confirmadas pelo usuário.
+- ~~Verificação pós-migration (`__EFMigrationsHistory`, tabelas, checks, índices).~~ **Concluído** — validação feita
+  pelo usuário no SQL Editor do Supabase staging.
+- Push dos commits locais posteriores a `c4f5fe0`, deploy no Railway e publicação do SHA correspondente.
 - Checagem de `/health` e `/health/ready` em staging.
 - Smoke manual completo (catálogo, foto, formulário, QR/WhatsApp, Admin, conversão em locação).
 
-Nenhum desses itens foi executado, e nenhum será executado sem autorização explícita e separada do usuário.
+Com exceção das migrations e da verificação pós-migration (marcadas acima como concluídas pelo usuário), nenhum
+desses itens foi executado, e nenhum será executado sem autorização explícita e separada do usuário.
