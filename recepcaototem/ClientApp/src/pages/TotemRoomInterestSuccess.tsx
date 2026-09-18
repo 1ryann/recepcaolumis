@@ -1,5 +1,5 @@
 import QRCode from 'qrcode'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { LumisLogo } from '../theme/LumisLogo'
@@ -10,15 +10,17 @@ import { LumisLogo } from '../theme/LumisLogo'
 // state — never storage, never the URL — and `inquiryId` is deliberately not part of that
 // shape: nothing here shows or persists it.
 //
-// Unlike TotemHandoff.tsx, this screen is static once the QR renders: no polling, no
-// countdown/expiry, no auto-return timers — enforced by a test asserting
-// `vi.getTimerCount() === 0`. That is also why, unlike every other Totem screen, the
-// header does NOT include `KioskClock`: it self-schedules a 20s interval to keep the wall
-// clock live, which would make this the one screen that is not truly timer-free. The
-// only thing reused from TotemHandoff.tsx is the `qrcode` call pattern and its exact
+// Unlike TotemHandoff.tsx, this screen has no polling and no countdown/expiry. Its ONLY
+// timer is the privacy idle return: the QR encodes the visitor's name and WhatsApp, so on a
+// shared kiosk the screen must not stay up for the next person. After IDLE_RETURN_MS without
+// any touch, click or key press it goes back to /totem; every interaction restarts the wait,
+// so nobody still scanning is cut off. Every exit uses `replace`, which drops this history
+// entry (and the navigation state holding the visitor's data) — Back cannot bring the QR
+// back. The header still omits `KioskClock` (its 20s interval would add a second timer).
+// The only thing reused from TotemHandoff.tsx is the `qrcode` call pattern and its exact
 // `QR_OPTS`. A refresh loses `location.state` (same as TotemHandoff) — with no state, or
 // a `whatsappUrl` that fails validation, this bounces to `/totem/salas` rather than ever
-// handing an unvalidated target to `window.open`.
+// handing an unvalidated target to `window.open`; it never re-submits the inquiry.
 type RoomInterestNavState = {
   roomName: string
   whatsappUrl: string
@@ -26,6 +28,9 @@ type RoomInterestNavState = {
 }
 
 const QR_OPTS = { margin: 1, width: 320, color: { dark: '#181818', light: '#ffffff' } } as const
+
+export const IDLE_RETURN_MS = 45_000
+const INTERACTION_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
 function isValidWhatsappUrl(value: string): boolean {
   try {
@@ -65,7 +70,28 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
     return () => { cancelled = true }
   }, [state.whatsappUrl])
 
-  const openWhatsapp = () => window.open(state.whatsappUrl, '_blank', 'noopener,noreferrer')
+  // Leaving always replaces this entry: the QR state never stays in history.
+  const leave = useCallback((to: '/totem' | '/totem/salas') => navigate(to, { replace: true }), [navigate])
+
+  const idleTimer = useRef<number | undefined>(undefined)
+  const restartIdleTimer = useCallback(() => {
+    window.clearTimeout(idleTimer.current)
+    idleTimer.current = window.setTimeout(() => leave('/totem'), IDLE_RETURN_MS)
+  }, [leave])
+
+  useEffect(() => {
+    restartIdleTimer()
+    for (const type of INTERACTION_EVENTS) document.addEventListener(type, restartIdleTimer, { passive: true })
+    return () => {
+      window.clearTimeout(idleTimer.current)
+      for (const type of INTERACTION_EVENTS) document.removeEventListener(type, restartIdleTimer)
+    }
+  }, [restartIdleTimer])
+
+  const openWhatsapp = () => {
+    restartIdleTimer()
+    window.open(state.whatsappUrl, '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <main className="totem-room-interest">
@@ -75,7 +101,7 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
         <button
           type="button"
           className="totem-room-interest-logo-link"
-          onClick={() => navigate('/totem')}
+          onClick={() => leave('/totem')}
           aria-label="Voltar ao início"
         >
           <LumisLogo
@@ -111,13 +137,15 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
         </button>
 
         <div className="totem-room-interest-actions">
-          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate('/totem/salas')}>
+          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave('/totem/salas')}>
             ← Voltar para salas
           </button>
-          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate('/totem')}>
+          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave('/totem')}>
             Início
           </button>
         </div>
+
+        <p className="totem-room-interest-hint">Esta tela volta ao início após 45 segundos sem interação.</p>
       </div>
     </main>
   )
