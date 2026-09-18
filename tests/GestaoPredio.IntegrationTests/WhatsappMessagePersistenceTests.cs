@@ -170,7 +170,9 @@ public sealed class WhatsappMessagePersistenceTests(ModulesApiFactory factory)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var columns = await db.Database.SqlQuery<string>(
-            $"""SELECT column_name FROM information_schema.columns WHERE table_name = 'WhatsAppMessages'""").ToListAsync();
+            // Scoped to this test's own schema: once the migration is also applied to the base database's public
+            // schema, an unscoped lookup would list the columns of both tables.
+            $"""SELECT column_name FROM information_schema.columns WHERE table_name = 'WhatsAppMessages' AND table_schema = current_schema()""").ToListAsync();
 
         Assert.DoesNotContain(columns, x => x.Contains("Token", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(columns, x => x.Contains("Secret", StringComparison.OrdinalIgnoreCase));
