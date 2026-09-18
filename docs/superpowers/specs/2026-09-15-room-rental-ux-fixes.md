@@ -72,6 +72,8 @@
 
 **Critérios de aceitação:** formulário não fica mais fixo ao lado da galeria; formulário abre em modal; modal contém início e fim desejados; envio continua funcionando; fluxo posterior de WhatsApp continua operacional.
 
+**Complemento (2026-09-18, auditoria D1):** a mensagem enviada ao Financeiro pelo WhatsApp inclui o período desejado — `Período desejado: dd/MM/yyyy até dd/MM/yyyy`, logo após a linha de disponibilidade (ver spec 2026-09-13, §8.3).
+
 ## Escopo adicional implícito
 
 Ao corrigir essas partes, revisar o fluxo completo: listagem pública de salas; detalhe da sala; modal de interesse; tela de sucesso/QR/WhatsApp; cards de administração de salas. Ajustes adicionais são aceitos apenas se pequenos, no mesmo escopo, e sem refactor desnecessário.

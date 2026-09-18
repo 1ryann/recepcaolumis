@@ -35,8 +35,8 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         Assert.Equal("Disponível agora", result.PresentedAvailabilityLabel);
 
         var expected = "Olá! Tenho interesse em alugar uma sala na Lumis.\n\n" +
-            "Sala: Sala 101\nDisponibilidade: Disponível agora\nNome: Ana Souza\n" +
-            "WhatsApp: +5569999999999\nProfissão/Empresa: Clínica A\nObservação: —";
+            "Sala: Sala 101\nDisponibilidade: Disponível agora\nPeríodo desejado: 01/12/2026 até 10/12/2026\n" +
+            "Nome: Ana Souza\nWhatsApp: +5569999999999\nProfissão/Empresa: Clínica A\nObservação: —";
         Assert.Equal(expected, Uri.UnescapeDataString(new Uri(result.WhatsappUrl).Query[6..]));
 
         await using var scope = factory.Services.CreateAsyncScope();
@@ -75,6 +75,11 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = (await response.Content.ReadFromJsonAsync<RoomRentalInquiryResultPayload>())!;
         Assert.Equal("Disponível em breve — a partir de 16/11/2026", result.PresentedAvailabilityLabel);
+        Assert.Equal("Olá! Tenho interesse em alugar uma sala na Lumis.\n\n" +
+            "Sala: Sala 202\nDisponibilidade: Disponível em breve — a partir de 16/11/2026\n" +
+            "Período desejado: 01/12/2026 até 10/12/2026\n" +
+            "Nome: Ana Souza\nWhatsApp: +5569999999999\nProfissão/Empresa: Clínica A\nObservação: —",
+            Uri.UnescapeDataString(new Uri(result.WhatsappUrl).Query[6..]));
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

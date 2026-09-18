@@ -418,12 +418,15 @@ Olá! Tenho interesse em alugar uma sala na Lumis.
 
 Sala: {room.Name}
 Disponibilidade: {RoomAvailabilityFormatter.Format(inquiry.PresentedAvailabilityStatus, inquiry.PresentedAvailableFrom)}
+Período desejado: {inquiry.DesiredStartDate:dd/MM/yyyy} até {inquiry.DesiredEndDate:dd/MM/yyyy}
 Nome: {inquiry.FullName}
 WhatsApp: {inquiry.WhatsApp}
 Profissão/Empresa: {inquiry.ProfessionOrCompany}
 Observação: {inquiry.Note ?? "—"}
 ```
 Montada como `string`, então `Uri.EscapeDataString(...)` no parâmetro `text` — nenhuma biblioteca nova, `System.Uri` já cobre isto.
+
+**Revisão 2026-09-18:** a linha "Período desejado" foi incluída depois que a spec de ajustes de UX (2026-09-15, Correção 4) tornou obrigatórias as datas desejadas de início e fim. Datas em `dd/MM/yyyy` (cultura invariante), unidas por "até" — o mesmo formato exibido no Admin. O número do Financeiro continua só na configuração e a URL continua montada no backend.
 
 ---
 

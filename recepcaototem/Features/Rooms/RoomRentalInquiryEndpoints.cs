@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Rooms;
@@ -77,8 +78,10 @@ public static class RoomRentalInquiryEndpoints
         // Only now — after the snapshot is committed — format the PT-BR label and build the WhatsApp
         // message/URL. Neither the request, the message, nor the URL is ever logged.
         var label = RoomAvailabilityFormatter.Format(availability.Status, availability.AvailableFrom);
+        var desiredPeriod = $"{input.DesiredStartDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} até " +
+            input.DesiredEndDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
         var message = "Olá! Tenho interesse em alugar uma sala na Lumis.\n\n" +
-            $"Sala: {room.Name}\nDisponibilidade: {label}\nNome: {input.FullName}\n" +
+            $"Sala: {room.Name}\nDisponibilidade: {label}\nPeríodo desejado: {desiredPeriod}\nNome: {input.FullName}\n" +
             $"WhatsApp: {input.WhatsApp}\nProfissão/Empresa: {input.ProfessionOrCompany}\n" +
             $"Observação: {input.Note ?? "—"}";
         WhatsappLinkBuilder.TryBuild(whatsappOptions.Value.FinanceiroPhoneNumber, message, out var url);
