@@ -1,9 +1,11 @@
-import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, Clock3, Copy, DoorOpen, LayoutDashboard, LogOut, Menu, QrCode } from 'lucide-react'
+import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, Clock3, Copy, DoorOpen, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
-import { customerApi, type CustomerProfileDto, type PagedResponse, type ReservationDto } from '../../api/modules'
+import { customerApi, whatsAppOptInApi, type CustomerProfileDto, type PagedResponse, type ReservationDto } from '../../api/modules'
+import { WhatsAppOptInPanel } from '../../features/whatsapp/WhatsAppOptIn'
+import { CUSTOMER_OPT_IN_TEXT } from '../../features/whatsapp/optInText'
 import { ApiError } from '../../api/client'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
 import { LumisLogo } from '../../theme/LumisLogo'
@@ -160,6 +162,11 @@ export function CustomerHome() {
         <section className="customer-home-card panel">
           <div className="panel-header"><div><h2><CalendarPlus size={18} /> Novo agendamento</h2><p>Agende seus atendimentos de forma rápida e prática.</p></div></div>
           <Link className="primary-button" to="/cliente/agendar">Novo agendamento <ArrowRight size={16} /></Link>
+        </section>
+
+        <section className="customer-home-card panel">
+          <div className="panel-header"><div><h2><MessageCircle size={18} /> Avisos por WhatsApp</h2><p>Confirmações, mudanças e atrasos dos seus atendimentos.</p></div></div>
+          <WhatsAppOptInPanel text={CUSTOMER_OPT_IN_TEXT} load={whatsAppOptInApi.customer} save={whatsAppOptInApi.setCustomer} />
         </section>
       </div>
 

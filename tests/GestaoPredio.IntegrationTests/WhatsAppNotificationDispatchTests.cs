@@ -924,6 +924,9 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         var customer = await db.Customers.SingleOrDefaultAsync(x => x.NormalizedPhone == CustomerPhone)
             ?? Customer.Create("Maria Clara Souza", CustomerPhone, now);
         var room = Room.Create($"Sala Notificação {Guid.NewGuid():N}"[..30], null, 10, 50, now);
+        // Both recipients opted in explicitly: nothing is sent to anyone who did not (WhatsAppOptInApiTests).
+        professional.GrantWhatsAppOptIn(WhatsAppOptInSource.ProfessionalPortal, now);
+        customer.GrantWhatsAppOptIn(WhatsAppOptInSource.CustomerRegistration, now);
         if (db.Entry(professional).State == EntityState.Detached) db.Professionals.Add(professional);
         if (db.Entry(customer).State == EntityState.Detached) db.Customers.Add(customer);
         db.Rooms.Add(room);

@@ -19,7 +19,7 @@ const navItems = [
 ]
 
 const pageNames: Record<string, string> = {
-  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/solicitacoes-profissionais': 'Solicitações de profissionais', '/admin/interesses-locacao': 'Interesses de locação', '/admin/configuracoes': 'Configurações',
+  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/solicitacoes-profissionais': 'Solicitações de profissionais', '/admin/interesses-locacao': 'Interesses de locação', '/admin/configuracoes': 'Configurações', '/admin/whatsapp': 'WhatsApp dos clientes',
 }
 
 export function AdminLayout() {

@@ -10,6 +10,7 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
     public void Configure(EntityTypeBuilder<Customer> entity)
     {
         entity.ToTable("Customers");
+        entity.MapWhatsAppOptIn("Customers");
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Name).HasMaxLength(Customer.MaximumNameLength).IsRequired();
         entity.Property(x => x.Phone).HasMaxLength(Customer.MaximumPhoneLength).IsRequired();

@@ -22,7 +22,9 @@ using recepcaototem.Features.Availability;
 namespace recepcaototem.Features.Totem;
 
 public sealed record TotemCustomerResolveRequest(string Name, string Phone) : IStrictModuleRequest;
-public sealed record TotemReservationRequest(string Name, string Phone, Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt) : IStrictModuleRequest;
+/// <summary><see cref="WhatsAppOptIn"/> true only when the person ticked the operational WhatsApp opt-in (docs/operations/whatsapp-consent.md).</summary>
+public sealed record TotemReservationRequest(string Name, string Phone, Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt,
+    bool? WhatsAppOptIn = null) : IStrictModuleRequest;
 public sealed record TotemCheckInRequest(string Token) : IStrictModuleRequest;
 public sealed record TotemPresenceRequest(string Token) : IStrictModuleRequest;
 public sealed record TotemProfessionalResponse(Guid Id, string Name, string Profession, string? Description);
@@ -243,6 +245,9 @@ public static class TotemEndpoints
         TimeProvider time, CancellationToken ct, string actor)
     {
         if (!WhatsApp(request.Phone ?? string.Empty, out var phone) || request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Invalid();
+        if (request.WhatsAppOptIn == true && actor == "TOTEM")
+            return Results.BadRequest(new ApiError("WHATSAPP_OPT_IN_NOT_AVAILABLE_HERE",
+                "O aceite de avisos por WhatsApp é feito no seu celular, na sua área do cliente."));
         var professional = await db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
         var customer = await db.Customers.SingleOrDefaultAsync(x => x.NormalizedPhone == phone, ct);
@@ -259,6 +264,13 @@ public static class TotemEndpoints
             catch (DbUpdateException) { await transaction.RollbackAsync(ct); return Results.Json(new ApiError("CUSTOMER_ALREADY_EXISTS", "Não foi possível concluir o agendamento."), statusCode: 409); }
         }
         if (!customer.IsActive) return Invalid();
+        // Recorded only with the booking (same transaction), only when explicitly ticked, never withdrawn here — and
+        // only in the reception-assisted booking, with the person present. The anonymous public kiosk cannot record an
+        // opt-in: anyone could type anyone's number there (docs/operations/whatsapp-consent.md, "Totem").
+        if (request.WhatsAppOptIn == true && actor != "TOTEM" &&
+            customer.GrantWhatsAppOptIn(WhatsAppOptInSource.Reception, time.GetUtcNow()))
+            db.AuditEntries.Add(Features.Whatsapp.WhatsappOptInEndpoints.Audit(context, "CUSTOMER", customer.Id,
+                customer.ApplicationUserId, true, time.GetUtcNow()));
         var rooms = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], rooms, [request.ProfessionalId]), ct);
         var available = await availability.FindAvailableRoomAsync(

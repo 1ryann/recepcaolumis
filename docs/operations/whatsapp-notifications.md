@@ -211,12 +211,9 @@ nomes de template não são segredo. Credenciais continuam as da Cloud API (`Wha
   documentos, valores, observações ou motivo do imprevisto.
 - Logs: tipo, id da notificação, reserva/visita, tentativa, resultado, wamid e código — sem telefone, nomes,
   parâmetros, link ou credenciais (coberto por teste). O webhook continua mascarando o destinatário.
-- **Decisão de consentimento**: o LUMIS não tem hoje mecanismo de preferência/consentimento de comunicação. Estas
-  mensagens são **transacionais**, ligadas a um atendimento que o próprio cliente agendou (ou a um check-in do
-  próprio profissional), e são enviadas com base na execução do serviço solicitado. **Marketing não é enviado por
-  este canal** e exigiria consentimento explícito. Ponto de extensão: o `WhatsAppNotificationComposer` resolve o
-  destinatário antes de enviar; uma futura preferência de canal entra ali, marcando o aviso como `SKIPPED` com um
-  código próprio, sem mudar a fila nem os endpoints.
+- **Consentimento (opt-in)**: ver [whatsapp-consent.md](whatsapp-consent.md). Nada é enviado a quem não aceitou
+  explicitamente: o composer lê o aceite atual do destinatário no envio e marca `SKIPPED/RECIPIENT_NOT_OPTED_IN` ou
+  `SKIPPED/RECIPIENT_OPTED_OUT`. Estas mensagens são operacionais; **marketing não é enviado por este canal**.
 
 ## Administração
 
@@ -234,6 +231,9 @@ ser publicado num banco que já tenha:
 2. `20260919042836_WhatsAppNotificationUnknownSendOutcome` — só troca 3 CHECK constraints por versões mais amplas
    (`SENDING`, `UNCONFIRMED`); `xmin` é coluna de sistema e não gera SQL. Compatível com o código anterior
    (aplicada no staging em 2026-09-19).
+3. `20260919162155_WhatsAppOptIn` — 4 colunas de aceite em `Customers` e `Professionals` (status com
+   `DEFAULT 'NOT_RECORDED'`) e 3 CHECK por tabela. Aditiva; o código anterior continua gravando linhas válidas
+   (aplicada no staging em 2026-09-19).
 
 Ativação do envio (pendências manuais — nada disso foi feito):
 
@@ -242,5 +242,5 @@ Ativação do envio (pendências manuais — nada disso foi feito):
 3. Confirmar credenciais da Cloud API e o webhook já existentes, e que os status de entrega trazem
    `biz_opaque_callback_data` (sem isso um resultado desconhecido termina em `FAILED/WHATSAPP_OUTCOME_UNKNOWN`, nunca
    em mensagem duplicada).
-4. Decisão de consentimento/preferência implementada (ver "Privacidade / LGPD").
+4. Pendências de [whatsapp-consent.md](whatsapp-consent.md): texto do aceite aprovado e captura na interface.
 5. Só então `Whatsapp__Notifications__Enabled=true`. Avisos criados antes disso expiram pelas regras de validade.

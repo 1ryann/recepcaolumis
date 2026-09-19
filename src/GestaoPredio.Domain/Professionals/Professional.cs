@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Common;
+using GestaoPredio.Domain.Notifications;
 
 namespace GestaoPredio.Domain.Professionals;
 
@@ -22,6 +23,10 @@ public sealed class Professional
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
+    public WhatsAppOptInStatus WhatsAppOptInStatus { get; private set; }
+    public DateTimeOffset? WhatsAppOptInChangedAt { get; private set; }
+    public WhatsAppOptInSource? WhatsAppOptInSource { get; private set; }
+    public string? WhatsAppOptInTextVersion { get; private set; }
 
     public static Professional Create(string name, string profession, string whatsApp, DateTimeOffset occurredAt, string? description = null)
     {
@@ -39,8 +44,33 @@ public sealed class Professional
 
     public void Update(string name, string profession, string whatsApp, DateTimeOffset occurredAt, string? description = null)
     {
+        var previousWhatsApp = WhatsApp;
         SetProfile(name, profession, whatsApp, description);
+        // The opt-in was given for the previous number: it does not carry over to a new one.
+        if (!string.Equals(previousWhatsApp, WhatsApp, StringComparison.Ordinal))
+            ApplyWhatsAppOptIn(WhatsAppOptIn.ResetForNewNumber(occurredAt));
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
+
+    public WhatsAppOptInState WhatsAppOptIn =>
+        new(WhatsAppOptInStatus, WhatsAppOptInChangedAt, WhatsAppOptInSource, WhatsAppOptInTextVersion);
+
+    /// <summary>Returns false when nothing changed; the caller audits a change.</summary>
+    public bool GrantWhatsAppOptIn(WhatsAppOptInSource source, DateTimeOffset occurredAt) =>
+        ApplyWhatsAppOptIn(WhatsAppOptIn.Grant(source, occurredAt));
+
+    public bool RevokeWhatsAppOptIn(WhatsAppOptInSource source, DateTimeOffset occurredAt) =>
+        ApplyWhatsAppOptIn(WhatsAppOptIn.Revoke(source, occurredAt));
+
+    private bool ApplyWhatsAppOptIn(WhatsAppOptInState? next)
+    {
+        if (next is not { } state) return false;
+        WhatsAppOptInStatus = state.Status;
+        WhatsAppOptInChangedAt = state.ChangedAt;
+        WhatsAppOptInSource = state.Source;
+        WhatsAppOptInTextVersion = state.TextVersion;
+        UpdatedAt = state.ChangedAt ?? UpdatedAt;
+        return true;
     }
 
     public void Activate(DateTimeOffset occurredAt) => SetActive(true, occurredAt);

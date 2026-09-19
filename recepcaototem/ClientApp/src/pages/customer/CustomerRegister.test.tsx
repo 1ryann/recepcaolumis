@@ -56,3 +56,23 @@ test('drops an unsafe returnUrl and navigates to a plain /cliente/login', async 
   const sink = await screen.findByTestId('login-sink')
   expect(sink.textContent).toBe('search=')
 })
+
+test('sends no WhatsApp opt-in unless the unticked box was ticked', async () => {
+  vi.mocked(customerApi.register).mockReset().mockResolvedValue({} as never)
+  renderAt('/cliente/cadastro')
+  fillValidForm()
+  expect(screen.getByRole('checkbox')).not.toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
+  await screen.findByTestId('login-sink')
+  expect(vi.mocked(customerApi.register).mock.calls[0][0]).not.toHaveProperty('whatsAppOptIn')
+})
+
+test('sends the WhatsApp opt-in when the person ticked it', async () => {
+  vi.mocked(customerApi.register).mockReset().mockResolvedValue({} as never)
+  renderAt('/cliente/cadastro')
+  fillValidForm()
+  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
+  await screen.findByTestId('login-sink')
+  expect(vi.mocked(customerApi.register).mock.calls[0][0]).toMatchObject({ whatsAppOptIn: true })
+})

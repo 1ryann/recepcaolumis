@@ -11,7 +11,9 @@ using recepcaototem.Api.Configuration;
 
 namespace recepcaototem.Features.Customers;
 
-public sealed record CustomerRegisterRequest(string Name, string Phone, string Email, string Password, string Confirmation) : IStrictModuleRequest;
+/// <summary><see cref="WhatsAppOptIn"/> true only when the person ticked the operational WhatsApp opt-in (docs/operations/whatsapp-consent.md).</summary>
+public sealed record CustomerRegisterRequest(string Name, string Phone, string Email, string Password, string Confirmation,
+    bool? WhatsAppOptIn = null) : IStrictModuleRequest;
 public sealed record CustomerProfileResponse(Guid Id, string Name, string Phone, bool IsActive, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 public static class CustomerEndpoints
@@ -24,7 +26,7 @@ public static class CustomerEndpoints
     }
 
     private static async Task<IResult> Register(CustomerRegisterRequest request, HttpContext context, CustomerPublicRateLimiter limiter,
-        UserManager<ApplicationUser> users, RoleManager<IdentityRole> roles, ApplicationDbContext db,
+        UserManager<ApplicationUser> users, RoleManager<IdentityRole> roles, ApplicationDbContext db, TimeProvider time,
         CancellationToken cancellationToken)
     {
         using var rateLease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Email ?? string.Empty, cancellationToken);
@@ -47,7 +49,7 @@ public static class CustomerEndpoints
         var assigned = await users.AddToRoleAsync(user, SystemRoles.Customer);
         if (!assigned.Succeeded) { await transaction.RollbackAsync(cancellationToken); return InvalidRegistration(); }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         var customer = Customer.Create(name, phone, now);
         customer.LinkUser(user.Id, now);
         db.Customers.Add(customer);
@@ -62,6 +64,9 @@ public static class CustomerEndpoints
             TargetEntityType = "CUSTOMER", TargetEntityId = customer.Id, IpAddress = context.Connection.RemoteIpAddress?.ToString(),
             OccurredAt = now, CorrelationId = context.TraceIdentifier
         });
+        if (request.WhatsAppOptIn == true &&
+            customer.GrantWhatsAppOptIn(GestaoPredio.Domain.Notifications.WhatsAppOptInSource.CustomerRegistration, now))
+            db.AuditEntries.Add(Whatsapp.WhatsappOptInEndpoints.Audit(context, "CUSTOMER", customer.Id, user.Id, true, now));
         try
         {
             await db.SaveChangesAsync(cancellationToken);

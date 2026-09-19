@@ -1,7 +1,9 @@
 import { Camera, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
-import { professionalProfileApi, type ProfessionalProfileDto } from '../../api/modules'
+import { professionalProfileApi, whatsAppOptInApi, type ProfessionalProfileDto } from '../../api/modules'
+import { WhatsAppOptInPanel } from '../../features/whatsapp/WhatsAppOptIn'
+import { PROFESSIONAL_OPT_IN_TEXT } from '../../features/whatsapp/optInText'
 import { PageHeader } from '../../components/PageElements'
 import { ProfessionalPhotoCropper } from '../../features/professionals/ProfessionalPhotoCropper'
 
@@ -130,6 +132,7 @@ export function ProfessionalProfile() {
           <form className="professional-profile-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
             <label className="field-label">WhatsApp
               <input className="field-input" aria-label="WhatsApp" value={whatsApp} onChange={(event) => setWhatsApp(event.target.value)} />
+              {whatsApp !== profile.whatsApp && <small className="field-hint">Ao trocar o número, os avisos por WhatsApp precisam ser autorizados de novo para o número novo.</small>}
             </label>
             <label className="field-label">Descrição
               <textarea className="field-input field-textarea" aria-label="Descrição" value={description} onChange={(event) => setDescription(event.target.value)} />
@@ -140,6 +143,14 @@ export function ProfessionalProfile() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {!loading && profile && (
+        <div className="panel">
+          <div className="panel-header"><div><h2>Avisos por WhatsApp</h2><p>Por exemplo, quando um cliente chega para o atendimento.</p></div></div>
+          {/* Keyed by the number: a new number starts without an opt-in, so the panel reloads after it changes. */}
+          <WhatsAppOptInPanel key={profile.whatsApp} text={PROFESSIONAL_OPT_IN_TEXT}
+            load={whatsAppOptInApi.professional} save={whatsAppOptInApi.setProfessional} />
         </div>
       )}
       {pendingFile && (

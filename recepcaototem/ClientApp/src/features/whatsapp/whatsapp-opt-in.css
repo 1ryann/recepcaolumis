@@ -1,0 +1,84 @@
+/* WhatsApp opt-in: the explicit, unticked-by-default consent box and its status panel. Kept out of styles.css on
+   purpose; uses the app's existing tokens so both themes follow. */
+.whatsapp-opt-in-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--lumis-border);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.whatsapp-opt-in-check input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--lumis-primary);
+  cursor: pointer;
+}
+
+.whatsapp-opt-in-note {
+  display: block;
+  margin-top: 4px;
+  opacity: 0.72;
+  font-size: 12px;
+}
+
+.whatsapp-opt-in-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.whatsapp-opt-in-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.whatsapp-opt-in-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.whatsapp-opt-in-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.whatsapp-opt-in-records {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.whatsapp-opt-in-records li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--lumis-border);
+  border-radius: 10px;
+}
+
+.whatsapp-opt-in-lookup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.whatsapp-opt-in-lookup .field-label {
+  flex: 1 1 220px;
+}

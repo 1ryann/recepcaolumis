@@ -2,7 +2,9 @@ import { ArrowLeft, ArrowRight, CalendarDays, Clock3, UserRound } from 'lucide-r
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
-import { customerApi, totemApi, type AvailabilitySlotDto, type CustomerProfessionalDto } from '../../api/modules'
+import { customerApi, totemApi, whatsAppOptInApi, type AvailabilitySlotDto, type CustomerProfessionalDto, type WhatsAppOptInStatus } from '../../api/modules'
+import { WhatsAppOptInCheckbox } from '../../features/whatsapp/WhatsAppOptIn'
+import { CUSTOMER_OPT_IN_TEXT } from '../../features/whatsapp/optInText'
 
 function todayInputValue() {
   const now = new Date()
@@ -30,6 +32,15 @@ export function CustomerBooking() {
   const [handoffToken, setHandoffToken] = useState<string | null>(null)
   const [, setHandoffId] = useState<string | null>(null)
   const [handoffError, setHandoffError] = useState('')
+  // Offered only while the customer has not opted in; unticked means "no decision", never a withdrawal.
+  const [optInStatus, setOptInStatus] = useState<WhatsAppOptInStatus | null>(null)
+  const [whatsAppOptIn, setWhatsAppOptIn] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    whatsAppOptInApi.customer(controller.signal).then((optIn) => setOptInStatus(optIn.status)).catch(() => {})
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +105,7 @@ export function CustomerBooking() {
         startAt: selectedSlot.startAt,
         endAt: selectedSlot.endAt,
         ...(handoffToken ? { handoffToken } : {}),
+        ...(whatsAppOptIn ? { whatsAppOptIn: true } : {}),
       })
       navigate(`/cliente/agendamentos/${reservation.id}`)
     } catch (caught) {
@@ -119,6 +131,7 @@ export function CustomerBooking() {
       </div>
       {professional && <div className="customer-booking-professional panel"><div className="customer-booking-avatar"><UserRound size={21} /></div><div><strong>{professional.name}</strong><span>{professional.profession}</span>{professional.description && <p>{professional.description}</p>}</div></div>}
       <div className="customer-slots panel"><div className="panel-header"><div><h2>Horários disponíveis</h2><p>{checking ? 'Consultando disponibilidade…' : 'Escolha um horário para continuar.'}</p></div></div>{!checking && slots.length === 0 && <div className="customer-empty"><Clock3 size={23} /><strong>Nenhum horário disponível</strong><span>Tente outra data ou duração.</span></div>}{checking && <div className="customer-loading" role="status">Buscando horários…</div>}{!checking && slots.length > 0 && <div className="customer-slot-grid">{slots.map((slot) => <button key={slot.startAt} type="button" className={`customer-slot ${selectedSlot?.startAt === slot.startAt ? 'is-selected' : ''}`} onClick={() => setSelectedSlot(slot)}>{timeLabel(slot.startAt)}<small>até {timeLabel(slot.endAt)}</small></button>)}</div>}</div>
+      {optInStatus && optInStatus !== 'GRANTED' && <div className="panel"><WhatsAppOptInCheckbox text={CUSTOMER_OPT_IN_TEXT} checked={whatsAppOptIn} onChange={setWhatsAppOptIn} disabled={checking} /></div>}
       <div className="customer-booking-footer"><span>{selectedSlot ? `${timeLabel(selectedSlot.startAt)} · ${durationMinutes} min` : 'Nenhum horário selecionado'}</span><button className="primary-button" type="button" disabled={!selectedSlot || checking} onClick={createReservation}>{checking ? 'Confirmando…' : 'Confirmar agendamento'} <ArrowRight size={17} /></button></div>
     </>}
   </section>

@@ -21,7 +21,9 @@ using recepcaototem.Features.Totem;
 namespace recepcaototem.Features.Customers;
 
 public sealed record CustomerAvailabilityRequest(Guid ProfessionalId, DateOnly Date, int DurationMinutes) : IStrictModuleRequest;
-public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? HandoffToken = null) : IStrictModuleRequest;
+/// <summary><see cref="WhatsAppOptIn"/> true only when the customer ticked the operational WhatsApp opt-in (docs/operations/whatsapp-consent.md).</summary>
+public sealed record CustomerReservationRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? HandoffToken = null,
+    bool? WhatsAppOptIn = null) : IStrictModuleRequest;
 public sealed record CustomerReservationRescheduleRequest(Guid ProfessionalId, DateTimeOffset StartAt, DateTimeOffset EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record CustomerReservationPageResponse(ReservationResponse[] Items, int Page, int PageSize, int TotalCount);
@@ -178,6 +180,12 @@ public static class CustomerSchedulingEndpoints
             principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? customer.ApplicationUserId!, time.GetUtcNow(), customer.Id);
         db.Reservations.Add(reservation);
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
+        // Opt-in ticked by the signed-in customer on their own device, committed with the booking. A booking that started
+        // at the Totem (QR handoff) is recorded as TOTEM: the journey began there, the decision was made on the phone.
+        if (request.WhatsAppOptIn == true &&
+            customer.GrantWhatsAppOptIn(handoff is not null ? WhatsAppOptInSource.Totem : WhatsAppOptInSource.CustomerPortal, time.GetUtcNow()))
+            db.AuditEntries.Add(Whatsapp.WhatsappOptInEndpoints.Audit(context, "CUSTOMER", customer.Id, customer.ApplicationUserId,
+                true, time.GetUtcNow()));
         // Outbox: APPOINTMENT_CONFIRMED, committed with the booking (rolled back with it on a lost race).
         db.WhatsAppNotifications.Add(WhatsAppNotification.AppointmentConfirmed(reservation, time.GetUtcNow())!);
         if (handoff is not null)

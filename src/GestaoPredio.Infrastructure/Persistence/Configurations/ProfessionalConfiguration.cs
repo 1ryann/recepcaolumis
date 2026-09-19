@@ -12,6 +12,7 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
     {
         entity.ToTable("Professionals", table =>
             table.HasCheckConstraint("CK_Professionals_AvailabilityMode", "\"AvailabilityMode\" BETWEEN 0 AND 1"));
+        entity.MapWhatsAppOptIn("Professionals");
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
         entity.Property(x => x.NormalizedName).HasMaxLength(400).IsRequired();

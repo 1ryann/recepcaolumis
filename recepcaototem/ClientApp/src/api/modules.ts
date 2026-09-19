@@ -52,6 +52,8 @@ export interface CustomerRegisterInput {
   email: string
   password: string
   confirmation: string
+  /** True only when the person ticked the WhatsApp opt-in; omitted otherwise. */
+  whatsAppOptIn?: boolean
 }
 
 export type ProfessionalApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -777,7 +779,7 @@ export const customerApi = {
   reservation(id: string, signal?: AbortSignal) {
     return apiClient.get<ReservationDto>(`/api/customer/reservations/${encodeURIComponent(id)}`, { signal })
   },
-  createReservation(input: { professionalId: string, startAt: string, endAt: string, handoffToken?: string }) {
+  createReservation(input: { professionalId: string, startAt: string, endAt: string, handoffToken?: string, whatsAppOptIn?: boolean }) {
     return apiClient.post<ReservationDto>('/api/customer/reservations', input)
   },
   resolveHandoff(handoffToken: string) {
@@ -785,6 +787,38 @@ export const customerApi = {
   },
   issueCheckInToken(id: string) {
     return apiClient.post<{ token: string, manualCode: string, expiresAt: string }>(`/api/customer/reservations/${encodeURIComponent(id)}/check-in-token`, {})
+  },
+}
+
+/** Operational WhatsApp opt-in (docs/operations/whatsapp-consent.md). */
+export type WhatsAppOptInStatus = 'NOT_RECORDED' | 'GRANTED' | 'REVOKED'
+export interface WhatsAppOptInDto {
+  status: WhatsAppOptInStatus
+  changedAt: string | null
+  source: string | null
+  textVersion: string | null
+}
+export interface WhatsAppOptInRecordDto {
+  id: string
+  kind: 'CUSTOMER' | 'PROFESSIONAL'
+  maskedName: string
+  hasAccount: boolean
+  isActive: boolean
+  optIn: WhatsAppOptInDto
+}
+
+// Phone numbers go only in request bodies (never in a URL), so they stay out of access logs and history.
+export const whatsAppOptInApi = {
+  customer(signal?: AbortSignal) { return apiClient.get<WhatsAppOptInDto>('/api/customer/me/whatsapp-opt-in', { signal }) },
+  setCustomer(optIn: boolean) { return apiClient.put<WhatsAppOptInDto>('/api/customer/me/whatsapp-opt-in', { optIn }) },
+  professional(signal?: AbortSignal) { return apiClient.get<WhatsAppOptInDto>('/api/professional/me/whatsapp-opt-in', { signal }) },
+  setProfessional(optIn: boolean) { return apiClient.put<WhatsAppOptInDto>('/api/professional/me/whatsapp-opt-in', { optIn }) },
+  receptionLookup(phone: string) {
+    return apiClient.post<{ records: WhatsAppOptInRecordDto[] }>('/api/reception/whatsapp-opt-in/lookup', { phone })
+  },
+  receptionGrant(phone: string) { return apiClient.post<{ customers: number }>('/api/reception/whatsapp-opt-in', { phone }) },
+  receptionOptOut(phone: string) {
+    return apiClient.post<{ customers: number, professionals: number }>('/api/reception/whatsapp-opt-out', { phone })
   },
 }
 

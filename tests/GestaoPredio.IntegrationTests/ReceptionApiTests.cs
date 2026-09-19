@@ -263,6 +263,9 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         var room = Room.Create($"Sala Recepção {Guid.NewGuid():N}", null, 10, 50, now);
         var professional = Professional.Create("Profissional Recepção", "Fisioterapia", $"659{Random.Shared.Next(10000000, 99999999)}", now);
         Customer? customer = withCustomer ? Customer.Create("Cliente Recepção", "+5569999999999", now) : null;
+        // Both opted in, so the dispatch tests here exercise Meta's answers rather than the opt-in gate.
+        professional.GrantWhatsAppOptIn(WhatsAppOptInSource.ProfessionalPortal, now);
+        customer?.GrantWhatsAppOptIn(WhatsAppOptInSource.CustomerRegistration, now);
         var reservation = Reservation.CreateApproved(room.Id, professional.Id, now.AddMinutes(-10), now.AddHours(1), manager.Id, now, customer?.Id);
         Visit? visit = withVisit ? Visit.Arrive(professional.Id, room.Id, reservation.Id, customer?.Name ?? "Visitante Recepção", manager.Id, now, customer?.Id) : null;
         await using var scope = factory.Services.CreateAsyncScope();

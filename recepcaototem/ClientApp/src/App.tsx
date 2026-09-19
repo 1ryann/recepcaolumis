@@ -14,6 +14,7 @@ import { Leases } from './pages/admin/Leases'
 import { Reservations } from './pages/admin/Reservations'
 import { Visits } from './pages/admin/Visits'
 import { ReceptionMonitor } from './pages/admin/ReceptionMonitor'
+import { ReceptionWhatsApp } from './pages/admin/ReceptionWhatsApp'
 import { RoomRentalInquiries } from './pages/admin/RoomRentalInquiries'
 import { CustomerHome, CustomerReservations, CustomerShell } from './pages/customer/CustomerHome'
 import { CustomerRegister } from './pages/customer/CustomerRegister'
@@ -83,6 +84,7 @@ function ProductionApp() {
       <Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} />
       <Route path="/recepcao/profissionais" element={<Professionals />} />
       <Route path="/recepcao/configuracoes" element={<Settings />} />
+      <Route path="/recepcao/whatsapp" element={<ReceptionWhatsApp />} />
     </Route>
   </Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
@@ -94,6 +96,7 @@ function ProductionApp() {
           <Route path="reservas" element={<Reservations />} />
           <Route path="visitas" element={<Visits />} />
           <Route path="recepcao" element={<ReceptionMonitor />} />
+          <Route path="whatsapp" element={<ReceptionWhatsApp />} />
           <Route path="solicitacoes-profissionais" element={<ProfessionalApplications />} />
           <Route path="interesses-locacao" element={<RoomRentalInquiries />} />
           <Route path="configuracoes" element={<Settings />} />

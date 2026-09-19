@@ -25,6 +25,7 @@ public static class NotificationServiceCollectionExtensions
 
         services.AddScoped<WhatsAppNotificationComposer>();
         services.AddScoped<WhatsAppNotificationDispatcher>();
+        services.AddScoped<WhatsAppOptInService>();
         services.AddHostedService<WhatsAppNotificationWorker>();
         return services;
     }

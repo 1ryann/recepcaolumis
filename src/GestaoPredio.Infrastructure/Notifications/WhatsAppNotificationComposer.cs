@@ -28,6 +28,10 @@ public static class WhatsAppNotificationCodes
     public const string DispatchError = "DISPATCH_ERROR";
     /// <summary>The dispatcher stopped inside the Cloud API call (crash, stall): the send outcome is unknown.</summary>
     public const string DispatchInterrupted = "DISPATCH_INTERRUPTED";
+    /// <summary>The recipient never opted in to WhatsApp messages (docs/operations/whatsapp-consent.md).</summary>
+    public const string RecipientNotOptedIn = "RECIPIENT_NOT_OPTED_IN";
+    /// <summary>The recipient withdrew the opt-in.</summary>
+    public const string RecipientOptedOut = "RECIPIENT_OPTED_OUT";
 }
 
 /// <summary>What the dispatcher should do with a claimed notification.</summary>
@@ -84,6 +88,7 @@ public sealed class WhatsAppNotificationComposer(
         if (visit is null || visit.Status != VisitStatus.Waiting) return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
         var professional = await ProfessionalAsync(visit.ProfessionalId, cancellationToken);
         if (professional is null) return WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientUnavailable);
+        if (WithoutOptIn(professional.WhatsAppOptIn) is { } noOptIn) return noOptIn;
         if (!WhatsAppNormalizer.TryNormalize(professional.WhatsApp, out var phone))
             return WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientPhoneInvalid);
 
@@ -215,10 +220,22 @@ public sealed class WhatsAppNotificationComposer(
             ? null
             : await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == customerId && x.IsActive, cancellationToken);
         if (customer is null) return (null, WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientUnavailable));
+        if (WithoutOptIn(customer.WhatsAppOptIn) is { } noOptIn) return (null, noOptIn);
         if (!WhatsAppNormalizer.TryNormalize(customer.Phone, out var phone))
             return (null, WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientPhoneInvalid));
         return ((phone, FirstName(customer.Name)), null);
     }
+
+    /// <summary>
+    /// Read at send time from the real record, so a withdrawal made after the event was queued is honoured. Checked
+    /// before anything else is prepared: no reschedule link is issued for someone who will not receive it.
+    /// </summary>
+    private static WhatsAppComposition? WithoutOptIn(WhatsAppOptInState optIn) => optIn.Status switch
+    {
+        WhatsAppOptInStatus.Granted => null,
+        WhatsAppOptInStatus.Revoked => WhatsAppComposition.Skip(WhatsAppNotificationCodes.RecipientOptedOut),
+        _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.RecipientNotOptedIn)
+    };
 
     private WhatsAppTemplate Template(string name, IReadOnlyList<string> parameters, string? urlButton = null) =>
         new(name, options.CurrentValue.LanguageCode, parameters, urlButton);

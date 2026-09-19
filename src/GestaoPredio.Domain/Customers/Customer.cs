@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Common;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Professionals;
 using System.Text;
 
@@ -20,6 +21,31 @@ public sealed class Customer
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
+    public WhatsAppOptInStatus WhatsAppOptInStatus { get; private set; }
+    public DateTimeOffset? WhatsAppOptInChangedAt { get; private set; }
+    public WhatsAppOptInSource? WhatsAppOptInSource { get; private set; }
+    public string? WhatsAppOptInTextVersion { get; private set; }
+
+    public WhatsAppOptInState WhatsAppOptIn =>
+        new(WhatsAppOptInStatus, WhatsAppOptInChangedAt, WhatsAppOptInSource, WhatsAppOptInTextVersion);
+
+    /// <summary>Returns false when nothing changed; the caller audits a change.</summary>
+    public bool GrantWhatsAppOptIn(WhatsAppOptInSource source, DateTimeOffset occurredAt) =>
+        ApplyWhatsAppOptIn(WhatsAppOptIn.Grant(source, occurredAt));
+
+    public bool RevokeWhatsAppOptIn(WhatsAppOptInSource source, DateTimeOffset occurredAt) =>
+        ApplyWhatsAppOptIn(WhatsAppOptIn.Revoke(source, occurredAt));
+
+    private bool ApplyWhatsAppOptIn(WhatsAppOptInState? next)
+    {
+        if (next is not { } state) return false;
+        WhatsAppOptInStatus = state.Status;
+        WhatsAppOptInChangedAt = state.ChangedAt;
+        WhatsAppOptInSource = state.Source;
+        WhatsAppOptInTextVersion = state.TextVersion;
+        UpdatedAt = state.ChangedAt ?? UpdatedAt;
+        return true;
+    }
 
     public static Customer Create(string name, string phone, DateTimeOffset occurredAt)
     {

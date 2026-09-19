@@ -183,6 +183,7 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         professional.LinkUser(user.Id, now);
         var room = Room.Create($"Sala imprevisto {Guid.NewGuid():N}", null, 4, 90m, now);
         var customer = GestaoPredio.Domain.Customers.Customer.Create("Cliente Imprevisto", "69999990010", now);
+        customer.GrantWhatsAppOptIn(WhatsAppOptInSource.CustomerRegistration, now);   // receives the reschedule link
         var soon = Reservation.CreateApproved(room.Id, professional.Id, now.AddMinutes(45), now.AddMinutes(105),
             "seed", now, customer.Id);
         var later = Reservation.CreateApproved(room.Id, professional.Id, now.AddMinutes(150), now.AddMinutes(210),
