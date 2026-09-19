@@ -3,6 +3,7 @@ using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -152,6 +153,10 @@ public static partial class ReservationEndpoints
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             reservation.Id, AuditActions.ReservationApproved, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        // Outbox, committed with the decision: an approved cancellation request notifies the original's customer.
+        if (reservation.Kind == ReservationKind.Cancellation && original is not null &&
+            WhatsAppNotification.ReservationCancelled(original, now) is { } notice)
+            db.WhatsAppNotifications.Add(notice);
         return await SaveDecision(db, transaction, reservation, cancellationToken);
     }
 
@@ -226,6 +231,9 @@ public static partial class ReservationEndpoints
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             reservation.Id, AuditActions.ReservationCancelled, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        // Outbox: APPOINTMENT_CANCELLED to the customer, committed with the cancellation.
+        if (WhatsAppNotification.ReservationCancelled(reservation, now) is { } notice)
+            db.WhatsAppNotifications.Add(notice);
         return await SaveDecision(db, transaction, reservation, cancellationToken);
     }
 

@@ -1,9 +1,10 @@
 # WhatsApp Cloud API — infraestrutura base
 
-Escopo desta base: configuração, um cliente único (`IWhatsAppService`), um envio de teste acionado manualmente por
-administrador e o webhook (verificação + recebimento assinado). Não há mensagens automáticas, templates, chatbot nem
-notificações de reserva, locação ou financeiro. O provider `Notifications:Provider=Meta`
-(`MetaWhatsAppNotificationService`) continua fail-closed e **não** está ligado a este cliente.
+Escopo desta base: configuração, um cliente único (`IWhatsAppService`: texto livre e **templates**), um envio de
+teste acionado manualmente por administrador e o webhook (verificação + recebimento assinado). As notificações
+operacionais automáticas (check-in, cancelamento, atraso, reagendamento, confirmação) usam este mesmo cliente por
+meio de uma fila durável — ver [whatsapp-notifications.md](whatsapp-notifications.md). Não há chatbot. O antigo
+provider síncrono `Notifications:Provider` (Demo/Meta) foi removido.
 
 ## Configuração (seção `Whatsapp`)
 

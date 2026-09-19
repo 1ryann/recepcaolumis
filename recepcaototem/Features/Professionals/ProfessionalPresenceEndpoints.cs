@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using GestaoPredio.Application.Availability;
-using GestaoPredio.Application.Notifications;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Auditing;
@@ -116,8 +116,8 @@ public static class ProfessionalPresenceEndpoints
     }
 
     private static async Task<IResult> ReportIncident(ProfessionalIncidentRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, INotificationService notifications,
-        IConfiguration configuration, ILoggerFactory loggerFactory, TimeZoneInfo timeZone, TimeProvider time,
+        ApplicationDbContext db, ILeaseResourceLock resourceLock,
+        IConfiguration configuration, TimeZoneInfo timeZone, TimeProvider time,
         CancellationToken ct)
     {
         var professionalId = await ResolveOwnProfessionalId(context, db, ct);
@@ -136,7 +136,6 @@ public static class ProfessionalPresenceEndpoints
         var localNowTime = TimeOnly.FromDateTime(localNow);
         var civilDay = OperationalTimeZone.GetCivilDayInterval(today, timeZone);
         var ttl = TimeSpan.FromHours(Math.Max(1, configuration.GetValue("Rescheduling:LinkTtlHours", 48)));
-        var baseUrl = (configuration.GetValue("Rescheduling:PublicBaseUrl", string.Empty) ?? string.Empty).TrimEnd('/');
         var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -211,7 +210,7 @@ public static class ProfessionalPresenceEndpoints
             .OrderBy(x => x.StartAt).ToListAsync(ct);
         if (type == "NEXT_APPOINTMENT") affected = affected.Take(1).ToList();
 
-        var links = new List<(Guid ReservationId, Guid? CustomerId, DateTimeOffset OriginalStartAt, string Url)>();
+        var cancelledIds = new List<Guid>();
         foreach (var reservation in affected)
         {
             try
@@ -221,6 +220,10 @@ public static class ProfessionalPresenceEndpoints
             catch (InvalidOperationException) { continue; }
 
             await ReservationCheckInTokenRevocation.RevokeAsync(db, reservation.Id, now, ct);
+            // Outbox: the customer's PROFESSIONAL_CANCELLED notice commits with the cancellation. The dispatcher
+            // rotates the reschedule token when it sends, so the raw link only ever exists inside that message.
+            if (WhatsAppNotification.ReservationCancelled(reservation, now) is { } notice)
+                db.WhatsAppNotifications.Add(notice);
 
             var raw = RandomNumberGenerator.GetBytes(32);
             var hash = SHA256.HashData(raw);
@@ -260,8 +263,7 @@ public static class ProfessionalPresenceEndpoints
                 CorrelationId = context.TraceIdentifier
             });
 
-            links.Add((reservation.Id, reservation.CustomerId, reservation.StartAt,
-                $"{baseUrl}/reagendar/{WebEncoders.Base64UrlEncode(raw)}"));
+            cancelledIds.Add(reservation.Id);
         }
 
         if (type != "NEXT_APPOINTMENT" && openPresence is not null)
@@ -297,27 +299,10 @@ public static class ProfessionalPresenceEndpoints
                 statusCode: StatusCodes.Status409Conflict);
         }
 
-        var professionalName = await db.Professionals.AsNoTracking()
-            .Where(x => x.Id == professionalId.Value).Select(x => x.Name).SingleAsync(ct);
-        foreach (var link in links.Where(x => x.CustomerId is not null))
-        {
-            try
-            {
-                await notifications.NotifyCustomerAsync(new CustomerNotificationEvent(
-                    link.CustomerId!.Value, NotificationEventTypes.CustomerReservationCancelledReschedule,
-                    link.ReservationId, professionalName, link.OriginalStartAt, link.Url), CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                loggerFactory.CreateLogger("ProfessionalIncident").LogWarning(ex,
-                    "Falha ao notificar cliente sobre reagendamento da reserva {ReservationId}.", link.ReservationId);
-            }
-        }
-
         return Results.Ok(new
         {
             exceptionId = (Guid?)exception.Id,
-            affectedReservationIds = links.Select(x => x.ReservationId).ToArray(),
+            affectedReservationIds = cancelledIds.ToArray(),
             presence = EffectivePresence(openPresence, operatingHours, now, timeZone)
         });
     }

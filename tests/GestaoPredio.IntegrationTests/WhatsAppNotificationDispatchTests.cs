@@ -242,6 +242,132 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.All(await factory.NotificationsAsync(), x => Assert.Equal(WhatsAppNotificationStatus.Accepted, x.Status));
     }
 
+    // ---- cancellation / reschedule through the real admin endpoints -------------------------------------------
+
+    [Fact]
+    public async Task Admin_cancellation_notifies_the_customer_once_without_a_reschedule_link()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await LoginAdminAsync();
+        var token = await ConcurrencyTokenAsync(seed.ReservationId);
+
+        var cancel = await factory.PostWithCsrfAsync($"/api/admin/reservations/{seed.ReservationId}/cancel", new { concurrencyToken = token });
+        var again = await factory.PostWithCsrfAsync($"/api/admin/reservations/{seed.ReservationId}/cancel", new { concurrencyToken = token });
+
+        Assert.True(cancel.IsSuccessStatusCode, await cancel.Content.ReadAsStringAsync());
+        Assert.False(again.IsSuccessStatusCode);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationType.AppointmentCancelled, notice.Type);
+        Assert.Equal($"CANCEL:{seed.ReservationId}", notice.IdempotencyKey);
+
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+        await ModulesApiFactory.DispatchAsync(host);
+        var (phone, template) = Assert.Single(meta.Sent);
+        Assert.Equal(CustomerPhone, phone);
+        Assert.Equal("client_appointment_cancelled", template.Name);
+        Assert.Equal(["Maria", "Dra. Helena Prado", LocalDate(seed.StartAt), LocalTime(seed.StartAt)], template.BodyParameters);
+        Assert.Null(template.UrlButtonParameter);
+    }
+
+    // ---- reschedule link: regenerated at send time, never persisted raw ---------------------------------------
+
+    [Fact]
+    public async Task The_link_is_issued_at_send_time_with_a_fresh_ttl_and_only_its_hash_is_stored()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        var originalHash = await CancelForIncidentAsync(seed);
+        factory.AdvanceTime(TimeSpan.FromMinutes(20));                        // the dispatcher runs later
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        var raw = Assert.Single(meta.Sent).Template.UrlButtonParameter!;
+        var token = await RescheduleTokenAsync(seed.ReservationId);
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData(Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlDecode(raw)), token.TokenHash);
+        Assert.NotEqual(originalHash, token.TokenHash);
+        Assert.Equal(factory.UtcNow.AddHours(48), token.ExpiresAt);         // validity counts from the send
+        Assert.Null(token.UsedAt);
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = raw })).StatusCode);
+        Assert.False(await AnyNotificationColumnContainsAsync(raw));
+    }
+
+    [Fact]
+    public async Task Issuing_the_link_at_send_time_is_audited_without_the_token()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await CancelForIncidentAsync(seed);
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        var raw = Assert.Single(meta.Sent).Template.UrlButtonParameter!;
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        var token = await RescheduleTokenAsync(seed.ReservationId);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var audit = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().AuditEntries.AsNoTracking()
+            .SingleAsync(x => x.Action == "RESCHEDULE_LINK_ISSUED" && x.CorrelationId == $"whatsapp-notification:{notice.Id}");
+        Assert.Equal("SUCCEEDED", audit.Result);
+        Assert.Equal("RESCHEDULE_TOKEN", audit.TargetEntityType);
+        Assert.Equal(token.Id, audit.TargetEntityId);
+        Assert.DoesNotContain(raw, System.Text.Json.JsonSerializer.Serialize(audit));
+    }
+
+    [Fact]
+    public async Task A_retry_issues_a_new_link_and_only_the_latest_one_works()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await CancelForIncidentAsync(seed);
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.Timeout));
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+        factory.AdvanceTime(TimeSpan.FromSeconds(30));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        var links = meta.Sent.Select(x => x.Template.UrlButtonParameter!).ToArray();
+        Assert.Equal(2, links.Length);
+        Assert.NotEqual(links[0], links[1]);
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = links[0] })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = links[1] })).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_used_or_revoked_link_is_never_revived_and_the_notice_is_skipped(bool used)
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        var originalHash = await CancelForIncidentAsync(seed);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var token = await db.RescheduleTokens.SingleAsync(x => x.ReservationId == seed.ReservationId);
+            if (used) token.MarkUsed(factory.UtcNow); else token.Revoke(factory.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Empty(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Skipped, notice.Status);
+        Assert.Equal("OBSOLETE", notice.LastErrorCode);
+        var after = await RescheduleTokenAsync(seed.ReservationId);
+        Assert.Equal(originalHash, after.TokenHash);
+        Assert.Equal(used, after.UsedAt is not null);
+        Assert.Equal(!used, after.RevokedAt is not null);
+    }
+
     // ---- delivery status through the existing webhook store ---------------------------------------------------
 
     [Fact]
@@ -296,6 +422,39 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         await ModulesApiFactory.DispatchAsync(host);
 
         Assert.Equal(WhatsAppNotificationStatus.Delivered, await StatusAsync());
+    }
+
+    // ---- observability without personal data -----------------------------------------------------------------
+
+    [Fact]
+    public async Task Dispatch_logs_identify_the_notice_and_outcome_but_never_phones_names_or_reschedule_tokens()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var reservation = await db.Reservations.SingleAsync(x => x.Id == seed.ReservationId);
+            reservation.Cancel("incident", factory.UtcNow, ReservationCancellationReason.ProfessionalUnavailable);
+            db.WhatsAppNotifications.Add(WhatsAppNotification.ReservationCancelled(reservation, factory.UtcNow)!);
+            await db.SaveChangesAsync();
+        }
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+        var logs = factory.CaptureLogs();
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        var (_, template) = Assert.Single(meta.Sent);
+        var text = logs.Text;
+        Assert.Contains("ACCEPTED", text);
+        Assert.Contains(seed.ReservationId.ToString(), text);
+        Assert.Contains("wamid.fake.1", text);
+        Assert.DoesNotContain("983334444", text);
+        Assert.DoesNotContain("981112222", text);
+        Assert.DoesNotContain("Maria", text);
+        Assert.DoesNotContain("Helena", text);
+        Assert.DoesNotContain(template.UrlButtonParameter!, text);
     }
 
     // ---- admin read-only view --------------------------------------------------------------------------------
@@ -373,6 +532,36 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         await db.SaveChangesAsync();
     }
 
+    /// <summary>What the incident endpoint commits: the cancellation, a token row (hash only) and the queued notice.</summary>
+    private async Task<byte[]> CancelForIncidentAsync(Seed seed)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var reservation = await db.Reservations.SingleAsync(x => x.Id == seed.ReservationId);
+        reservation.Cancel("PROFESSIONAL_INCIDENT", factory.UtcNow, ReservationCancellationReason.ProfessionalUnavailable);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        db.RescheduleTokens.Add(RescheduleToken.Create(reservation.Id, hash, factory.UtcNow, factory.UtcNow.AddHours(48)));
+        db.WhatsAppNotifications.Add(WhatsAppNotification.ReservationCancelled(reservation, factory.UtcNow)!);
+        await db.SaveChangesAsync();
+        return hash;
+    }
+
+    private async Task<RescheduleToken> RescheduleTokenAsync(Guid reservationId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().RescheduleTokens.AsNoTracking()
+            .SingleAsync(x => x.ReservationId == reservationId);
+    }
+
+    /// <summary>Scans every text column of the queue table for the value, so a raw token can never hide in it.</summary>
+    private async Task<bool> AnyNotificationColumnContainsAsync(string value)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var rows = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database
+            .SqlQuery<string>($"SELECT CAST(n AS text) AS \"Value\" FROM \"WhatsAppNotifications\" AS n").ToListAsync();
+        return rows.Any(row => row.Contains(value, StringComparison.Ordinal));
+    }
+
 
     private async Task StoreAsync(Func<IWhatsAppMessageStore, Task> action)
     {
@@ -397,6 +586,12 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(admin.Email!, Password)).StatusCode);
     }
 
+    private async Task<string> ConcurrencyTokenAsync(Guid reservationId) =>
+        (await factory.Client.GetFromJsonAsync<ReservationTokenPayload>($"/api/admin/reservations/{reservationId}"))!.ConcurrencyToken;
+
+    private sealed record ReservationTokenPayload(string ConcurrencyToken);
+
     private static readonly TimeZoneInfo PortoVelho = TimeZoneInfo.FindSystemTimeZoneById("America/Porto_Velho");
     private static string LocalTime(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, PortoVelho).ToString("HH:mm");
+    private static string LocalDate(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, PortoVelho).ToString("dd/MM/yyyy");
 }

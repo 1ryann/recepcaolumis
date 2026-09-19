@@ -1,10 +1,16 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using GestaoPredio.Application.Whatsapp;
+using GestaoPredio.Domain.Auditing;
+using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace GestaoPredio.Infrastructure.Notifications;
@@ -42,6 +48,7 @@ public sealed class WhatsAppNotificationComposer(
     ApplicationDbContext db,
     IOptionsMonitor<WhatsAppTemplateOptions> templates,
     IOptionsMonitor<WhatsAppNotificationOptions> options,
+    IConfiguration configuration,
     TimeZoneInfo timeZone)
 {
     private static readonly CultureInfo Brazil = CultureInfo.GetCultureInfo("pt-BR");
@@ -58,6 +65,8 @@ public sealed class WhatsAppNotificationComposer(
         return notification.Type switch
         {
             WhatsAppNotificationType.ClientCheckedIn => await ClientCheckedInAsync(notification, templateName, cancellationToken),
+            WhatsAppNotificationType.ProfessionalCancelled or WhatsAppNotificationType.AppointmentCancelled =>
+                await CancelledAsync(notification, templateName, now, cancellationToken),
             _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented)
         };
     }
@@ -84,14 +93,100 @@ public sealed class WhatsAppNotificationComposer(
             [professional.Name, FirstName(visit.VisitorName), Time(appointmentAt)]));
     }
 
+    // PROFESSIONAL_CANCELLED: "Olá, {{1}}. Seu atendimento com {{2}}, previsto para {{3}} às {{4}}, foi cancelado. …"
+    //   + URL button whose dynamic suffix is a fresh one-time reschedule token.
+    // APPOINTMENT_CANCELLED: same body, no button ("Entre em contato com a recepção para reagendar.").
+    private async Task<WhatsAppComposition> CancelledAsync(WhatsAppNotification notification, string templateName,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var reservation = await ReservationAsync(notification, cancellationToken);
+        if (reservation is null || reservation.Status != ReservationStatus.Cancelled)
+            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        var (customer, failure) = await CustomerRecipientAsync(reservation.CustomerId, cancellationToken);
+        if (failure is not null) return failure;
+        var professionalName = await ProfessionalNameAsync(reservation.ProfessionalId, cancellationToken);
+
+        string? rescheduleToken = null;
+        if (notification.Type == WhatsAppNotificationType.ProfessionalCancelled)
+        {
+            rescheduleToken = await IssueRescheduleTokenAsync(notification.Id, reservation.Id, now, cancellationToken);
+            // The client already rebooked through an earlier link (or it was revoked): nothing left to offer.
+            if (rescheduleToken is null) return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        }
+
+        return WhatsAppComposition.Send(customer!.Value.Phone, Template(templateName,
+            [customer.Value.FirstName, professionalName, Date(reservation.StartAt), Time(reservation.StartAt)], rescheduleToken));
+    }
+
+    /// <summary>
+    /// Regenerates the reservation's reschedule token for this send (see docs/operations/whatsapp-notifications.md,
+    /// "Decisão: token do link de reagendamento"). The raw token exists only in memory until it becomes the URL button
+    /// suffix; the database keeps the hash, exactly as the incident flow does. The rotation, and its audit entry, are
+    /// committed BEFORE Meta is called, so the delivered link is already valid. A used or revoked token is never
+    /// rotated (Rotate would clear UsedAt/RevokedAt and revive it): null is returned and the notice is skipped. The
+    /// token's row version turns a concurrent use by the customer into a DbUpdateConcurrencyException → retry → skip.
+    /// </summary>
+    private async Task<string?> IssueRescheduleTokenAsync(Guid notificationId, Guid reservationId, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var ttl = TimeSpan.FromHours(Math.Max(1, configuration.GetValue("Rescheduling:LinkTtlHours", 48)));
+        var raw = RandomNumberGenerator.GetBytes(32);
+        var hash = SHA256.HashData(raw);
+        var token = await db.RescheduleTokens.SingleOrDefaultAsync(x => x.ReservationId == reservationId, cancellationToken);
+        if (token is null)
+        {
+            token = RescheduleToken.Create(reservationId, hash, now, now + ttl);
+            db.RescheduleTokens.Add(token);
+        }
+        else if (token.UsedAt is not null || token.RevokedAt is not null)
+            return null;
+        else
+            token.Rotate(hash, now, now + ttl);
+
+        db.AuditEntries.Add(new AuditEntry
+        {
+            Id = Guid.NewGuid(),
+            Action = AuditActions.RescheduleLinkIssued,
+            Result = "SUCCEEDED",
+            TargetEntityType = AuditTargetTypes.RescheduleToken,
+            TargetEntityId = token.Id,
+            OccurredAt = now,
+            CorrelationId = $"whatsapp-notification:{notificationId}"
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return WebEncoders.Base64UrlEncode(raw);
+    }
+
+    private Task<Reservation?> ReservationAsync(WhatsAppNotification notification, CancellationToken cancellationToken) =>
+        db.Reservations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == notification.ReservationId, cancellationToken);
+
     private Task<Professional?> ProfessionalAsync(Guid professionalId, CancellationToken cancellationToken) =>
         db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == professionalId && x.IsActive, cancellationToken);
+
+    private async Task<string> ProfessionalNameAsync(Guid professionalId, CancellationToken cancellationToken) =>
+        await db.Professionals.AsNoTracking().Where(x => x.Id == professionalId).Select(x => x.Name)
+            .SingleOrDefaultAsync(cancellationToken) ?? "seu profissional";
+
+    private async Task<((string Phone, string FirstName)? Recipient, WhatsAppComposition? Failure)> CustomerRecipientAsync(
+        Guid? customerId, CancellationToken cancellationToken)
+    {
+        var customer = customerId is null
+            ? null
+            : await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == customerId && x.IsActive, cancellationToken);
+        if (customer is null) return (null, WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientUnavailable));
+        if (!WhatsAppNormalizer.TryNormalize(customer.Phone, out var phone))
+            return (null, WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientPhoneInvalid));
+        return ((phone, FirstName(customer.Name)), null);
+    }
 
     private WhatsAppTemplate Template(string name, IReadOnlyList<string> parameters, string? urlButton = null) =>
         new(name, options.CurrentValue.LanguageCode, parameters, urlButton);
 
     private string Time(DateTimeOffset instant) =>
         TimeZoneInfo.ConvertTime(instant, timeZone).ToString("HH:mm", Brazil);
+
+    private string Date(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, timeZone).ToString("dd/MM/yyyy", Brazil);
 
     /// <summary>Only the first name leaves the system, capped like the previous notification bodies.</summary>
     public static string FirstName(string? value)

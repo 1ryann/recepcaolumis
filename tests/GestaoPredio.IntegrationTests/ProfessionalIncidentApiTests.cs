@@ -5,7 +5,7 @@ using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Domain.Visits;
-using GestaoPredio.Infrastructure.Notifications;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,8 +23,6 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
-        recorder.Clear();
 
         var response = await factory.PostWithCsrfAsync("/api/professional/incidents", new { type = "NEXT_APPOINTMENT" });
         response.EnsureSuccessStatusCode();
@@ -45,7 +43,11 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         Assert.True(await db.ProfessionalAvailabilityExceptions.AsNoTracking()
             .AnyAsync(x => x.ProfessionalId == seed.Professional.Id && x.Origin == ProfessionalAvailabilityExceptionOrigin.Incident));
         Assert.True(await db.RescheduleTokens.AsNoTracking().AnyAsync(x => x.ReservationId == seed.Soon.Id));
-        Assert.Contains(recorder.Attempts, a => a.EventType == "CUSTOMER_RESERVATION_CANCELLED_RESCHEDULE");
+        // Only the cancelled appointment's customer is notified, and the notice committed with the cancellation.
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationType.ProfessionalCancelled, notice.Type);
+        Assert.Equal(WhatsAppNotificationRecipient.Customer, notice.Recipient);
+        Assert.Equal($"CANCEL:{seed.Soon.Id}", notice.IdempotencyKey);
     }
 
     [Fact]
@@ -147,8 +149,8 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
         await factory.ResetAsync();
         await factory.SeedDefaultOperatingHoursAsync();
         var seed = await SeedAsync();
-        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
-        recorder.Clear();
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
 
         (await factory.PostWithCsrfAsync("/api/professional/incidents", new { type = "NEXT_APPOINTMENT" }))
             .EnsureSuccessStatusCode();
@@ -160,9 +162,15 @@ public sealed class ProfessionalIncidentApiTests(ModulesApiFactory factory)
             Assert.Equal(32, tokenRow.TokenHash.Length);
         }
 
-        // The raw token is only delivered via WhatsApp; assert the customer notification carried a link.
-        var attempt = Assert.Single(recorder.Attempts, a => a.EventType == "CUSTOMER_RESERVATION_CANCELLED_RESCHEDULE");
-        Assert.True(attempt.Success);
+        // The raw token exists only inside the WhatsApp message: the template's URL button carries it, and that
+        // exact value opens the reschedule flow.
+        Assert.Equal(1, (await ModulesApiFactory.DispatchAsync(host)).Accepted);
+        var (_, template) = Assert.Single(meta.Sent);
+        Assert.Equal("client_professional_cancelled_reschedule", template.Name);
+        Assert.False(string.IsNullOrWhiteSpace(template.UrlButtonParameter));
+        var resolve = await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = template.UrlButtonParameter });
+        Assert.Equal(HttpStatusCode.OK, resolve.StatusCode);
+        Assert.Equal(WhatsAppNotificationStatus.Accepted, Assert.Single(await factory.NotificationsAsync()).Status);
     }
 
     private async Task<Seed> SeedAsync()

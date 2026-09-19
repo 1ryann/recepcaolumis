@@ -82,6 +82,44 @@ classificação final). Os nomes abaixo são sugestões — o que vale é o conf
 | `AppointmentConfirmed` | `client_appointment_confirmed` | Olá, {{1}}. Seu atendimento com {{2}} está confirmado para {{3}} às {{4}}. | 1 cliente · 2 profissional · 3 data · 4 hora |
 | `AppointmentReminder` | `client_appointment_reminder` | Olá, {{1}}. Lembrete: você tem atendimento com {{2}} amanhã às {{3}}. | preparado para fase futura |
 
+Link de reagendamento: o token de uso único é gerado **no momento do envio** (o hash é gravado em
+`RescheduleTokens`, como antes) e vai só no sufixo do botão; o valor bruto nunca é persistido nem logado. A base da
+URL fica no template aprovado e deve ser o mesmo domínio público de `Rescheduling:PublicBaseUrl`. Validade:
+`Rescheduling:LinkTtlHours` (48 h), contada a partir do envio.
+
+## Decisão: token do link de reagendamento no envio assíncrono
+
+**Problema.** O cancelamento por imprevisto emite um token de uso único (48 h). O valor bruto só existe durante a
+requisição; o banco guarda apenas `SHA256(token)` em `RescheduleTokens` (um por reserva). Com o envio assíncrono, o
+token bruto **não existe mais** quando o `BackgroundService` processa a notificação.
+
+**Opções avaliadas.**
+
+| Opção | Avaliação |
+|---|---|
+| 1. Regenerar o token no envio | O modelo já prevê rotação (`RescheduleToken.Rotate`); resolve/confirm localizam o token só pelo hash e não mudam. Nenhum segredo fica em repouso além do hash que já existia. **Escolhida.** |
+| 2. Persistir o token (cifrado) para enviar depois | Cria um segredo em repouso na fila (mesmo cifrado com Data Protection: chave, rotação de chaves, backup, vida útil maior que a do link). Sem ganho sobre a opção 1. **Rejeitada.** |
+| 3. Template sem link, "procure a recepção" | Perde o autoatendimento que existe hoje. Só faria sentido se 1 não fosse compatível. **Rejeitada** (mantida para `APPOINTMENT_CANCELLED`, em que não há fluxo de reagendamento por link). |
+
+**Como funciona (opção 1).**
+- O imprevisto continua criando a linha `RescheduleTokens` (hash de um valor aleatório que nunca sai do servidor) na
+  mesma transação do cancelamento, e a fila grava só `CANCEL:{reserva}` — **nunca** o token.
+- No envio, o dispatcher: (a) pula a notificação como `OBSOLETE` se o token já foi **usado** ou **revogado** — sem
+  rotacionar, porque `Rotate` limparia `UsedAt`/`RevokedAt` e ressuscitaria um link encerrado; (b) caso contrário gera
+  32 bytes aleatórios, grava o novo hash com validade `agora + Rescheduling:LinkTtlHours` e **commita antes de chamar a
+  Meta**; (c) envia o valor bruto apenas como sufixo do botão URL do template; (d) registra auditoria
+  `RESCHEDULE_LINK_ISSUED` com o id da notificação como correlação. O valor bruto não vai para tabela, log ou auditoria.
+- Concorrência: `RescheduleTokens` tem token de concorrência (`xmin`); se o cliente usar o link no mesmo instante da
+  rotação, o `SaveChanges` falha, a notificação volta para retry e a próxima tentativa vê `UsedAt` e pula.
+
+**Riscos aceitos.**
+- Cada tentativa de envio rotaciona o token: só o link da **última** mensagem enviada vale. Se uma tentativa
+  terminou em timeout mas a Meta tinha entregue, o retry envia uma mensagem nova com link válido e o link da anterior
+  deixa de funcionar (a página de reagendamento mostra "link inválido ou expirado").
+- Se uma tentativa ambígua (timeout) de fato entregou e **todas** as seguintes falharem de forma permanente, o
+  cliente fica com um link inválido. É o mesmo desfecho da opção 3, e continua visível em
+  `/api/admin/whatsapp/notifications` como `FAILED`, para a recepção contatar o cliente.
+
 ## Configuração
 
 | Variável de ambiente | Padrão | Uso |
