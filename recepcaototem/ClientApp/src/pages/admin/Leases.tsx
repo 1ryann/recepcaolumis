@@ -210,13 +210,16 @@ export function Leases() {
         const found = await roomRentalInquiriesApi.get(inquiryIdParam)
         if (!active) return
         // Already converted: never offer a second conversion — show the lease it produced instead.
+        // Clear ?inquiryId= only after the detail is shown: clearing it re-runs this effect, whose cleanup
+        // marks this run inactive and would discard the lease detail still in flight.
         if (found.status === 'CONVERTED') {
-          clearInquiryParam()
           setNotice('Este interesse já foi convertido em uma locação.')
-          if (found.leaseId) {
-            const converted = await leasesApi.detail(found.leaseId)
-            if (active) setDetail(converted)
-          }
+          try {
+            if (found.leaseId) {
+              const converted = await leasesApi.detail(found.leaseId)
+              if (active) setDetail(converted)
+            }
+          } finally { if (active) clearInquiryParam() }
           return
         }
         await openForm(null)
