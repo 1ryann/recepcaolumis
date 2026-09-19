@@ -153,6 +153,24 @@ public sealed class WhatsAppNotification
 
     public static string DelayKey(Guid reservationId, int step) => $"DELAY:{reservationId}:{step}";
 
+    public const string AdminTestKeyPrefix = "TEST:";
+
+    public bool IsAdminTest => IdempotencyKey.StartsWith(AdminTestKeyPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Marks a notification just built by one of the factories above as a single administrative test: only the
+    /// idempotency key changes (TEST:{business key}), so a repeated request for the same record and type can never
+    /// send twice, while the real business notice for that record keeps its own key. Everything else — type,
+    /// recipient, records, composition, sending — is the normal pipeline.
+    /// </summary>
+    public WhatsAppNotification AsAdminTest()
+    {
+        if (Status != WhatsAppNotificationStatus.Pending || Attempts != 0 || IsAdminTest)
+            throw new InvalidOperationException("Somente uma notificação recém-criada pode virar teste administrativo.");
+        IdempotencyKey = AdminTestKeyPrefix + IdempotencyKey;
+        return this;
+    }
+
     /// <summary>Taken by exactly one dispatcher until <paramref name="lockedUntil"/>; each claim is one attempt.</summary>
     public void Claim(DateTimeOffset occurredAt, DateTimeOffset lockedUntil)
     {

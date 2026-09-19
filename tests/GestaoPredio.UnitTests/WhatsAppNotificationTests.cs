@@ -321,6 +321,30 @@ public sealed class WhatsAppNotificationTests
         }
     }
 
+    [Fact]
+    public void An_admin_test_only_prefixes_the_business_key_so_it_cannot_collide_with_the_real_notice()
+    {
+        var reservation = Reservation.CreateApproved(Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(1), Now.AddDays(1).AddHours(1), "c", Now, Guid.NewGuid());
+        var real = WhatsAppNotification.AppointmentConfirmed(reservation, Now)!;
+        var test = WhatsAppNotification.AppointmentConfirmed(reservation, Now)!.AsAdminTest();
+
+        Assert.False(real.IsAdminTest);
+        Assert.True(test.IsAdminTest);
+        Assert.Equal($"TEST:CONFIRM:{reservation.Id}", test.IdempotencyKey);
+        Assert.Equal(real.Type, test.Type);
+        Assert.Equal(real.Recipient, test.Recipient);
+        Assert.Equal(real.CustomerId, test.CustomerId);
+        Assert.Equal(WhatsAppNotificationStatus.Pending, test.Status);
+    }
+
+    [Fact]
+    public void Only_a_fresh_notice_can_become_an_admin_test_and_only_once()
+    {
+        Assert.Throws<InvalidOperationException>(() => Claimed().AsAdminTest());
+        var once = WhatsAppNotification.ClientCheckedIn(Visit.Arrive(Guid.NewGuid(), null, null, "Ana", "A", Now), Now).AsAdminTest();
+        Assert.Throws<InvalidOperationException>(() => once.AsAdminTest());
+    }
+
     private static WhatsAppNotification Sending()
     {
         var notification = Claimed();

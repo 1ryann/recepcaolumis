@@ -81,6 +81,18 @@ public sealed class WhatsAppNotificationDispatcher(
     }
 
     /// <summary>
+    /// Claims and processes exactly one notification, through the same claim, composition, send and fencing as
+    /// <see cref="RunOnceAsync"/> — for the administrative single-notice test while the worker stays disabled. Nothing
+    /// else in the queue is touched: no delay scan, no sweep, no other notification. Null when that notification is not
+    /// due (already processed, locked by a dispatcher, or waiting for a retry).
+    /// </summary>
+    public async Task<WhatsAppNotificationStatus?> DispatchOneAsync(Guid notificationId, CancellationToken cancellationToken)
+    {
+        var ids = await ClaimNextAsync(cancellationToken, notificationId);
+        return ids.Count == 1 && ids[0] == notificationId ? await ProcessAsync(notificationId, cancellationToken) : null;
+    }
+
+    /// <summary>
     /// PROFESSIONAL_DELAYED policy: the client has checked in (visit WAITING) for an approved appointment whose start
     /// is at least <c>DelayFirstNoticeMinutes</c> in the past. Step n becomes due at first + n × repeat; only the
     /// latest due step is queued (a late scan never sends a burst of catch-up notices), at most
@@ -161,9 +173,12 @@ public sealed class WhatsAppNotificationDispatcher(
         return (interrupted, undecided);
     }
 
-    /// <summary>Claims the single most overdue notification, or none.</summary>
-    private async Task<List<Guid>> ClaimNextAsync(CancellationToken cancellationToken)
+    /// <summary>Claims the single most overdue notification (or only <paramref name="onlyId"/>, when given), or none.</summary>
+    private async Task<List<Guid>> ClaimNextAsync(CancellationToken cancellationToken, Guid? onlyId = null)
     {
+        // Two non-null parameters rather than a nullable one, so Npgsql always knows their types.
+        var anyId = onlyId is null;
+        var id = onlyId ?? Guid.Empty;
         var settings = options.CurrentValue;
         // UTC, truncated to PostgreSQL's microsecond precision like every stored timestamp.
         var utc = timeProvider.GetUtcNow().ToUniversalTime();
@@ -177,8 +192,9 @@ public sealed class WhatsAppNotificationDispatcher(
         var ids = await db.Database.SqlQuery<Guid>($"""
             WITH candidate AS MATERIALIZED (
                 SELECT c."Id" FROM "WhatsAppNotifications" AS c
-                WHERE (c."Status" = 'PENDING' AND c."NextAttemptAt" <= {now})
-                   OR (c."Status" = 'PROCESSING' AND c."LockedUntil" < {now})
+                WHERE ((c."Status" = 'PENDING' AND c."NextAttemptAt" <= {now})
+                    OR (c."Status" = 'PROCESSING' AND c."LockedUntil" < {now}))
+                  AND ({anyId} OR c."Id" = {id})
                 ORDER BY c."NextAttemptAt"
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED)
