@@ -67,6 +67,22 @@ test('sends no WhatsApp opt-in unless the unticked box was ticked', async () => 
   expect(vi.mocked(customerApi.register).mock.calls[0][0]).not.toHaveProperty('whatsAppOptIn')
 })
 
+test('accepts a six-character password with a letter and a digit, and refuses a shorter one', async () => {
+  vi.mocked(customerApi.register).mockReset().mockResolvedValue({} as never)
+  renderAt('/cliente/cadastro')
+  fillValidForm()
+  fireEvent.change(screen.getByLabelText(/^Senha/), { target: { value: 'abc12' } })
+  fireEvent.change(screen.getByLabelText(/^Confirmar senha/), { target: { value: 'abc12' } })
+  fireEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
+  expect(customerApi.register).not.toHaveBeenCalled()
+
+  fireEvent.change(screen.getByLabelText(/^Senha/), { target: { value: 'senha1' } })
+  fireEvent.change(screen.getByLabelText(/^Confirmar senha/), { target: { value: 'senha1' } })
+  fireEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
+  await screen.findByTestId('login-sink')
+  expect(vi.mocked(customerApi.register).mock.calls[0][0]).toMatchObject({ password: 'senha1' })
+})
+
 test('sends the WhatsApp opt-in when the person ticked it', async () => {
   vi.mocked(customerApi.register).mockReset().mockResolvedValue({} as never)
   renderAt('/cliente/cadastro')

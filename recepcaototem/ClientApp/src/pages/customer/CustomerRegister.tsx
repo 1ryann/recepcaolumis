@@ -9,14 +9,12 @@ import { LumisLogo } from '../../theme/LumisLogo'
 import { WhatsAppOptInCheckbox } from '../../features/whatsapp/WhatsAppOptIn'
 import { CUSTOMER_OPT_IN_TEXT } from '../../features/whatsapp/optInText'
 
-const passwordHint = 'Use pelo menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'
+const passwordHint = 'Use pelo menos 6 caracteres, com letra e número.'
 
 function isValidCustomerPassword(password: string) {
-  return password.length >= 12
+  return password.length >= 6
     && /[a-z]/.test(password)
-    && /[A-Z]/.test(password)
     && /\d/.test(password)
-    && /[^A-Za-z0-9]/.test(password)
 }
 
 export function CustomerRegister() {

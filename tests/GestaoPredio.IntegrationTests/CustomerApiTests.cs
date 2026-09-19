@@ -32,6 +32,47 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
     }
 
+    [Theory]
+    [InlineData("senha1", HttpStatusCode.Created)]      // six characters, letter + digit: the operator's policy
+    [InlineData("abc12", HttpStatusCode.BadRequest)]    // five characters
+    [InlineData("senhasenha", HttpStatusCode.BadRequest)] // no digit
+    public async Task Registration_accepts_a_six_character_password_without_symbols_or_capitals(string password, HttpStatusCode expected)
+    {
+        await factory.ResetAsync();
+        var csrf = await factory.GetCsrfTokenAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/customer/register")
+        {
+            Content = JsonContent.Create(new { name = "Cliente Teste", phone = "(69) 99999-9999",
+                email = $"password-{Guid.NewGuid():N}@lumis.test", password, confirmation = password })
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        var response = await factory.Client.SendAsync(request);
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_phone_already_registered_is_refused_with_the_same_generic_error()
+    {
+        await factory.ResetAsync();
+        var csrf = await factory.GetCsrfTokenAsync();
+        async Task<HttpResponseMessage> RegisterAsync()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/customer/register")
+            {
+                Content = JsonContent.Create(new { name = "Cliente Teste", phone = "(69) 99999-9999",
+                    email = $"dup-{Guid.NewGuid():N}@lumis.test", password = "senha1", confirmation = "senha1" })
+            };
+            request.Headers.Add("X-CSRF-TOKEN", csrf);
+            return await factory.Client.SendAsync(request);
+        }
+
+        Assert.Equal(HttpStatusCode.Created, (await RegisterAsync()).StatusCode);
+        // Same number, a brand-new e-mail: refused, because one account per number.
+        var second = await RegisterAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+        Assert.Contains("INVALID_CUSTOMER_REGISTRATION", await second.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task Totem_lookup_masks_existing_customer_without_exposing_identity()
     {

@@ -31,11 +31,12 @@ test('customer portal uses its own backend identity and does not persist credent
 })
 
 test('customer registration mirrors the server password policy', () => {
-  expect(customerRegisterSource).toContain('password.length >= 12')
+  // Mirrors LumisIdentityOptions: at least 6 characters, a letter and a digit; no capital or symbol required.
+  expect(customerRegisterSource).toContain('password.length >= 6')
   expect(customerRegisterSource).toContain("/[a-z]/.test(password)")
-  expect(customerRegisterSource).toContain("/[A-Z]/.test(password)")
   expect(customerRegisterSource).toContain("/\\d/.test(password)")
-  expect(customerRegisterSource).toContain("/[^A-Za-z0-9]/.test(password)")
+  expect(customerRegisterSource).not.toContain("/[A-Z]/.test(password)")
+  expect(customerRegisterSource).not.toContain("/[^A-Za-z0-9]/.test(password)")
 })
 
 test('professional portal consumes only owned professional endpoints', () => {
