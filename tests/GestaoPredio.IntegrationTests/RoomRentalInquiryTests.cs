@@ -238,6 +238,48 @@ public sealed class RoomRentalInquiryTests(ModulesApiFactory factory)
         await AssertNoRowsPersistedAsync();
     }
 
+    // Non-deployed hosts (Development/Testing share this path: no ValidateOnStart) must answer a filled-in
+    // but malformed finance number exactly like a missing one, never with the generic 500 that the
+    // OptionsValidationException thrown by IOptions.Value would otherwise surface.
+    [Theory]
+    [InlineData("55 69 99999-9999")]
+    [InlineData("123")]
+    public async Task Whatsapp_configured_with_an_invalid_number_returns_503_and_does_not_persist(string configuredPhone)
+    {
+        await factory.ResetAsync();
+        var room = await SeedRoomAsync("Sala Whatsapp Invalido");
+        using var misconfigured = factory.WithConfig(("Whatsapp:FinanceiroPhoneNumber", configuredPhone));
+
+        var response = await misconfigured.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("ROOM_RENTAL_WHATSAPP_NOT_CONFIGURED", body);
+        Assert.DoesNotContain(configuredPhone, body);
+        await AssertNoRowsPersistedAsync();
+    }
+
+    [Fact]
+    public async Task Whatsapp_configured_with_a_valid_formatted_number_builds_the_url_from_the_normalized_number()
+    {
+        await factory.ResetAsync();
+        var room = await SeedRoomAsync("Sala Whatsapp Valido");
+        using var configured = factory.WithConfig(("Whatsapp:FinanceiroPhoneNumber", "(69) 98888-7777"));
+
+        var response = await configured.Client.PostAsJsonAsync($"/api/totem/rooms/{room.Id}/rental-inquiries",
+            new { fullName = "Ana Souza", whatsApp = "+5569999999999", professionOrCompany = "Clínica A", note = (string?)null,
+                desiredStartDate = "2026-12-01", desiredEndDate = "2026-12-10" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = (await response.Content.ReadFromJsonAsync<RoomRentalInquiryResultPayload>())!;
+        Assert.StartsWith("https://wa.me/5569988887777?text=", result.WhatsappUrl, StringComparison.Ordinal);
+        await using var scope = factory.Services.CreateAsyncScope(); // same Postgres schema as the derived host
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.True(await db.RoomRentalInquiries.AnyAsync(x => x.Id == result.InquiryId));
+    }
+
     [Fact]
     public async Task Ip_budget_exhausted_returns_429()
     {

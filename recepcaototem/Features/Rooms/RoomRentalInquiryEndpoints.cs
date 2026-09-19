@@ -40,7 +40,12 @@ public static class RoomRentalInquiryEndpoints
         // Fail fast, before touching the database, if the finance WhatsApp number is not configured
         // (Development can legitimately run without it). The message content does not affect whether
         // the configured phone itself normalizes, so an empty placeholder is enough to check here.
-        if (!WhatsappLinkBuilder.TryBuild(whatsappOptions.Value.FinanceiroPhoneNumber, "", out _))
+        // A filled-in but malformed number throws on first access in non-deployed hosts (deployed ones
+        // never start with it: ValidateOnStart); it is the same operator problem, so the same clear 503.
+        string financePhone;
+        try { financePhone = whatsappOptions.Value.FinanceiroPhoneNumber; }
+        catch (OptionsValidationException) { return WhatsappNotConfigured(); }
+        if (!WhatsappLinkBuilder.TryBuild(financePhone, "", out _))
             return WhatsappNotConfigured();
 
         var now = timeProvider.GetUtcNow();
@@ -84,7 +89,7 @@ public static class RoomRentalInquiryEndpoints
             $"Sala: {room.Name}\nDisponibilidade: {label}\nPeríodo desejado: {desiredPeriod}\nNome: {input.FullName}\n" +
             $"WhatsApp: {input.WhatsApp}\nProfissão/Empresa: {input.ProfessionOrCompany}\n" +
             $"Observação: {input.Note ?? "—"}";
-        WhatsappLinkBuilder.TryBuild(whatsappOptions.Value.FinanceiroPhoneNumber, message, out var url);
+        WhatsappLinkBuilder.TryBuild(financePhone, message, out var url);
         return Results.Ok(new RoomRentalInquiryResult(inquiry.Id, url, label));
     }
 

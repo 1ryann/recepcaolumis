@@ -19,6 +19,19 @@ public sealed class WhatsappConfigurationTests
         Assert.DoesNotContain("+", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    public void Deployed_environment_with_an_invalid_phone_fails_during_startup_without_echoing_it(string environmentName)
+    {
+        using var api = CreateApi(environmentName, "55 69 99999-9999");
+
+        var exception = Assert.Throws<OptionsValidationException>(() => api.CreateClient());
+
+        Assert.Contains("WhatsApp financeiro", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("99999", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Testing_factory_starts_with_a_fictitious_phone()
     {
