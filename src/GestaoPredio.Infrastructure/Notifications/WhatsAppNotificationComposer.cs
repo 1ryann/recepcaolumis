@@ -1,5 +1,10 @@
+using System.Globalization;
 using GestaoPredio.Application.Whatsapp;
 using GestaoPredio.Domain.Notifications;
+using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Visits;
+using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace GestaoPredio.Infrastructure.Notifications;
@@ -33,19 +38,60 @@ public sealed record WhatsAppComposition(string? Phone, WhatsAppTemplate? Templa
 /// already in service, reservation no longer approved, reschedule already used) is skipped as OBSOLETE.
 /// Each notification type contributes its own rendering; a type without one is skipped as NOT_IMPLEMENTED.
 /// </summary>
-public sealed class WhatsAppNotificationComposer(IOptionsMonitor<WhatsAppTemplateOptions> templates)
+public sealed class WhatsAppNotificationComposer(
+    ApplicationDbContext db,
+    IOptionsMonitor<WhatsAppTemplateOptions> templates,
+    IOptionsMonitor<WhatsAppNotificationOptions> options,
+    TimeZoneInfo timeZone)
 {
-    public Task<WhatsAppComposition> ComposeAsync(WhatsAppNotification notification, DateTimeOffset now,
+    private static readonly CultureInfo Brazil = CultureInfo.GetCultureInfo("pt-BR");
+
+    public async Task<WhatsAppComposition> ComposeAsync(WhatsAppNotification notification, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (notification.Type == WhatsAppNotificationType.AppointmentReminder)
-            return Task.FromResult(WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented));
+            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented);
         var templateName = templates.CurrentValue.NameFor(notification.Type);
         if (templateName.Length == 0)
-            return Task.FromResult(WhatsAppComposition.Skip(WhatsAppNotificationCodes.TemplateNotConfigured));
+            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.TemplateNotConfigured);
 
-        return Task.FromResult(WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented));
+        return notification.Type switch
+        {
+            WhatsAppNotificationType.ClientCheckedIn => await ClientCheckedInAsync(notification, templateName, cancellationToken),
+            _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented)
+        };
     }
+
+    // "Olá, {{1}}. O cliente {{2}} já chegou para o atendimento das {{3}}." — to the professional.
+    private async Task<WhatsAppComposition> ClientCheckedInAsync(WhatsAppNotification notification, string templateName,
+        CancellationToken cancellationToken)
+    {
+        var visit = await db.Visits.AsNoTracking().SingleOrDefaultAsync(x => x.Id == notification.VisitId, cancellationToken);
+        // Already being seen, finished or cancelled: the arrival notice would be noise.
+        if (visit is null || visit.Status != VisitStatus.Waiting) return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        var professional = await ProfessionalAsync(visit.ProfessionalId, cancellationToken);
+        if (professional is null) return WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientUnavailable);
+        if (!WhatsAppNormalizer.TryNormalize(professional.WhatsApp, out var phone))
+            return WhatsAppComposition.Fail(WhatsAppNotificationCodes.RecipientPhoneInvalid);
+
+        var appointmentAt = visit.ArrivedAt;
+        if (visit.ReservationId is { } reservationId &&
+            await db.Reservations.AsNoTracking().Where(x => x.Id == reservationId).Select(x => (DateTimeOffset?)x.StartAt)
+                .SingleOrDefaultAsync(cancellationToken) is { } startAt)
+            appointmentAt = startAt;
+
+        return WhatsAppComposition.Send(phone, Template(templateName,
+            [professional.Name, FirstName(visit.VisitorName), Time(appointmentAt)]));
+    }
+
+    private Task<Professional?> ProfessionalAsync(Guid professionalId, CancellationToken cancellationToken) =>
+        db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == professionalId && x.IsActive, cancellationToken);
+
+    private WhatsAppTemplate Template(string name, IReadOnlyList<string> parameters, string? urlButton = null) =>
+        new(name, options.CurrentValue.LanguageCode, parameters, urlButton);
+
+    private string Time(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, timeZone).ToString("HH:mm", Brazil);
 
     /// <summary>Only the first name leaves the system, capped like the previous notification bodies.</summary>
     public static string FirstName(string? value)

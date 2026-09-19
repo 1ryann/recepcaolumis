@@ -1,14 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
-using GestaoPredio.Application.Notifications;
+using GestaoPredio.Application.Whatsapp;
 using GestaoPredio.Domain.Customers;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
-using GestaoPredio.Infrastructure.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -59,8 +59,6 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     {
         await factory.ResetAsync();
         var seed = await SeedAsync(withVisit: false, withCustomer: true);
-        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
-        recorder.Clear();
         await LoginAsync(seed.Manager);
         var reservation = (await (await factory.Client.GetAsync($"/api/admin/reservations/{seed.ReservationId}")).Content.ReadFromJsonAsync<ReservationPayload>())!;
         var first = await factory.PostWithCsrfAsync($"/api/reception/reservations/{seed.ReservationId}/check-in",
@@ -74,9 +72,11 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
             new { concurrencyToken = reservation.ConcurrencyToken });
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
         Assert.Equal(firstVisit.Id, (await second.Content.ReadFromJsonAsync<ReceptionVisitPayload>())!.Id);
-        var attempt = Assert.Single(recorder.Attempts);
-        Assert.Equal(seed.ProfessionalId, attempt.ProfessionalId);
-        Assert.Equal(NotificationEventTypes.ProfessionalVisitWaiting, attempt.EventType);
+        // The second check-in returns the same visit: still exactly one arrival notice, keyed by that visit.
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationType.ClientCheckedIn, notice.Type);
+        Assert.Equal(seed.ProfessionalId, notice.ProfessionalId);
+        Assert.Equal($"CHECKIN:{firstVisit.Id}", notice.IdempotencyKey);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Visits.CountAsync(x => x.ReservationId == seed.ReservationId));
     }
@@ -110,13 +110,13 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task Notification_failure_does_not_rollback_manual_checkin()
+    public async Task Meta_being_unavailable_never_blocks_or_rolls_back_the_manual_checkin()
     {
         await factory.ResetAsync();
         var seed = await SeedAsync(withVisit: false, withCustomer: true);
-        var recorder = factory.Services.GetRequiredService<DemoNotificationRecorder>();
-        recorder.Clear();
-        recorder.ForceFailure = true;
+        var unavailable = WhatsAppSendResult.Failed(WhatsAppFailureCodes.ProviderUnavailable, 131000);
+        var meta = new FakeWhatsAppService().Then(unavailable, unavailable);
+        using var host = factory.WithWhatsApp(meta);
         await LoginAsync(seed.Manager);
         var reservation = (await (await factory.Client.GetAsync($"/api/admin/reservations/{seed.ReservationId}"))
             .Content.ReadFromJsonAsync<ReservationPayload>())!;
@@ -124,11 +124,19 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         var response = await factory.PostWithCsrfAsync($"/api/reception/reservations/{seed.ReservationId}/check-in",
             new { concurrencyToken = reservation.ConcurrencyToken });
 
+        // The check-in committed without calling Meta at all…
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.False(Assert.Single(recorder.Attempts).Success);
+        Assert.Empty(meta.Sent);
+        Assert.Equal(WhatsAppNotificationStatus.Pending, Assert.Single(await factory.NotificationsAsync()).Status);
+
+        // …and a failing send later only reschedules the notification; the visit is untouched.
+        await ModulesApiFactory.DispatchAsync(host);
+        var notice = Assert.Single(await factory.NotificationsAsync(), x => x.Type == WhatsAppNotificationType.ClientCheckedIn);
+        Assert.Equal(WhatsAppNotificationStatus.Pending, notice.Status);
+        Assert.Equal(WhatsAppFailureCodes.ProviderUnavailable, notice.LastErrorCode);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Visits
-            .CountAsync(x => x.ReservationId == seed.ReservationId));
+            .CountAsync(x => x.ReservationId == seed.ReservationId && x.Status == VisitStatus.Waiting));
     }
 
     [Fact]

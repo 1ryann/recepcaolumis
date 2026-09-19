@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.OperationalAlerts;
-using GestaoPredio.Application.Notifications;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Application.Availability;
@@ -169,7 +169,7 @@ public static class ReceptionEndpoints
         TotemEndpoints.CreateAssistedReservation(request, context, db, resourceLock, availability, time, ct);
 
     private static async Task<IResult> ManualCheckIn(Guid id, ReceptionCheckInRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider time, INotificationService notifications, CancellationToken ct)
+        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider time, CancellationToken ct)
     {
         if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return Bad("INVALID_CONCURRENCY_TOKEN");
         var locator = await db.Reservations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -192,11 +192,10 @@ public static class ReceptionEndpoints
         db.Visits.Add(visit);
         db.VisitTransitions.Add(VisitTransition.Record(visit.Id, null, VisitStatus.Waiting, Actor(context)!, now));
         db.AuditEntries.Add(new AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN_MANUAL", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, TargetUserId = Actor(context), OccurredAt = now, CorrelationId = context.TraceIdentifier });
+        // Outbox: committed with the check-in, sent later by the dispatcher — the check-in never waits on Meta.
+        db.WhatsAppNotifications.Add(WhatsAppNotification.ClientCheckedIn(visit, now));
         try { await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
         catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); return Modified(); }
-        await notifications.NotifyProfessionalAsync(new ProfessionalNotificationEvent(
-            visit.ProfessionalId, NotificationEventTypes.ProfessionalVisitWaiting,
-            visit.VisitorName, visit.ArrivedAt, visit.ReservationId), CancellationToken.None);
         return Results.Created($"/api/reception/visits/{visit.Id}", new ReceptionVisitResponse(visit.Id, visit.ProfessionalId, visit.RoomId, visit.ReservationId, visit.CustomerId, visit.VisitorName, "WAITING", visit.ArrivedAt, null, null, ConcurrencyToken.Encode(visit.Version)));
     }
 

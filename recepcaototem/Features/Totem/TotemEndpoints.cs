@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Customers;
 using GestaoPredio.Application.Leases;
-using GestaoPredio.Application.Notifications;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Auditing;
@@ -280,7 +280,7 @@ public static class TotemEndpoints
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, INotificationService notifications, CancellationToken ct)
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
@@ -296,10 +296,9 @@ public static class TotemEndpoints
         var visit = Visit.Arrive(reservation.ProfessionalId, reservation.RoomId, reservation.Id, customer.Name, "TOTEM", time.GetUtcNow(), customer.Id);
         db.Visits.Add(visit); token.MarkUsed(time.GetUtcNow());
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
+        // Outbox: committed with the check-in, sent later by the dispatcher — the check-in never waits on Meta.
+        db.WhatsAppNotifications.Add(WhatsAppNotification.ClientCheckedIn(visit, time.GetUtcNow()));
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
-        await notifications.NotifyProfessionalAsync(new ProfessionalNotificationEvent(
-            visit.ProfessionalId, NotificationEventTypes.ProfessionalVisitWaiting,
-            visit.VisitorName, visit.ArrivedAt, visit.ReservationId), CancellationToken.None);
         return Results.Ok(new { visitId = visit.Id, status = "WAITING" });
     }
 
