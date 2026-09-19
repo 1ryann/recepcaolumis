@@ -16,8 +16,18 @@ public sealed class WhatsAppNotificationOptions
     public bool Enabled { get; set; }
     public int PollIntervalSeconds { get; set; } = 15;
     public int BatchSize { get; set; } = 20;
-    /// <summary>How long a claimed notification stays locked; must exceed the Cloud API timeout.</summary>
+    /// <summary>
+    /// Lease of one claimed notification while it is prepared (checks, recipient, reschedule link). Notifications are
+    /// claimed one at a time, so this never has to cover a whole batch.
+    /// </summary>
     public int LeaseSeconds { get; set; } = 120;
+    /// <summary>
+    /// Lease taken when the Cloud API call starts. It must outlast the longest possible call (Whatsapp:TimeoutSeconds
+    /// is at most 60), so the minimum is 70. If it still expires, the send is treated as an unknown outcome, never resent.
+    /// </summary>
+    public int SendLeaseSeconds { get; set; } = 90;
+    /// <summary>How long an unknown send outcome waits for webhook evidence before it is failed as WHATSAPP_OUTCOME_UNKNOWN.</summary>
+    public int UnconfirmedWindowMinutes { get; set; } = 15;
     /// <summary>Total send attempts, the first one included.</summary>
     public int MaxAttempts { get; set; } = 4;
     /// <summary>Wait before attempt 2, 3, …; the last value repeats. Null means the defaults (30s, 2min, 10min).</summary>
@@ -84,6 +94,8 @@ public sealed partial class WhatsAppNotificationOptionsValidator : IValidateOpti
         if (options.PollIntervalSeconds is < 1 or > 3600) errors.Add("Whatsapp:Notifications:PollIntervalSeconds deve estar entre 1 e 3600.");
         if (options.BatchSize is < 1 or > 500) errors.Add("Whatsapp:Notifications:BatchSize deve estar entre 1 e 500.");
         if (options.LeaseSeconds is < 30 or > 3600) errors.Add("Whatsapp:Notifications:LeaseSeconds deve estar entre 30 e 3600.");
+        if (options.SendLeaseSeconds is < 70 or > 3600) errors.Add("Whatsapp:Notifications:SendLeaseSeconds deve estar entre 70 e 3600.");
+        if (options.UnconfirmedWindowMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:UnconfirmedWindowMinutes deve estar entre 1 e 1440.");
         if (options.MaxAttempts is < 1 or > 20) errors.Add("Whatsapp:Notifications:MaxAttempts deve estar entre 1 e 20.");
         if (options.RetryDelaysSeconds is { } delays && delays.Any(x => x is < 1 or > 86400))
             errors.Add("Whatsapp:Notifications:RetryDelaysSeconds deve conter valores entre 1 e 86400.");

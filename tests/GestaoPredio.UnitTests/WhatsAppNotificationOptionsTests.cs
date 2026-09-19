@@ -40,6 +40,8 @@ public sealed class WhatsAppNotificationOptionsTests
     [Theory]
     [InlineData(nameof(WhatsAppNotificationOptions.MaxAttempts), 0)]
     [InlineData(nameof(WhatsAppNotificationOptions.LeaseSeconds), 5)]
+    [InlineData(nameof(WhatsAppNotificationOptions.SendLeaseSeconds), 60)]   // would not cover a 60 s Cloud API timeout
+    [InlineData(nameof(WhatsAppNotificationOptions.UnconfirmedWindowMinutes), 0)]
     [InlineData(nameof(WhatsAppNotificationOptions.BatchSize), 0)]
     [InlineData(nameof(WhatsAppNotificationOptions.DelayFirstNoticeMinutes), 0)]
     [InlineData(nameof(WhatsAppNotificationOptions.DelayRepeatMinutes), 0)]

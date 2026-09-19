@@ -34,10 +34,10 @@ public sealed class WhatsAppNotificationWorker(
                     await using var scope = scopes.CreateAsyncScope();
                     var summary = await scope.ServiceProvider.GetRequiredService<WhatsAppNotificationDispatcher>()
                         .RunOnceAsync(stoppingToken);
-                    if (summary.Claimed > 0 || summary.DelayNoticesQueued > 0)
+                    if (summary.Claimed > 0 || summary.DelayNoticesQueued > 0 || summary.Unconfirmed > 0 || summary.Failed > 0)
                         logger.LogInformation(
-                            "WhatsApp notification cycle. Queued: {Queued}; Claimed: {Claimed}; Accepted: {Accepted}; Retried: {Retried}; Failed: {Failed}; Skipped: {Skipped}",
-                            summary.DelayNoticesQueued, summary.Claimed, summary.Accepted, summary.Retried, summary.Failed, summary.Skipped);
+                            "WhatsApp notification cycle. Queued: {Queued}; Claimed: {Claimed}; Accepted: {Accepted}; Retried: {Retried}; Failed: {Failed}; Skipped: {Skipped}; Unconfirmed: {Unconfirmed}",
+                            summary.DelayNoticesQueued, summary.Claimed, summary.Accepted, summary.Retried, summary.Failed, summary.Skipped, summary.Unconfirmed);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

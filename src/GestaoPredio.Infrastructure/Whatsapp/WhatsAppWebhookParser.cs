@@ -19,7 +19,8 @@ public sealed record WhatsAppStatusEvent(
     string? WhatsAppBusinessAccountId,
     int? ErrorCode,
     string? ErrorTitle,
-    string? ErrorDetails)
+    string? ErrorDetails,
+    string? CallbackData = null)
 {
     /// <summary>The recipient is personal data, so logs only ever see the last four digits.</summary>
     public string MaskedRecipient => MaskRecipient(RecipientId);
@@ -29,7 +30,7 @@ public sealed record WhatsAppStatusEvent(
 
     /// <summary>Projection handed to the durable store; only the raw provider status string is dropped.</summary>
     public WhatsAppStatusUpdate ToUpdate() => new(MessageId, Status, RecipientId, OccurredAt, PhoneNumberId,
-        WhatsAppBusinessAccountId, ErrorCode, ErrorTitle, ErrorDetails);
+        WhatsAppBusinessAccountId, ErrorCode, ErrorTitle, ErrorDetails, CallbackData);
 }
 
 public sealed record WhatsAppWebhookPayload(
@@ -130,7 +131,7 @@ public static class WhatsAppWebhookParser
         }
 
         return new WhatsAppStatusEvent(id!, raw!, Map(raw!), Text(status, "recipient_id") ?? "", occurredAt,
-            phoneNumberId, wabaId, errorCode, errorTitle, errorDetails);
+            phoneNumberId, wabaId, errorCode, errorTitle, errorDetails, CallbackData(status));
     }
 
     private static WhatsAppDeliveryStatus Map(string raw) => raw switch
@@ -144,6 +145,10 @@ public static class WhatsAppWebhookParser
 
     private static string? Text(JsonElement element, string property) =>
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    /// <summary>The echoed biz_opaque_callback_data; bounded like the send side (Meta's limit is 512).</summary>
+    private static string? CallbackData(JsonElement status) =>
+        Text(status, "biz_opaque_callback_data") is { Length: > 0 and <= 512 } value ? value : null;
 
     private static int Count(JsonElement value, string property) =>
         value.TryGetProperty(property, out var array) && array.ValueKind == JsonValueKind.Array ? array.GetArrayLength() : 0;

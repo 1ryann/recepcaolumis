@@ -26,6 +26,8 @@ public static class WhatsAppNotificationCodes
     public const string RecipientPhoneInvalid = "RECIPIENT_PHONE_INVALID";
     public const string MaxAttemptsExceeded = "MAX_ATTEMPTS_EXCEEDED";
     public const string DispatchError = "DISPATCH_ERROR";
+    /// <summary>The dispatcher stopped inside the Cloud API call (crash, stall): the send outcome is unknown.</summary>
+    public const string DispatchInterrupted = "DISPATCH_INTERRUPTED";
 }
 
 /// <summary>What the dispatcher should do with a claimed notification.</summary>
@@ -130,7 +132,7 @@ public sealed class WhatsAppNotificationComposer(
         string? rescheduleToken = null;
         if (notification.Type == WhatsAppNotificationType.ProfessionalCancelled)
         {
-            rescheduleToken = await IssueRescheduleTokenAsync(notification.Id, reservation.Id, now, cancellationToken);
+            rescheduleToken = await StageRescheduleTokenAsync(notification.Id, reservation.Id, now, cancellationToken);
             // The client already rebooked through an earlier link (or it was revoked): nothing left to offer.
             if (rescheduleToken is null) return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
         }
@@ -158,12 +160,15 @@ public sealed class WhatsAppNotificationComposer(
     /// <summary>
     /// Regenerates the reservation's reschedule token for this send (see docs/operations/whatsapp-notifications.md,
     /// "Decisão: token do link de reagendamento"). The raw token exists only in memory until it becomes the URL button
-    /// suffix; the database keeps the hash, exactly as the incident flow does. The rotation, and its audit entry, are
-    /// committed BEFORE Meta is called, so the delivered link is already valid. A used or revoked token is never
-    /// rotated (Rotate would clear UsedAt/RevokedAt and revive it): null is returned and the notice is skipped. The
-    /// token's row version turns a concurrent use by the customer into a DbUpdateConcurrencyException → retry → skip.
+    /// suffix; the database keeps the hash, exactly as the incident flow does. The rotation and its audit entry are only
+    /// staged here: the dispatcher commits them in the same SaveChanges that moves the notification to SENDING, BEFORE
+    /// Meta is called. So the delivered link is already valid, and a dispatcher that lost its claim (row version)
+    /// cannot rotate the link another dispatcher is sending. A used or revoked token is never rotated (Rotate would clear
+    /// UsedAt/RevokedAt and revive it): null is returned and the notice is skipped. The token's row version turns a
+    /// concurrent use by the customer into a conflict → retry → skip. Rotation happens only for an attempt that will
+    /// call Meta; an unknown outcome is never retried, so a link that may have been delivered is never replaced.
     /// </summary>
-    private async Task<string?> IssueRescheduleTokenAsync(Guid notificationId, Guid reservationId, DateTimeOffset now,
+    private async Task<string?> StageRescheduleTokenAsync(Guid notificationId, Guid reservationId, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var ttl = TimeSpan.FromHours(Math.Max(1, configuration.GetValue("Rescheduling:LinkTtlHours", 48)));
@@ -190,7 +195,6 @@ public sealed class WhatsAppNotificationComposer(
             OccurredAt = now,
             CorrelationId = $"whatsapp-notification:{notificationId}"
         });
-        await db.SaveChangesAsync(cancellationToken);
         return WebEncoders.Base64UrlEncode(raw);
     }
 

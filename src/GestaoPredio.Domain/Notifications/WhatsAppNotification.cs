@@ -24,8 +24,11 @@ public enum WhatsAppNotificationRecipient
 }
 
 /// <summary>
-/// Pending → Processing (claimed by one dispatcher) → Accepted (Meta returned a wamid) → Sent → Delivered → Read.
-/// Processing goes back to Pending on a transient failure. Failed and Skipped are terminal.
+/// Pending → Processing (claimed by one dispatcher) → Sending (the Cloud API call is about to start) → Accepted (Meta
+/// returned a wamid) → Sent → Delivered → Read. Processing, or Sending after a failure Meta answered, goes back to
+/// Pending for another attempt. A send whose outcome is unknown (timeout, dropped connection, crash mid-call) becomes
+/// Unconfirmed: it is never sent again, only resolved by webhook evidence or finally failed. Failed and Skipped are
+/// terminal.
 /// </summary>
 public enum WhatsAppNotificationStatus
 {
@@ -36,7 +39,9 @@ public enum WhatsAppNotificationStatus
     Delivered = 5,
     Read = 6,
     Failed = 7,
-    Skipped = 8
+    Skipped = 8,
+    Sending = 9,
+    Unconfirmed = 10
 }
 
 /// <summary>
@@ -50,6 +55,8 @@ public sealed class WhatsAppNotification
     public const int IdempotencyKeyMaxLength = 120;
     public const int ErrorCodeMaxLength = 64;
     public const int MessageIdMaxLength = WhatsAppMessage.MessageIdMaxLength;
+    /// <summary>Prefix of the Cloud API <c>biz_opaque_callback_data</c> that Meta echoes on status webhooks.</summary>
+    public const string CallbackDataPrefix = "lumis-notification:";
 
     private WhatsAppNotification()
     {
@@ -73,8 +80,23 @@ public sealed class WhatsAppNotification
     public string? LastErrorCode { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+    /// <summary>PostgreSQL xmin: every write is conditional on it, so a dispatcher that lost its claim cannot write.</summary>
+    public uint Version { get; private set; }
 
     public bool IsTerminal => Status is WhatsAppNotificationStatus.Failed or WhatsAppNotificationStatus.Skipped;
+
+    /// <summary>
+    /// Sent to Meta as <c>biz_opaque_callback_data</c> and echoed on the status webhook, so a send whose HTTP answer
+    /// was lost can still be matched to this notification. Only the notification id: no personal data.
+    /// </summary>
+    public string CallbackData => $"{CallbackDataPrefix}{Id:N}";
+
+    public static bool TryParseCallbackData(string? value, out Guid notificationId)
+    {
+        notificationId = Guid.Empty;
+        return value is not null && value.StartsWith(CallbackDataPrefix, StringComparison.Ordinal) &&
+               Guid.TryParseExact(value[CallbackDataPrefix.Length..], "N", out notificationId);
+    }
 
     public static WhatsAppNotification ClientCheckedIn(Visit visit, DateTimeOffset occurredAt)
     {
@@ -143,21 +165,60 @@ public sealed class WhatsAppNotification
         Touch(occurredAt);
     }
 
+    /// <summary>
+    /// The point of no return: from here the Cloud API may receive the message, so this attempt can never be retried
+    /// blindly. The new lease covers the HTTP call only; if it expires the outcome is unknown and the notification
+    /// becomes <see cref="WhatsAppNotificationStatus.Unconfirmed"/>, never Pending.
+    /// </summary>
+    public void BeginSend(DateTimeOffset occurredAt, DateTimeOffset lockedUntil)
+    {
+        if (Status != WhatsAppNotificationStatus.Processing)
+            throw new InvalidOperationException("A notificação não está em processamento.");
+        Status = WhatsAppNotificationStatus.Sending;
+        LockedUntil = TimestampNormalizer.ToUtcMicroseconds(lockedUntil);
+        Touch(occurredAt);
+    }
+
+    /// <summary>Meta returned the wamid, including the late answer of an attempt already marked unconfirmed.</summary>
     public void MarkAccepted(string messageId, DateTimeOffset occurredAt)
     {
-        EnsureProcessing();
-        var id = messageId?.Trim() ?? "";
-        if (id.Length is < 1 or > MessageIdMaxLength) throw new ArgumentException("O identificador da mensagem é inválido.", nameof(messageId));
-        Status = WhatsAppNotificationStatus.Accepted;
-        MessageId = id;
-        LastErrorCode = null;
+        if (Status is not (WhatsAppNotificationStatus.Sending or WhatsAppNotificationStatus.Unconfirmed))
+            throw new InvalidOperationException("A notificação não está em envio.");
+        Accept(messageId, occurredAt);
+    }
+
+    /// <summary>
+    /// Webhook evidence (the echoed callback data) that Meta accepted a send whose HTTP answer never arrived. Returns
+    /// false when the notification was not sent or already knows its wamid, which is never overwritten.
+    /// </summary>
+    public bool AttachMessageId(string messageId, DateTimeOffset occurredAt)
+    {
+        if (Status is not (WhatsAppNotificationStatus.Sending or WhatsAppNotificationStatus.Unconfirmed) || MessageId is not null)
+            return false;
+        Accept(messageId, occurredAt);
+        return true;
+    }
+
+    /// <summary>
+    /// The send may or may not have reached Meta. It stays out of the retry path: it waits for webhook evidence until
+    /// <paramref name="decideBy"/>, then fails with an explicit unknown outcome. A duplicate is worse than a gap.
+    /// </summary>
+    public void MarkUnconfirmed(string reasonCode, DateTimeOffset decideBy, DateTimeOffset occurredAt)
+    {
+        if (Status != WhatsAppNotificationStatus.Sending)
+            throw new InvalidOperationException("A notificação não está em envio.");
+        Status = WhatsAppNotificationStatus.Unconfirmed;
+        LastErrorCode = Code(reasonCode);
+        NextAttemptAt = TimestampNormalizer.ToUtcMicroseconds(decideBy);
         LockedUntil = null;
         Touch(occurredAt);
     }
 
+    /// <summary>Before the send (Processing) or after a failure Meta answered (Sending): nothing reached the client.</summary>
     public void ScheduleRetry(string errorCode, DateTimeOffset nextAttemptAt, DateTimeOffset occurredAt)
     {
-        EnsureProcessing();
+        if (Status is not (WhatsAppNotificationStatus.Processing or WhatsAppNotificationStatus.Sending))
+            throw new InvalidOperationException("A notificação não está em processamento.");
         Status = WhatsAppNotificationStatus.Pending;
         LastErrorCode = Code(errorCode);
         NextAttemptAt = TimestampNormalizer.ToUtcMicroseconds(nextAttemptAt);
@@ -178,8 +239,9 @@ public sealed class WhatsAppNotification
     /// </summary>
     public bool ApplyDeliveryStatus(WhatsAppDeliveryStatus status, int? errorCode, DateTimeOffset occurredAt)
     {
-        if (Status is < WhatsAppNotificationStatus.Accepted or WhatsAppNotificationStatus.Failed or WhatsAppNotificationStatus.Skipped)
-            return false;
+        // Only a notification that knows its wamid follows the webhook; enum values are not an order.
+        var current = DeliveryRank(Status);
+        if (current is null) return false;
         var target = status switch
         {
             WhatsAppDeliveryStatus.Sent => WhatsAppNotificationStatus.Sent,
@@ -189,7 +251,7 @@ public sealed class WhatsAppNotification
             _ => (WhatsAppNotificationStatus?)null
         };
         if (target is null) return false;
-        if (target != WhatsAppNotificationStatus.Failed && target <= Status) return false;
+        if (target != WhatsAppNotificationStatus.Failed && DeliveryRank(target.Value) <= current) return false;
 
         Status = target.Value;
         if (target == WhatsAppNotificationStatus.Failed)
@@ -234,11 +296,25 @@ public sealed class WhatsAppNotification
         Touch(occurredAt);
     }
 
-    private void EnsureProcessing()
+    private void Accept(string messageId, DateTimeOffset occurredAt)
     {
-        if (Status != WhatsAppNotificationStatus.Processing)
-            throw new InvalidOperationException("A notificação não está em processamento.");
+        var id = messageId?.Trim() ?? "";
+        if (id.Length is < 1 or > MessageIdMaxLength) throw new ArgumentException("O identificador da mensagem é inválido.", nameof(messageId));
+        Status = WhatsAppNotificationStatus.Accepted;
+        MessageId = id;
+        LastErrorCode = null;
+        LockedUntil = null;
+        Touch(occurredAt);
     }
+
+    private static int? DeliveryRank(WhatsAppNotificationStatus status) => status switch
+    {
+        WhatsAppNotificationStatus.Accepted => 1,
+        WhatsAppNotificationStatus.Sent => 2,
+        WhatsAppNotificationStatus.Delivered => 3,
+        WhatsAppNotificationStatus.Read => 4,
+        _ => null
+    };
 
     private void Touch(DateTimeOffset occurredAt) => UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
 

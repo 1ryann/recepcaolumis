@@ -35,6 +35,22 @@ public sealed class WhatsAppWebhookParserTests
         Assert.Null(status.ErrorTitle);
     }
 
+    [Fact]
+    public void Carries_the_echoed_callback_data_to_the_store_and_nothing_when_absent()
+    {
+        var payload = StatusPayload.Replace("\"status\":\"sent\"",
+            "\"status\":\"sent\",\"biz_opaque_callback_data\":\"lumis-notification:0123456789abcdef0123456789abcdef\"",
+            StringComparison.Ordinal);
+
+        var withCallback = Assert.Single(WhatsAppWebhookParser.Parse(Encoding.UTF8.GetBytes(payload)).Statuses);
+        var withoutCallback = Assert.Single(WhatsAppWebhookParser.Parse(Encoding.UTF8.GetBytes(StatusPayload)).Statuses);
+
+        Assert.Equal("lumis-notification:0123456789abcdef0123456789abcdef", withCallback.CallbackData);
+        Assert.Equal(withCallback.CallbackData, withCallback.ToUpdate().CallbackData);
+        Assert.Null(withoutCallback.CallbackData);
+        Assert.Null(withoutCallback.ToUpdate().CallbackData);
+    }
+
     [Theory]
     [InlineData("sent", WhatsAppDeliveryStatus.Sent)]
     [InlineData("delivered", WhatsAppDeliveryStatus.Delivered)]

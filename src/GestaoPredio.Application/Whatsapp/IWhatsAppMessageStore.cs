@@ -2,7 +2,10 @@ using GestaoPredio.Domain.Whatsapp;
 
 namespace GestaoPredio.Application.Whatsapp;
 
-/// <summary>One webhook status update, already parsed and free of raw payload or message content.</summary>
+/// <summary>
+/// One webhook status update, already parsed and free of raw payload or message content. <see cref="CallbackData"/>
+/// is the <c>biz_opaque_callback_data</c> this application attached to the send, echoed back by Meta.
+/// </summary>
 public sealed record WhatsAppStatusUpdate(
     string MessageId,
     WhatsAppDeliveryStatus Status,
@@ -12,7 +15,8 @@ public sealed record WhatsAppStatusUpdate(
     string? WhatsAppBusinessAccountId,
     int? ErrorCode,
     string? ErrorTitle,
-    string? ErrorDetails);
+    string? ErrorDetails,
+    string? CallbackData = null);
 
 /// <summary>
 /// Durable record of outbound messages and their delivery status. Implementations must be idempotent across

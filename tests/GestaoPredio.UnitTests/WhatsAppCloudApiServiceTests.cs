@@ -166,15 +166,89 @@ public sealed class WhatsAppCloudApiServiceTests
             service.SendTextAsync("+5569999999999", "Olá", cancellation.Token));
     }
 
-    [Fact]
-    public async Task Network_failure_returns_network_error()
+    [Theory]
+    [InlineData(HttpRequestError.NameResolutionError)]
+    [InlineData(HttpRequestError.ConnectionError)]
+    [InlineData(HttpRequestError.SecureConnectionError)]
+    [InlineData(HttpRequestError.ProxyTunnelError)]
+    public async Task A_connection_that_was_never_established_is_a_network_error_nothing_was_sent(HttpRequestError error)
     {
-        var handler = new FakeHandler(HttpStatusCode.OK, "{}") { Throw = new HttpRequestException("connection refused") };
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}") { Throw = new HttpRequestException(error, "connection refused") };
         var service = CreateService(handler, ConfiguredOptions());
 
         var result = await service.SendTextAsync("+5569999999999", "Olá", CancellationToken.None);
 
         Assert.Equal(WhatsAppFailureCodes.NetworkError, result.FailureCode);
+    }
+
+    [Theory]
+    [InlineData(HttpRequestError.ResponseEnded)]
+    [InlineData(HttpRequestError.InvalidResponse)]
+    [InlineData(HttpRequestError.HttpProtocolError)]
+    [InlineData(HttpRequestError.Unknown)]
+    public async Task A_connection_lost_after_the_request_went_out_has_an_unknown_outcome(HttpRequestError error)
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}") { Throw = new HttpRequestException(error, "connection reset") };
+        var service = CreateService(handler, ConfiguredOptions());
+
+        var result = await service.SendTemplateAsync("+5569999999999", new WhatsAppTemplate("t", "pt_BR", ["x"]),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(WhatsAppFailureCodes.OutcomeUnknown, result.FailureCode);
+    }
+
+    [Fact]
+    public async Task An_accepted_send_stays_accepted_when_recording_the_wamid_fails()
+    {
+        var logs = new ListLoggerProvider();
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"messages":[{"id":"wamid.KEEP"}]}""");
+        var store = new RecordingMessageStore { Throw = new InvalidOperationException("database unavailable") };
+        var service = CreateService(handler, ConfiguredOptions(), logs, store);
+
+        var result = await service.SendTemplateAsync("+5569988887777", new WhatsAppTemplate("t", "pt_BR", ["x"]),
+            CancellationToken.None);
+
+        // Meta has the message: reporting a failure here would make the caller send it again.
+        Assert.True(result.Success);
+        Assert.Equal("wamid.KEEP", result.MessageId);
+        Assert.Contains("wamid.KEEP", logs.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("988887777", logs.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Callback_data_is_sent_as_biz_opaque_callback_data_only_when_given()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"messages":[{"id":"wamid.CB"}]}""");
+        var service = CreateService(handler, ConfiguredOptions());
+        var template = new WhatsAppTemplate("t", "pt_BR", ["x"]);
+
+        await service.SendTemplateAsync("+5569999999999", template, "lumis-notification:0123456789abcdef0123456789abcdef",
+            CancellationToken.None);
+        await service.SendTemplateAsync("+5569999999999", template, CancellationToken.None);
+
+        using var withCallback = JsonDocument.Parse(handler.Requests[0].Body);
+        using var withoutCallback = JsonDocument.Parse(handler.Requests[1].Body);
+        Assert.Equal("lumis-notification:0123456789abcdef0123456789abcdef",
+            withCallback.RootElement.GetProperty("biz_opaque_callback_data").GetString());
+        Assert.False(withoutCallback.RootElement.TryGetProperty("biz_opaque_callback_data", out _));
+    }
+
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("with space")]
+    [InlineData(null)]
+    public async Task Invalid_callback_data_is_rejected_without_calling_the_api(string? callbackData)
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+        var service = CreateService(handler, ConfiguredOptions());
+        callbackData ??= new string('a', 513);
+
+        var result = await service.SendTemplateAsync("+5569999999999", new WhatsAppTemplate("t", "pt_BR", ["x"]),
+            callbackData, CancellationToken.None);
+
+        Assert.Equal(WhatsAppFailureCodes.InvalidMessage, result.FailureCode);
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]
@@ -393,10 +467,12 @@ public sealed class WhatsAppCloudApiServiceTests
     private sealed class RecordingMessageStore : IWhatsAppMessageStore
     {
         public List<(string MessageId, Domain.Whatsapp.WhatsAppMessageType Type)> Accepted { get; } = [];
+        public Exception? Throw { get; init; }
 
         public Task RecordAcceptedAsync(string messageId, string recipientPhone, string? phoneNumberId,
             Domain.Whatsapp.WhatsAppMessageType messageType, DateTimeOffset occurredAt, CancellationToken cancellationToken)
         {
+            if (Throw is not null) throw Throw;
             Accepted.Add((messageId, messageType));
             return Task.CompletedTask;
         }

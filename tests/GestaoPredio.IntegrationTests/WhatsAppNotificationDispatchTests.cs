@@ -48,6 +48,8 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal(WhatsAppNotificationStatus.Accepted, notice.Status);
         Assert.Equal("wamid.fake.1", notice.MessageId);
         Assert.Equal(1, notice.Attempts);
+        // The only thing Meta echoes back for correlation is the notification id.
+        Assert.Equal($"lumis-notification:{notice.Id:N}", Assert.Single(meta.CallbackData));
     }
 
     [Fact]
@@ -189,7 +191,7 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         await AddCheckInAsync(seed);
         var meta = new FakeWhatsAppService().Then(
             WhatsAppSendResult.Failed(WhatsAppFailureCodes.ProviderUnavailable, 131000),
-            WhatsAppSendResult.Failed(WhatsAppFailureCodes.Timeout));
+            WhatsAppSendResult.Failed(WhatsAppFailureCodes.RateLimited, 130429));
         using var host = factory.WithWhatsApp(meta);
         var start = factory.UtcNow;
 
@@ -203,7 +205,7 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Single(meta.Sent);
 
         factory.AdvanceTime(TimeSpan.FromSeconds(30));
-        await ModulesApiFactory.DispatchAsync(host);                 // 2nd attempt: timeout → wait 2 min
+        await ModulesApiFactory.DispatchAsync(host);                 // 2nd attempt: rate limited → wait 2 min
         Assert.Equal(factory.UtcNow.AddMinutes(2), Assert.Single(await factory.NotificationsAsync()).NextAttemptAt);
 
         factory.AdvanceTime(TimeSpan.FromMinutes(2));
@@ -278,6 +280,272 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal(5, results.Sum(x => x.Claimed));
         Assert.Equal(5, meta.Sent.Count);
         Assert.All(await factory.NotificationsAsync(), x => Assert.Equal(WhatsAppNotificationStatus.Accepted, x.Status));
+    }
+
+    [Fact]
+    public async Task A_send_in_flight_is_never_repeated_by_another_dispatcher_even_after_its_lease_expired()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var atMeta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var answer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slow = new FakeWhatsAppService
+        {
+            OnSend = async _ => { atMeta.SetResult(); await answer.Task; }
+        }.Then(WhatsAppSendResult.Succeeded("wamid.slow"));
+        var other = new FakeWhatsAppService();
+        using var hostA = factory.WithWhatsApp(slow);
+        using var hostB = factory.WithWhatsApp(other);
+
+        // A is inside the Cloud API call; its request may already be at Meta.
+        var dispatchA = ModulesApiFactory.DispatchAsync(hostA);
+        await atMeta.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(WhatsAppNotificationStatus.Sending, await StatusAsync());
+
+        // A stalls far beyond its lease. B takes over the expired lease but must not call Meta again.
+        factory.AdvanceTime(TimeSpan.FromMinutes(5));
+        var summaryB = await ModulesApiFactory.DispatchAsync(hostB);
+        Assert.Empty(other.Sent);
+        Assert.Equal(0, summaryB.Accepted);
+        Assert.Equal(1, summaryB.Unconfirmed);
+        var parked = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Unconfirmed, parked.Status);
+        Assert.Equal(1, parked.Attempts);
+
+        // A's answer finally arrives: it still records the wamid of the one message that was sent.
+        answer.SetResult();
+        var summaryA = await dispatchA.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(1, summaryA.Accepted);
+        Assert.Single(slow.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Accepted, notice.Status);
+        Assert.Equal("wamid.slow", notice.MessageId);
+    }
+
+    [Fact]
+    public async Task A_dispatcher_that_lost_its_claim_can_no_longer_write_so_it_cannot_start_a_send()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var id = Assert.Single(await factory.NotificationsAsync()).Id;
+        await MutateAsync(id, n => n.Claim(factory.UtcNow, factory.UtcNow.AddMinutes(2)));   // claim #1
+
+        // Dispatcher #1 still holds its in-memory copy of claim #1 ...
+        await using var staleScope = factory.Services.CreateAsyncScope();
+        var staleDb = staleScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stale = await staleDb.WhatsAppNotifications.SingleAsync(x => x.Id == id);
+
+        // ... while its lease expires and dispatcher #2 claims the notification again.
+        factory.AdvanceTime(TimeSpan.FromMinutes(3));
+        await MutateAsync(id, n => n.Claim(factory.UtcNow, factory.UtcNow.AddMinutes(2)));   // claim #2
+
+        stale.BeginSend(factory.UtcNow, factory.UtcNow.AddSeconds(90));
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => staleDb.SaveChangesAsync());
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Processing, notice.Status);
+        Assert.Equal(2, notice.Attempts);
+    }
+
+    [Fact]
+    public async Task Each_notice_is_claimed_only_when_its_turn_comes_so_a_long_batch_never_outlives_a_lease()
+    {
+        await factory.ResetAsync();
+        for (var i = 0; i < 3; i++) await AddCheckInAsync(await SeedAsync(startIn: TimeSpan.FromHours(3 + i)));
+        var observed = new List<(int InFlight, int Untouched)>();
+        var meta = new FakeWhatsAppService();
+        meta.OnSend = async _ =>
+        {
+            var rows = await factory.NotificationsAsync();
+            observed.Add((rows.Count(x => x.Status is WhatsAppNotificationStatus.Processing or WhatsAppNotificationStatus.Sending),
+                rows.Count(x => x.Status == WhatsAppNotificationStatus.Pending && x.Attempts == 0)));
+        };
+        using var host = factory.WithWhatsApp(meta);
+
+        var summary = await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Equal(3, summary.Accepted);
+        // While one notice is at Meta, the others are not locked yet: no lease is running for them.
+        Assert.Equal([(1, 2), (1, 1), (1, 0)], observed);
+    }
+
+    [Fact]
+    public async Task A_crash_before_the_send_started_is_simply_retried()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var id = Assert.Single(await factory.NotificationsAsync()).Id;
+        await MutateAsync(id, n => n.Claim(factory.UtcNow, factory.UtcNow.AddMinutes(2)));   // then the process died
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(3));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Single(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Accepted, notice.Status);
+        Assert.Equal(2, notice.Attempts);
+    }
+
+    [Fact]
+    public async Task A_crash_during_the_send_is_never_resent_and_ends_as_an_explicit_unknown_outcome()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var id = Assert.Single(await factory.NotificationsAsync()).Id;
+        await MutateAsync(id, n =>
+        {
+            n.Claim(factory.UtcNow, factory.UtcNow.AddMinutes(2));
+            n.BeginSend(factory.UtcNow, factory.UtcNow.AddSeconds(90));                         // then the process died
+        });
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(2));
+        await ModulesApiFactory.DispatchAsync(host);
+        var parked = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Unconfirmed, parked.Status);
+        Assert.Equal("DISPATCH_INTERRUPTED", parked.LastErrorCode);
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(16));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Empty(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Failed, notice.Status);
+        Assert.Equal(WhatsAppFailureCodes.OutcomeUnknown, notice.LastErrorCode);
+    }
+
+    // ---- unknown outcome: never a blind second message --------------------------------------------------------
+
+    public static TheoryData<string> UnknownOutcomes => new()
+    {
+        WhatsAppFailureCodes.Timeout, WhatsAppFailureCodes.OutcomeUnknown, WhatsAppFailureCodes.InvalidResponse
+    };
+
+    [Theory]
+    [MemberData(nameof(UnknownOutcomes))]
+    public async Task An_unknown_outcome_is_never_retried_and_ends_failed_when_no_evidence_arrives(string code)
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(code));
+        using var host = factory.WithWhatsApp(meta);
+
+        var first = await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(1, first.Unconfirmed);
+        var parked = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Unconfirmed, parked.Status);
+        Assert.Equal(code, parked.LastErrorCode);
+        Assert.Equal(factory.UtcNow.AddMinutes(15), parked.NextAttemptAt);
+
+        for (var minute = 0; minute < 14; minute += 2)
+        {
+            factory.AdvanceTime(TimeSpan.FromMinutes(2));
+            await ModulesApiFactory.DispatchAsync(host);
+        }
+        Assert.Equal(WhatsAppNotificationStatus.Unconfirmed, await StatusAsync());
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(2));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Single(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Failed, notice.Status);
+        Assert.Equal(WhatsAppFailureCodes.OutcomeUnknown, notice.LastErrorCode);
+        Assert.Equal(1, notice.Attempts);
+    }
+
+    [Fact]
+    public async Task A_client_failure_during_the_call_is_an_unknown_outcome_not_a_retry()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var meta = new FakeWhatsAppService().ThenThrow(new IOException("connection reset by peer"));
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+        factory.AdvanceTime(TimeSpan.FromMinutes(5));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Single(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Unconfirmed, notice.Status);
+        Assert.Equal("DISPATCH_ERROR", notice.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task A_network_error_before_the_request_left_is_retried_like_any_refused_send()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.NetworkError));
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(WhatsAppNotificationStatus.Pending, await StatusAsync());
+        factory.AdvanceTime(TimeSpan.FromSeconds(30));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Equal(2, meta.Sent.Count);
+        Assert.Equal(WhatsAppNotificationStatus.Accepted, await StatusAsync());
+    }
+
+    [Fact]
+    public async Task Webhook_evidence_resolves_an_unknown_outcome_through_the_echoed_callback_data()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.Timeout));
+        using var host = factory.WithWhatsApp(meta);
+        await ModulesApiFactory.DispatchAsync(host);
+        var callback = Assert.Single(meta.CallbackData);
+
+        // Meta did accept it: the "sent" status arrives with a wamid we never saw and our callback data.
+        Assert.True(await ApplyAsync("wamid.lost-answer", WhatsAppDeliveryStatus.Sent, callbackData: callback));
+        Assert.False(await ApplyAsync("wamid.lost-answer", WhatsAppDeliveryStatus.Sent, callbackData: callback));  // replay
+        Assert.True(await ApplyAsync("wamid.lost-answer", WhatsAppDeliveryStatus.Delivered, callbackData: callback));
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(30));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Single(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Delivered, notice.Status);
+        Assert.Equal("wamid.lost-answer", notice.MessageId);
+        Assert.Null(notice.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task Callback_data_never_rewrites_a_known_wamid_nor_resolves_a_notice_that_was_not_sent()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await AddCheckInAsync(seed);
+        var pending = Assert.Single(await factory.NotificationsAsync());
+
+        // The status is still recorded for its message, but a notice that was never sent is not resolved by it.
+        await ApplyAsync("wamid.forged", WhatsAppDeliveryStatus.Sent, callbackData: pending.CallbackData);
+        var untouched = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Pending, untouched.Status);
+        Assert.Null(untouched.MessageId);
+
+        using var host = factory.WithWhatsApp(new FakeWhatsAppService().Then(WhatsAppSendResult.Succeeded("wamid.real")));
+        await ModulesApiFactory.DispatchAsync(host);
+        await ApplyAsync("wamid.other", WhatsAppDeliveryStatus.Read, callbackData: pending.CallbackData);
+
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal("wamid.real", notice.MessageId);
+        Assert.Equal(WhatsAppNotificationStatus.Accepted, notice.Status);
     }
 
     // ---- PROFESSIONAL_DELAYED ---------------------------------------------------------------------------------
@@ -446,12 +714,13 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task A_retry_issues_a_new_link_and_only_the_latest_one_works()
+    public async Task A_retry_after_meta_refused_the_send_issues_a_new_link_and_only_the_latest_one_works()
     {
+        // Meta answered with an error, so the first link never reached anyone: replacing it costs nothing.
         await factory.ResetAsync();
         var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
         await CancelForIncidentAsync(seed);
-        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.Timeout));
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.ProviderUnavailable, 131000));
         using var host = factory.WithWhatsApp(meta);
 
         await ModulesApiFactory.DispatchAsync(host);
@@ -463,6 +732,36 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.NotEqual(links[0], links[1]);
         Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = links[0] })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = links[1] })).StatusCode);
+    }
+
+    [Fact]
+    public async Task An_unknown_outcome_keeps_the_link_that_may_have_been_delivered_valid_and_never_issues_another()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await CancelForIncidentAsync(seed);
+        var meta = new FakeWhatsAppService().Then(WhatsAppSendResult.Failed(WhatsAppFailureCodes.Timeout));
+        using var host = factory.WithWhatsApp(meta);
+        var sentAt = factory.UtcNow;
+
+        await ModulesApiFactory.DispatchAsync(host);
+        var link = Assert.Single(meta.Sent).Template.UrlButtonParameter!;
+        for (var minute = 0; minute < 20; minute += 5)
+        {
+            factory.AdvanceTime(TimeSpan.FromMinutes(5));
+            await ModulesApiFactory.DispatchAsync(host);
+        }
+
+        // The client may hold this message: no second message, no rotation, so its link is the one that works.
+        Assert.Single(meta.Sent);
+        var token = await RescheduleTokenAsync(seed.ReservationId);
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData(Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlDecode(link)), token.TokenHash);
+        Assert.Equal(sentAt.AddHours(48), token.ExpiresAt);                  // validity still counts from that send
+        Assert.Null(token.RevokedAt);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Failed, notice.Status);        // reported, not silently resent
+        Assert.Equal(WhatsAppFailureCodes.OutcomeUnknown, notice.LastErrorCode);
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.PostAsJsonAsync("/api/reschedule/resolve", new { token = link })).StatusCode);
     }
 
     [Theory]
@@ -707,12 +1006,22 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         await action(scope.ServiceProvider.GetRequiredService<IWhatsAppMessageStore>());
     }
 
-    private async Task<bool> ApplyAsync(string messageId, WhatsAppDeliveryStatus status, int? errorCode = null)
+    private async Task<bool> ApplyAsync(string messageId, WhatsAppDeliveryStatus status, int? errorCode = null,
+        string? callbackData = null)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IWhatsAppMessageStore>().ApplyStatusAsync(
             new WhatsAppStatusUpdate(messageId, status, "5569983334444", factory.UtcNow, "pnid", "waba",
-                errorCode, errorCode is null ? null : "Delivery failed", null), default);
+                errorCode, errorCode is null ? null : "Delivery failed", null, callbackData), default);
+    }
+
+    /// <summary>Applies domain transitions to a stored notification, as a (possibly crashed) dispatcher would have.</summary>
+    private async Task MutateAsync(Guid id, Action<WhatsAppNotification> change)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        change(await db.WhatsAppNotifications.SingleAsync(x => x.Id == id));
+        await db.SaveChangesAsync();
     }
 
     private async Task<WhatsAppNotificationStatus> StatusAsync() =>

@@ -12,14 +12,23 @@ using Npgsql;
 
 namespace GestaoPredio.Infrastructure.Notifications;
 
-public sealed record WhatsAppDispatchSummary(int DelayNoticesQueued, int Claimed, int Accepted, int Retried, int Failed, int Skipped);
+public sealed record WhatsAppDispatchSummary(int DelayNoticesQueued, int Claimed, int Accepted, int Retried, int Failed, int Skipped,
+    int Unconfirmed = 0);
 
 /// <summary>
-/// One dispatch cycle: queue due delay notices, then claim and send due notifications. Safe to run on several
-/// instances at once: a notification is claimed by a single UPDATE … FOR UPDATE SKIP LOCKED, so two dispatchers
-/// never hold the same row, and the unique idempotency key stops a second delay notice for the same step.
-/// Delivery is at-least-once only in one corner: if the process dies after Meta accepted but before the wamid is
-/// stored, the lease expires and the message is sent again. Everything else is exactly once.
+/// One dispatch cycle: queue due delay notices, settle interrupted sends, then claim and send due notifications one at
+/// a time. Safe on several instances at once:
+/// <list type="bullet">
+/// <item>a notification is claimed by a single UPDATE … FOR UPDATE SKIP LOCKED, only when its turn comes, so its
+/// lease covers one notification and never a whole batch;</item>
+/// <item>every later write is conditional on the row version (xmin), so a dispatcher whose lease was taken over can
+/// no longer write, and in particular cannot move the row to SENDING and call Meta;</item>
+/// <item>SENDING is committed before the Cloud API call. From then on the attempt is never repeated: if its lease
+/// expires, or the answer is a timeout or a dropped connection, Meta may already have the message, so it becomes
+/// UNCONFIRMED and waits for webhook evidence (the echoed biz_opaque_callback_data) instead of being resent.</item>
+/// </list>
+/// Only failures that prove nothing reached the client (Meta answered with an error, or no connection was made) are
+/// retried. The unique idempotency key stops a second notification for the same event.
 /// </summary>
 public sealed class WhatsAppNotificationDispatcher(
     ApplicationDbContext db,
@@ -29,31 +38,46 @@ public sealed class WhatsAppNotificationDispatcher(
     TimeProvider timeProvider,
     ILogger<WhatsAppNotificationDispatcher> logger)
 {
-    /// <summary>Provider failures worth another attempt. Anything else is permanent for this message.</summary>
-    private static readonly HashSet<string> TransientFailures =
+    /// <summary>Nothing reached the client: Meta answered with an error, or the connection was never made.</summary>
+    private static readonly HashSet<string> RetryableFailures =
     [
         WhatsAppFailureCodes.ProviderUnavailable,
-        WhatsAppFailureCodes.Timeout,
         WhatsAppFailureCodes.NetworkError,
         WhatsAppFailureCodes.RateLimited
+    ];
+
+    /// <summary>The request may have reached Meta: resending could deliver a second message.</summary>
+    private static readonly HashSet<string> UnknownOutcomes =
+    [
+        WhatsAppFailureCodes.Timeout,
+        WhatsAppFailureCodes.OutcomeUnknown,
+        WhatsAppFailureCodes.InvalidResponse
     ];
 
     public async Task<WhatsAppDispatchSummary> RunOnceAsync(CancellationToken cancellationToken)
     {
         var queued = await QueueDelayNoticesAsync(cancellationToken);
-        var ids = await ClaimAsync(cancellationToken);
-        int accepted = 0, retried = 0, failed = 0, skipped = 0;
-        foreach (var id in ids)
+        var (interrupted, undecided) = await SettleInterruptedSendsAsync(cancellationToken);
+        int claimed = 0, accepted = 0, retried = 0, failed = undecided, skipped = 0, unconfirmed = interrupted;
+        while (claimed < options.CurrentValue.BatchSize)
         {
-            switch (await ProcessAsync(id, cancellationToken))
+            var ids = await ClaimNextAsync(cancellationToken);
+            if (ids.Count == 0) break;
+            // Normally one id. Every claimed row is processed anyway, so none can be left locked until its lease expires.
+            foreach (var id in ids)
             {
-                case WhatsAppNotificationStatus.Accepted: accepted++; break;
-                case WhatsAppNotificationStatus.Pending: retried++; break;
-                case WhatsAppNotificationStatus.Failed: failed++; break;
-                case WhatsAppNotificationStatus.Skipped: skipped++; break;
+                claimed++;
+                switch (await ProcessAsync(id, cancellationToken))
+                {
+                    case WhatsAppNotificationStatus.Accepted: accepted++; break;
+                    case WhatsAppNotificationStatus.Pending: retried++; break;
+                    case WhatsAppNotificationStatus.Failed: failed++; break;
+                    case WhatsAppNotificationStatus.Skipped: skipped++; break;
+                    case WhatsAppNotificationStatus.Unconfirmed: unconfirmed++; break;
+                }
             }
         }
-        return new WhatsAppDispatchSummary(queued, ids.Count, accepted, retried, failed, skipped);
+        return new WhatsAppDispatchSummary(queued, claimed, accepted, retried, failed, skipped, unconfirmed);
     }
 
     /// <summary>
@@ -103,27 +127,68 @@ public sealed class WhatsAppNotificationDispatcher(
         return queued;
     }
 
-    private async Task<List<Guid>> ClaimAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// SENDING past its lease: the process died or stalled inside the Cloud API call, so the outcome is unknown and the
+    /// row becomes UNCONFIRMED (never PENDING). UNCONFIRMED past its window without webhook evidence is failed with
+    /// the explicit WHATSAPP_OUTCOME_UNKNOWN, visible to the admin, instead of risking a second message.
+    /// </summary>
+    private async Task<(int Interrupted, int Undecided)> SettleInterruptedSendsAsync(CancellationToken cancellationToken)
+    {
+        var settings = options.CurrentValue;
+        var now = timeProvider.GetUtcNow();
+        var stalled = await db.WhatsAppNotifications.AsNoTracking()
+            .Where(x => x.Status == WhatsAppNotificationStatus.Sending && x.LockedUntil < now)
+            .OrderBy(x => x.LockedUntil).Select(x => x.Id).Take(settings.BatchSize).ToListAsync(cancellationToken);
+        var interrupted = 0;
+        foreach (var id in stalled)
+            if (await ChangeAsync(id, null, n => n.Status == WhatsAppNotificationStatus.Sending && n.LockedUntil < now
+                    ? Park(n, WhatsAppNotificationCodes.DispatchInterrupted, now, settings)
+                    : null, cancellationToken) is WhatsAppNotificationStatus.Unconfirmed)
+                interrupted++;
+
+        var overdue = await db.WhatsAppNotifications.AsNoTracking()
+            .Where(x => x.Status == WhatsAppNotificationStatus.Unconfirmed && x.NextAttemptAt <= now)
+            .OrderBy(x => x.NextAttemptAt).Select(x => x.Id).Take(settings.BatchSize).ToListAsync(cancellationToken);
+        var undecided = 0;
+        foreach (var id in overdue)
+            if (await ChangeAsync(id, null, n =>
+                {
+                    if (n.Status != WhatsAppNotificationStatus.Unconfirmed || n.NextAttemptAt > now) return null;
+                    n.MarkFailed(WhatsAppFailureCodes.OutcomeUnknown, now);
+                    return WhatsAppNotificationStatus.Failed;
+                }, cancellationToken) is WhatsAppNotificationStatus.Failed)
+                undecided++;
+        return (interrupted, undecided);
+    }
+
+    /// <summary>Claims the single most overdue notification, or none.</summary>
+    private async Task<List<Guid>> ClaimNextAsync(CancellationToken cancellationToken)
     {
         var settings = options.CurrentValue;
         // UTC, truncated to PostgreSQL's microsecond precision like every stored timestamp.
         var utc = timeProvider.GetUtcNow().ToUniversalTime();
         var now = new DateTimeOffset(utc.Ticks - utc.Ticks % 10, TimeSpan.Zero);
         var lockedUntil = now.AddSeconds(settings.LeaseSeconds);
-        var batch = settings.BatchSize;
-        // Mirrors WhatsAppNotification.Claim: PENDING and due, or PROCESSING with an expired lease (crashed worker).
-        return await db.Database.SqlQuery<Guid>($"""
-            UPDATE "WhatsAppNotifications" AS n
-            SET "Status" = 'PROCESSING', "LockedUntil" = {lockedUntil}, "Attempts" = n."Attempts" + 1, "UpdatedAt" = {now}
-            WHERE n."Id" IN (
+        // Mirrors WhatsAppNotification.Claim: PENDING and due, or PROCESSING with an expired lease (a dispatcher died
+        // before its send started, so nothing was sent). SENDING is never claimed: see SettleInterruptedSendsAsync.
+        // The candidate is picked in a MATERIALIZED CTE, evaluated exactly once. "WHERE Id IN (SELECT … LIMIT 1 FOR
+        // UPDATE SKIP LOCKED)" is not safe: PostgreSQL may re-run that subquery, and under concurrency one UPDATE then
+        // claimed several rows (observed in the two-dispatcher test).
+        var ids = await db.Database.SqlQuery<Guid>($"""
+            WITH candidate AS MATERIALIZED (
                 SELECT c."Id" FROM "WhatsAppNotifications" AS c
                 WHERE (c."Status" = 'PENDING' AND c."NextAttemptAt" <= {now})
                    OR (c."Status" = 'PROCESSING' AND c."LockedUntil" < {now})
                 ORDER BY c."NextAttemptAt"
-                LIMIT {batch}
+                LIMIT 1
                 FOR UPDATE SKIP LOCKED)
+            UPDATE "WhatsAppNotifications" AS n
+            SET "Status" = 'PROCESSING', "LockedUntil" = {lockedUntil}, "Attempts" = n."Attempts" + 1, "UpdatedAt" = {now}
+            FROM candidate
+            WHERE n."Id" = candidate."Id"
             RETURNING n."Id" AS "Value"
             """).ToListAsync(cancellationToken);
+        return ids;
     }
 
     private async Task<WhatsAppNotificationStatus?> ProcessAsync(Guid id, CancellationToken cancellationToken)
@@ -131,8 +196,11 @@ public sealed class WhatsAppNotificationDispatcher(
         db.ChangeTracker.Clear();
         var notification = await db.WhatsAppNotifications.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (notification is null || notification.Status != WhatsAppNotificationStatus.Processing) return null;
+        var attempt = notification.Attempts;
         var settings = options.CurrentValue;
         var now = timeProvider.GetUtcNow();
+        var sendStarted = false;
+        string? acceptedMessageId = null;
         try
         {
             if (notification.Attempts > settings.MaxAttempts)
@@ -146,54 +214,74 @@ public sealed class WhatsAppNotificationDispatcher(
             if (composition.FailCode is { } fail)
                 return await FinishAsync(notification, WhatsAppNotificationStatus.Failed, fail, cancellationToken);
 
-            var result = await whatsApp.SendTemplateAsync(composition.Phone!, composition.Template!, cancellationToken);
+            // Point of no return, committed together with a staged reschedule link. A conflict means this claim was
+            // taken over (nothing is sent) or the customer used the link meanwhile (retry, then skip as obsolete).
+            notification.BeginSend(now, now.AddSeconds(settings.SendLeaseSeconds));
+            if (!await TrySaveAsync(cancellationToken))
+                return await ChangeAsync(id, attempt, n => n.Status == WhatsAppNotificationStatus.Processing
+                    ? Retry(n, WhatsAppNotificationCodes.DispatchError, now, settings)
+                    : null, cancellationToken);
+
+            sendStarted = true;
+            var result = await whatsApp.SendTemplateAsync(composition.Phone!, composition.Template!, notification.CallbackData,
+                cancellationToken);
             now = timeProvider.GetUtcNow();
             if (result is { Success: true, MessageId: { } messageId })
             {
-                notification.MarkAccepted(messageId, now);
-                await CatchUpDeliveryStatusAsync(notification, now, cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
-                Log(notification, "ACCEPTED");
-                return notification.Status is WhatsAppNotificationStatus.Failed ? WhatsAppNotificationStatus.Failed : WhatsAppNotificationStatus.Accepted;
+                acceptedMessageId = messageId;
+                return await AcceptAsync(id, attempt, messageId, now, cancellationToken);
             }
 
             var code = result.FailureCode ?? WhatsAppFailureCodes.RequestRejected;
-            if (TransientFailures.Contains(code) && notification.Attempts < settings.MaxAttempts)
+            return await ChangeAsync(id, attempt, n =>
             {
-                notification.ScheduleRetry(code, now + settings.RetryDelayBefore(notification.Attempts + 1), now);
-                await db.SaveChangesAsync(cancellationToken);
-                Log(notification, "RETRY_SCHEDULED");
-                return WhatsAppNotificationStatus.Pending;
-            }
-            return await FinishAsync(notification, WhatsAppNotificationStatus.Failed, code, cancellationToken);
+                if (n.Status != WhatsAppNotificationStatus.Sending) return null;   // settled meanwhile
+                if (UnknownOutcomes.Contains(code)) return Park(n, code, now, settings);
+                if (RetryableFailures.Contains(code)) return Retry(n, code, now, settings);
+                n.MarkFailed(code, now);
+                return WhatsAppNotificationStatus.Failed;
+            }, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // Never lose the notification: put it back with a delay. If even that fails, the lease expires and a
-            // later cycle reclaims it.
-            logger.LogWarning(exception, "WhatsApp notification dispatch error. NotificationId: {NotificationId}; Type: {Type}; Attempt: {Attempt}",
-                notification.Id, notification.Type, notification.Attempts);
+            logger.LogWarning(exception, "WhatsApp notification dispatch error. NotificationId: {NotificationId}; Type: {Type}; Attempt: {Attempt}; SendStarted: {SendStarted}",
+                id, notification.Type, attempt, sendStarted);
             try
             {
-                db.ChangeTracker.Clear();
-                var fresh = await db.WhatsAppNotifications.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-                if (fresh is { Status: WhatsAppNotificationStatus.Processing })
+                // Accepted: keep the wamid. Send started: Meta may have it, so never retry. Otherwise nothing left.
+                if (acceptedMessageId is { } messageId)
+                    return await AcceptAsync(id, attempt, messageId, timeProvider.GetUtcNow(), cancellationToken);
+                var at = timeProvider.GetUtcNow();
+                return await ChangeAsync(id, attempt, n => n.Status switch
                 {
-                    if (fresh.Attempts < settings.MaxAttempts)
-                        fresh.ScheduleRetry(WhatsAppNotificationCodes.DispatchError, now + settings.RetryDelayBefore(fresh.Attempts + 1), now);
-                    else
-                        fresh.MarkFailed(WhatsAppNotificationCodes.DispatchError, now);
-                    await db.SaveChangesAsync(cancellationToken);
-                    return fresh.Status;
-                }
+                    WhatsAppNotificationStatus.Sending when sendStarted => Park(n, WhatsAppNotificationCodes.DispatchError, at, settings),
+                    WhatsAppNotificationStatus.Processing when !sendStarted => Retry(n, WhatsAppNotificationCodes.DispatchError, at, settings),
+                    _ => null
+                }, cancellationToken);
             }
             catch (Exception inner) when (inner is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                logger.LogWarning(inner, "WhatsApp notification could not be rescheduled; the lease will expire. NotificationId: {NotificationId}", id);
+                // The lease expires: PROCESSING is reclaimed, SENDING becomes UNCONFIRMED. Nothing is ever lost.
+                logger.LogWarning(inner, "WhatsApp notification could not be settled; its lease will expire. NotificationId: {NotificationId}", id);
             }
             return null;
         }
     }
+
+    /// <summary>
+    /// Records the wamid on the attempt that sent it, even if the row became UNCONFIRMED meanwhile (lease expired while
+    /// waiting for Meta) or the webhook already attached it through the callback data.
+    /// </summary>
+    private Task<WhatsAppNotificationStatus?> AcceptAsync(Guid id, int attempt, string messageId, DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        ChangeAsync(id, attempt, async n =>
+        {
+            if (n.MessageId == messageId) return WhatsAppNotificationStatus.Accepted;
+            if (n.Status is not (WhatsAppNotificationStatus.Sending or WhatsAppNotificationStatus.Unconfirmed)) return null;
+            n.MarkAccepted(messageId, now);
+            await CatchUpDeliveryStatusAsync(n, now, cancellationToken);
+            return n.Status is WhatsAppNotificationStatus.Failed ? WhatsAppNotificationStatus.Failed : WhatsAppNotificationStatus.Accepted;
+        }, cancellationToken);
 
     /// <summary>The webhook may have reported sent/delivered/read/failed before this wamid was stored here.</summary>
     private async Task CatchUpDeliveryStatusAsync(WhatsAppNotification notification, DateTimeOffset now, CancellationToken cancellationToken)
@@ -206,16 +294,78 @@ public sealed class WhatsAppNotificationDispatcher(
             notification.ApplyDeliveryStatus(message.Status, message.ErrorCode, now);
     }
 
-    private async Task<WhatsAppNotificationStatus> FinishAsync(WhatsAppNotification notification, WhatsAppNotificationStatus status,
+    /// <summary>A final outcome decided before any send: written only if this dispatcher still owns the claim.</summary>
+    private async Task<WhatsAppNotificationStatus?> FinishAsync(WhatsAppNotification notification, WhatsAppNotificationStatus status,
         string code, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         if (status == WhatsAppNotificationStatus.Skipped) notification.MarkSkipped(code, now);
         else notification.MarkFailed(code, now);
-        await db.SaveChangesAsync(cancellationToken);
+        if (!await TrySaveAsync(cancellationToken)) return null;
         Log(notification, status == WhatsAppNotificationStatus.Skipped ? "SKIPPED" : "FAILED");
         return status;
     }
+
+    private static WhatsAppNotificationStatus Park(WhatsAppNotification notification, string code, DateTimeOffset now,
+        WhatsAppNotificationOptions settings)
+    {
+        notification.MarkUnconfirmed(code, now.AddMinutes(settings.UnconfirmedWindowMinutes), now);
+        return WhatsAppNotificationStatus.Unconfirmed;
+    }
+
+    private static WhatsAppNotificationStatus Retry(WhatsAppNotification notification, string code, DateTimeOffset now,
+        WhatsAppNotificationOptions settings)
+    {
+        if (notification.Attempts >= settings.MaxAttempts)
+        {
+            notification.MarkFailed(code, now);
+            return WhatsAppNotificationStatus.Failed;
+        }
+        notification.ScheduleRetry(code, now + settings.RetryDelayBefore(notification.Attempts + 1), now);
+        return WhatsAppNotificationStatus.Pending;
+    }
+
+    private Task<WhatsAppNotificationStatus?> ChangeAsync(Guid id, int? attempt,
+        Func<WhatsAppNotification, WhatsAppNotificationStatus?> change, CancellationToken cancellationToken) =>
+        ChangeAsync(id, attempt, n => Task.FromResult(change(n)), cancellationToken);
+
+    /// <summary>
+    /// Applies <paramref name="change"/> to the current row and saves it conditionally on its row version, re-reading
+    /// on a conflict (a webhook or a sweep touched it). With <paramref name="attempt"/>, the row must still belong to
+    /// that claim; a null result means nothing was written.
+    /// </summary>
+    private async Task<WhatsAppNotificationStatus?> ChangeAsync(Guid id, int? attempt,
+        Func<WhatsAppNotification, Task<WhatsAppNotificationStatus?>> change, CancellationToken cancellationToken)
+    {
+        for (var round = 0; round < 3; round++)
+        {
+            db.ChangeTracker.Clear();
+            var current = await db.WhatsAppNotifications.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+            if (current is null || (attempt is { } owned && current.Attempts != owned)) return null;
+            if (await change(current) is not { } status) return null;
+            if (!await TrySaveAsync(cancellationToken)) continue;
+            Log(current, StatusStorage(status));
+            return status;
+        }
+        return null;
+    }
+
+    private async Task<bool> TrySaveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    private static string StatusStorage(WhatsAppNotificationStatus status) =>
+        status == WhatsAppNotificationStatus.Pending ? "RETRY_SCHEDULED" : WhatsAppNotificationConfiguration.StatusStorage[status];
 
     private static TimeSpan MaxAge(WhatsAppNotificationType type, WhatsAppNotificationOptions settings) =>
         type is WhatsAppNotificationType.ClientCheckedIn or WhatsAppNotificationType.ProfessionalDelayed

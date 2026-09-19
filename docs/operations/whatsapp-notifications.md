@@ -12,10 +12,14 @@ check-in / cancelamento / reagendamento / confirmação (transação de negócio
   └─ grava a linha WhatsAppNotifications (PENDING) NO MESMO COMMIT
        └─ WhatsAppNotificationWorker (BackgroundService, a cada PollIntervalSeconds, se Enabled)
             ├─ enfileira avisos de atraso devidos (PROFESSIONAL_DELAYED)
-            ├─ reivindica pendentes: UPDATE … FOR UPDATE SKIP LOCKED  (PENDING → PROCESSING, lease)
-            ├─ monta o template a partir dos registros reais (WhatsAppNotificationComposer)
-            └─ IWhatsAppService.SendTemplateAsync → ACCEPTED (wamid) | retry | FAILED | SKIPPED
-webhook existente (sent/delivered/read/failed) → WhatsAppMessage E a notificação com o mesmo wamid
+            ├─ resolve envios interrompidos (SENDING com lease vencido → UNCONFIRMED; UNCONFIRMED vencido → FAILED)
+            └─ um item por vez, até BatchSize:
+                 ├─ reivindica UM item: UPDATE … LIMIT 1 FOR UPDATE SKIP LOCKED  (PENDING → PROCESSING, lease)
+                 ├─ monta o template a partir dos registros reais (WhatsAppNotificationComposer)
+                 ├─ commita PROCESSING → SENDING (+ link de reagendamento, se houver) ANTES de chamar a Meta
+                 └─ IWhatsAppService.SendTemplateAsync(…, biz_opaque_callback_data)
+                      → ACCEPTED (wamid) | retry (nada saiu) | UNCONFIRMED (resultado desconhecido) | FAILED | SKIPPED
+webhook existente (sent/delivered/read/failed) → WhatsAppMessage E a notificação (pelo wamid ou pelo callback data)
 ```
 
 - A operação de negócio **nunca** chama a Meta nem espera por ela. Meta fora do ar não afeta check-in, cancelamento
@@ -60,26 +64,60 @@ instantes UTC; a exibição usa `Scheduling:TimeZoneId` (America/Porto_Velho) �
 
 ## Retry, falhas e expiração
 
-- Cada reivindicação é uma tentativa. Falhas **temporárias** (`WHATSAPP_PROVIDER_UNAVAILABLE`, `WHATSAPP_TIMEOUT`,
-  `WHATSAPP_NETWORK_ERROR`, `WHATSAPP_RATE_LIMITED`) voltam para `PENDING` com espera `RetryDelaysSeconds`
+A regra central: **só se reenvia o que comprovadamente não chegou à Meta.** Uma segunda mensagem é pior do que um
+aviso que não saiu (este fica visível ao Admin).
+
+- Cada reivindicação é uma tentativa. Retry só quando **nada saiu**: a Meta respondeu com erro temporário
+  (`WHATSAPP_PROVIDER_UNAVAILABLE` — HTTP 5xx, `WHATSAPP_RATE_LIMITED`) ou a conexão nem foi estabelecida
+  (`WHATSAPP_NETWORK_ERROR`: DNS, conexão recusada, TLS, proxy). Volta para `PENDING` com espera `RetryDelaysSeconds`
   (padrão 30 s, 2 min, 10 min; o último se repete) até `MaxAttempts` (padrão 4) → depois `FAILED`.
-- Falhas **permanentes** (template recusado, destinatário não permitido, autenticação, não configurado, resposta
-  inválida…) → `FAILED` na hora, sem retry.
+- **Resultado desconhecido** — a requisição pode ter chegado à Meta: `WHATSAPP_TIMEOUT` (sem resposta no prazo),
+  `WHATSAPP_OUTCOME_UNKNOWN` (conexão caiu depois do envio), `WHATSAPP_INVALID_RESPONSE` (HTTP 2xx sem wamid legível),
+  exceção durante a chamada (`DISPATCH_ERROR`) ou processo que parou dentro da chamada (`DISPATCH_INTERRUPTED`) →
+  `UNCONFIRMED`, **nunca retry**. O envio leva `biz_opaque_callback_data = lumis-notification:{id}` (só o id da
+  notificação); se a Meta aceitou, o webhook de status traz esse valor e o wamid, e a notificação passa a
+  `ACCEPTED/SENT/…` com o wamid. Sem evidência em `UnconfirmedWindowMinutes` (15) → `FAILED/WHATSAPP_OUTCOME_UNKNOWN`,
+  visível em `/api/admin/whatsapp/notifications` para a recepção decidir se contata o cliente. Nenhuma confirmação é
+  inventada: só o webhook da Meta resolve um `UNCONFIRMED`.
+- Falhas **permanentes** (template recusado, destinatário não permitido, autenticação, não configurado…) → `FAILED`
+  na hora, sem retry.
+- Se a Meta aceitou mas gravar o wamid em `WhatsAppMessages` falhar, o envio continua **aceito** (o webhook cria o
+  registro no primeiro status); nunca vira falha nem retry.
 - Telefone ausente/inválido → `FAILED/RECIPIENT_PHONE_INVALID`; destinatário inativo/inexistente →
   `FAILED/RECIPIENT_UNAVAILABLE`. O fluxo principal nunca é afetado.
 - Situação mudou (visita já em atendimento, reserva não mais aprovada, link já usado) → `SKIPPED/OBSOLETE`.
 - Template do tipo não configurado → `SKIPPED/TEMPLATE_NOT_CONFIGURED` (nunca vira texto livre).
 - Aviso velho demais para ser útil → `SKIPPED/EXPIRED`: check-in e atraso após `OperationalMaxAgeMinutes` (30);
   demais após `SchedulingMaxAgeHours` (24). Evita disparar avisos antigos quando o envio é ligado.
-- Worker que morre segurando um item: o lease (`LeaseSeconds`) expira e outro ciclo o reivindica (conta como nova
-  tentativa). Único caso de duplicidade possível: morte **depois** de a Meta aceitar e **antes** de gravar o wamid.
+
+## Concorrência entre instâncias (lock / lease)
+
+- **Um item por vez.** O dispatcher reivindica uma notificação só quando vai processá-la (`LIMIT 1 … FOR UPDATE SKIP
+  LOCKED`). O lease cobre um item, nunca o lote inteiro: `BatchSize` pode crescer sem que itens esperando na fila
+  tenham o lease vencido.
+- **Dois leases.** `LeaseSeconds` (120) cobre a preparação (`PROCESSING`); ao começar a chamada à Meta o item passa a
+  `SENDING` com `SendLeaseSeconds` (90, mínimo 70 > `Whatsapp:TimeoutSeconds` máximo de 60).
+- **Escrita condicionada (`xmin`).** Toda escrita do dispatcher depende da versão da linha. Quem perdeu a reivindicação
+  (lease vencido e item reivindicado de novo) não consegue gravar — em particular não consegue passar para `SENDING`,
+  então **não chama a Meta**.
+- **`SENDING` nunca é reivindicado de novo.** Lease de `SENDING` vencido = processo parou dentro da chamada: vira
+  `UNCONFIRMED/DISPATCH_INTERRUPTED`, sem reenvio. Se a resposta da chamada original chegar depois, ela ainda grava o
+  wamid (mesma tentativa).
+- `PROCESSING` com lease vencido (processo morreu antes de enviar) é reivindicado normalmente: nada saiu.
+
+Resultado: duas instâncias nunca enviam a mesma notificação. Coberto por testes que seguram uma chamada "na Meta",
+vencem o lease e rodam um segundo dispatcher, e por um teste de escrita com versão obsoleta.
 
 ## Status de entrega
 
-O webhook existente atualiza `WhatsAppMessage` e, no mesmo `SaveChanges`, a notificação com o mesmo wamid:
-`ACCEPTED → SENT → DELIVERED → READ`, só para frente; `FAILED` é terminal com `WHATSAPP_DELIVERY_FAILED:{código}`.
-Duplicados e fora de ordem não mudam nada. Se o status chegar antes de o dispatcher gravar o wamid, o dispatcher o
-aplica ao registrar o aceite.
+O webhook existente atualiza `WhatsAppMessage` e depois a notificação que enviou a mensagem — pelo wamid ou, se o
+dispatcher nunca soube o wamid (resultado desconhecido), pelo `biz_opaque_callback_data` ecoado pela Meta, que então
+anexa o wamid. `ACCEPTED → SENT → DELIVERED → READ`, só para frente; `FAILED` é terminal com
+`WHATSAPP_DELIVERY_FAILED:{código}`. Duplicados e fora de ordem não mudam nada; um wamid já conhecido nunca é
+substituído; uma notificação que não foi enviada nunca é resolvida por callback. A notificação é gravada com a mesma
+escrita condicionada e reprocessada se o dispatcher a alterou no mesmo instante; como o webhook reaplica o status até
+em reentregas, um conflito não perde a atualização. Se o status chegar antes de o dispatcher gravar o wamid, o
+dispatcher o aplica ao registrar o aceite.
 
 ## Templates para aprovação no WhatsApp Manager
 
@@ -121,19 +159,26 @@ token bruto **não existe mais** quando o `BackgroundService` processa a notific
   mesma transação do cancelamento, e a fila grava só `CANCEL:{reserva}` — **nunca** o token.
 - No envio, o dispatcher: (a) pula a notificação como `OBSOLETE` se o token já foi **usado** ou **revogado** — sem
   rotacionar, porque `Rotate` limparia `UsedAt`/`RevokedAt` e ressuscitaria um link encerrado; (b) caso contrário gera
-  32 bytes aleatórios, grava o novo hash com validade `agora + Rescheduling:LinkTtlHours` e **commita antes de chamar a
-  Meta**; (c) envia o valor bruto apenas como sufixo do botão URL do template; (d) registra auditoria
-  `RESCHEDULE_LINK_ISSUED` com o id da notificação como correlação. O valor bruto não vai para tabela, log ou auditoria.
-- Concorrência: `RescheduleTokens` tem token de concorrência (`xmin`); se o cliente usar o link no mesmo instante da
-  rotação, o `SaveChanges` falha, a notificação volta para retry e a próxima tentativa vê `UsedAt` e pula.
+  32 bytes aleatórios e prepara o novo hash com validade `agora + Rescheduling:LinkTtlHours` e a auditoria
+  `RESCHEDULE_LINK_ISSUED` (id da notificação como correlação); (c) **commita a rotação no mesmo `SaveChanges` que
+  passa a notificação para `SENDING`, antes de chamar a Meta** — se essa escrita falhar (reivindicação perdida ou link
+  usado no mesmo instante), nada é rotacionado nem enviado; (d) envia o valor bruto apenas como sufixo do botão URL.
+  O valor bruto não vai para tabela, log ou auditoria.
+- Concorrência: `RescheduleTokens` e `WhatsAppNotifications` têm token de concorrência (`xmin`). Cliente usando o
+  link no mesmo instante → a escrita falha, a notificação volta para retry e a próxima tentativa vê `UsedAt` e pula.
+  Um dispatcher que perdeu a reivindicação não consegue rotacionar o link que outro está enviando.
 
-**Riscos aceitos.**
-- Cada tentativa de envio rotaciona o token: só o link da **última** mensagem enviada vale. Se uma tentativa
-  terminou em timeout mas a Meta tinha entregue, o retry envia uma mensagem nova com link válido e o link da anterior
-  deixa de funcionar (a página de reagendamento mostra "link inválido ou expirado").
-- Se uma tentativa ambígua (timeout) de fato entregou e **todas** as seguintes falharem de forma permanente, o
-  cliente fica com um link inválido. É o mesmo desfecho da opção 3, e continua visível em
-  `/api/admin/whatsapp/notifications` como `FAILED`, para a recepção contatar o cliente.
+**Qual link vale após uma falha.**
+- Meta respondeu com erro / conexão não estabelecida (nada saiu): o retry rotaciona e envia um link novo. O link
+  anterior nunca chegou a ninguém, então invalidá-lo não custa nada; vale o link da mensagem entregue.
+- Resultado desconhecido (timeout, conexão caída, processo parado): **não há retry nem nova rotação**. O link da
+  única mensagem possivelmente entregue continua válido até o fim da validade (contada daquele envio) e não é
+  revogado, mesmo que a notificação termine `FAILED/WHATSAPP_OUTCOME_UNKNOWN`.
+
+**Risco aceito.** Um resultado desconhecido em que a Meta *não* entregou e o webhook não trouxe evidência termina em
+`FAILED/WHATSAPP_OUTCOME_UNKNOWN`: o cliente não recebe o aviso. Fica visível em `/api/admin/whatsapp/notifications`
+para a recepção contatar o cliente. Preferimos isso a arriscar duas mensagens (e, antes desta correção, uma segunda
+mensagem invalidava o link da primeira).
 
 ## Configuração
 
@@ -142,7 +187,9 @@ token bruto **não existe mais** quando o `BackgroundService` processa a notific
 | `Whatsapp__Notifications__Enabled` | `false` | Liga o envio. Desligado: eventos continuam registrados, nada é enviado. |
 | `Whatsapp__Notifications__PollIntervalSeconds` | 15 | Intervalo do worker. |
 | `Whatsapp__Notifications__BatchSize` | 20 | Itens por ciclo. |
-| `Whatsapp__Notifications__LeaseSeconds` | 120 | Lock de um item em envio (> `Whatsapp__TimeoutSeconds`). |
+| `Whatsapp__Notifications__LeaseSeconds` | 120 | Lease de um item em preparação (`PROCESSING`). |
+| `Whatsapp__Notifications__SendLeaseSeconds` | 90 | Lease durante a chamada à Meta (`SENDING`); mínimo 70. |
+| `Whatsapp__Notifications__UnconfirmedWindowMinutes` | 15 | Espera por evidência do webhook antes de `FAILED/WHATSAPP_OUTCOME_UNKNOWN`. |
 | `Whatsapp__Notifications__MaxAttempts` | 4 | Tentativas totais. |
 | `Whatsapp__Notifications__RetryDelaysSeconds__0..n` | 30, 120, 600 | Espera antes da 2ª, 3ª, … tentativa. |
 | `Whatsapp__Notifications__LanguageCode` | `pt_BR` | Idioma dos templates. |
@@ -177,10 +224,23 @@ nomes de template não são segredo. Credenciais continuam as da Cloud API (`Wha
 enviadas, entregues, lidas, falhas, motivo e tentativas. Não expõe telefone, nomes, link, token ou segredo. Somente
 leitura: não há reenvio manual nem escolha de destinatário.
 
-## Ativação (pendências manuais — nada disso foi feito)
+## Implantação e ativação
 
-1. Aplicar a migration `20260919031847_AddWhatsAppNotifications` (cria só a tabela `WhatsAppNotifications`).
-2. Criar e aprovar os templates acima no WhatsApp Manager (incluindo o botão URL do reagendamento).
-3. Configurar `Whatsapp__Templates__*` com os nomes aprovados.
-4. Confirmar credenciais da Cloud API e o webhook já existentes.
+**Migrations antes do deploy do código.** Os endpoints de check-in, agendamento, cancelamento, reagendamento e
+imprevisto gravam em `WhatsAppNotifications` dentro da própria transação, mesmo com o envio desligado. O código só pode
+ser publicado num banco que já tenha:
+
+1. `20260919031847_AddWhatsAppNotifications` — cria a tabela (aplicada no staging em 2026-09-19).
+2. `20260919042836_WhatsAppNotificationUnknownSendOutcome` — só troca 3 CHECK constraints por versões mais amplas
+   (`SENDING`, `UNCONFIRMED`); `xmin` é coluna de sistema e não gera SQL. Compatível com o código anterior
+   (aplicada no staging em 2026-09-19).
+
+Ativação do envio (pendências manuais — nada disso foi feito):
+
+1. Criar e aprovar os templates acima no WhatsApp Manager (incluindo o botão URL do reagendamento).
+2. Configurar `Whatsapp__Templates__*` com os nomes aprovados.
+3. Confirmar credenciais da Cloud API e o webhook já existentes, e que os status de entrega trazem
+   `biz_opaque_callback_data` (sem isso um resultado desconhecido termina em `FAILED/WHATSAPP_OUTCOME_UNKNOWN`, nunca
+   em mensagem duplicada).
+4. Decisão de consentimento/preferência implementada (ver "Privacidade / LGPD").
 5. Só então `Whatsapp__Notifications__Enabled=true`. Avisos criados antes disso expiram pelas regras de validade.

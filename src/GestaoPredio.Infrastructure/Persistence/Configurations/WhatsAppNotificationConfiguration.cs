@@ -24,11 +24,15 @@ public sealed class WhatsAppNotificationConfiguration : IEntityTypeConfiguration
             // A wamid exists exactly from the moment Meta accepted the send.
             table.HasCheckConstraint("CK_WhatsAppNotifications_MessageId",
                 "(\"Status\" IN ('ACCEPTED', 'SENT', 'DELIVERED', 'READ') AND \"MessageId\" IS NOT NULL) OR " +
-                "(\"Status\" IN ('PENDING', 'PROCESSING', 'SKIPPED') AND \"MessageId\" IS NULL) OR \"Status\" = 'FAILED'");
+                "(\"Status\" IN ('PENDING', 'PROCESSING', 'SENDING', 'UNCONFIRMED', 'SKIPPED') AND \"MessageId\" IS NULL) OR " +
+                "\"Status\" = 'FAILED'");
+            // A lease exists exactly while one dispatcher owns the notification.
             table.HasCheckConstraint("CK_WhatsAppNotifications_Lock",
-                "(\"Status\" = 'PROCESSING') = (\"LockedUntil\" IS NOT NULL)");
+                "(\"Status\" IN ('PROCESSING', 'SENDING')) = (\"LockedUntil\" IS NOT NULL)");
         });
         entity.HasKey(x => x.Id);
+        // xmin: a dispatcher whose claim was taken over (or raced by a webhook) cannot overwrite the row.
+        entity.Property(x => x.Version).IsRowVersion();
         entity.Property(x => x.Type).HasConversion(Converter(TypeStorage)).HasMaxLength(32).IsRequired();
         entity.Property(x => x.Recipient).HasConversion(Converter(RecipientStorage)).HasMaxLength(16).IsRequired();
         entity.Property(x => x.Status).HasConversion(Converter(StatusStorage)).HasMaxLength(16).IsRequired();
@@ -78,7 +82,9 @@ public sealed class WhatsAppNotificationConfiguration : IEntityTypeConfiguration
             [WhatsAppNotificationStatus.Delivered] = "DELIVERED",
             [WhatsAppNotificationStatus.Read] = "READ",
             [WhatsAppNotificationStatus.Failed] = "FAILED",
-            [WhatsAppNotificationStatus.Skipped] = "SKIPPED"
+            [WhatsAppNotificationStatus.Skipped] = "SKIPPED",
+            [WhatsAppNotificationStatus.Sending] = "SENDING",
+            [WhatsAppNotificationStatus.Unconfirmed] = "UNCONFIRMED"
         };
 
     private static ValueConverter<TEnum, string> Converter<TEnum>(IReadOnlyDictionary<TEnum, string> storage)

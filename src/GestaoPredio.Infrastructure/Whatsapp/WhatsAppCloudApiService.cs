@@ -31,6 +31,7 @@ public sealed class WhatsAppCloudApiService(
     private static readonly Regex TemplateName = new("^[a-z0-9_]{1,512}$", RegexOptions.CultureInvariant);
     private static readonly Regex TemplateLanguage = new("^[a-z]{2,3}(_[A-Z]{2})?$", RegexOptions.CultureInvariant);
     private static readonly Regex Whitespace = new(@"\s+", RegexOptions.CultureInvariant);
+    private static readonly Regex CallbackData = new(@"^\S{1,512}$", RegexOptions.CultureInvariant);
 
     public async Task<WhatsAppSendResult> SendTextAsync(string destinationPhone, string body, CancellationToken cancellationToken)
     {
@@ -46,8 +47,12 @@ public sealed class WhatsAppCloudApiService(
             WhatsAppMessageType.Text, cancellationToken);
     }
 
+    public Task<WhatsAppSendResult> SendTemplateAsync(string destinationPhone, WhatsAppTemplate template,
+        CancellationToken cancellationToken) =>
+        SendTemplateAsync(destinationPhone, template, null, cancellationToken);
+
     public async Task<WhatsAppSendResult> SendTemplateAsync(string destinationPhone, WhatsAppTemplate template,
-        CancellationToken cancellationToken)
+        string? callbackData, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(template);
         var settings = options.CurrentValue;
@@ -55,11 +60,12 @@ public sealed class WhatsAppCloudApiService(
             return Fail(WhatsAppFailureCodes.NotConfigured);
         if (!WhatsAppNormalizer.TryNormalize(destinationPhone, out var e164))
             return Fail(WhatsAppFailureCodes.InvalidRecipient);
-        if (!TryBuildComponents(template, out var components))
+        if (!TryBuildComponents(template, out var components) ||
+            (callbackData is not null && !CallbackData.IsMatch(callbackData)))
             return Fail(WhatsAppFailureCodes.InvalidMessage);
 
         var content = JsonContent.Create(new TemplateMessageRequest(e164.TrimStart('+'),
-            new TemplateBody(template.Name, new TemplateLanguageBody(template.LanguageCode), components)));
+            new TemplateBody(template.Name, new TemplateLanguageBody(template.LanguageCode), components), callbackData));
         return await PostAsync(settings, e164, content, WhatsAppMessageType.Template, cancellationToken);
     }
 
@@ -114,19 +120,41 @@ public sealed class WhatsAppCloudApiService(
                 ? ReadSuccess(responseBody, messageType)
                 : ReadError(response.StatusCode, responseBody);
             if (result is { Success: true, MessageId: { } messageId })
-                // Durable record of the wamid, so a webhook status can be matched even after a restart. The
-                // webhook may already have created the row; the store reconciles instead of duplicating.
-                await messages.RecordAcceptedAsync(messageId, e164, settings.PhoneNumberId, messageType,
-                    timeProvider.GetUtcNow(), cancellationToken);
+                await RecordAcceptedAsync(messageId, e164, settings.PhoneNumberId, messageType, cancellationToken);
             return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            // The request may already be with Meta: a timeout is an unknown outcome, not a failed send.
             return Fail(WhatsAppFailureCodes.Timeout);
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
-            return Fail(WhatsAppFailureCodes.NetworkError);
+            return Fail(exception.HttpRequestError is HttpRequestError.NameResolutionError or HttpRequestError.ConnectionError
+                or HttpRequestError.SecureConnectionError or HttpRequestError.ProxyTunnelError
+                ? WhatsAppFailureCodes.NetworkError      // no connection: the request never left
+                : WhatsAppFailureCodes.OutcomeUnknown);  // broken after sending: Meta may have the message
+        }
+    }
+
+    /// <summary>
+    /// Durable record of the wamid, so a webhook status can be matched even after a restart. The webhook may already
+    /// have created the row; the store reconciles instead of duplicating. Meta already accepted the message, so a
+    /// failure here must not turn the send into a failure (the caller would send it again): the webhook creates the
+    /// row on the first status instead.
+    /// </summary>
+    private async Task RecordAcceptedAsync(string messageId, string e164, string phoneNumberId, WhatsAppMessageType messageType,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await messages.RecordAcceptedAsync(messageId, e164, phoneNumberId, messageType, timeProvider.GetUtcNow(),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("WhatsApp message accepted but its record could not be stored now; the webhook will create it. MessageId: {MessageId}; Error: {Error}",
+                messageId, exception.GetType().Name);
         }
     }
 
@@ -207,7 +235,8 @@ public sealed class WhatsAppCloudApiService(
 
     private sealed record TemplateMessageRequest(
         [property: JsonPropertyName("to")] string To,
-        [property: JsonPropertyName("template")] TemplateBody Template)
+        [property: JsonPropertyName("template")] TemplateBody Template,
+        [property: JsonPropertyName("biz_opaque_callback_data"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CallbackData)
     {
         [JsonPropertyName("messaging_product")] public string MessagingProduct => "whatsapp";
         [JsonPropertyName("recipient_type")] public string RecipientType => "individual";
