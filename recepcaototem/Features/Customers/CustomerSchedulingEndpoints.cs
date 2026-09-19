@@ -7,6 +7,7 @@ using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Domain.Customers;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -177,6 +178,8 @@ public static class CustomerSchedulingEndpoints
             principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? customer.ApplicationUserId!, time.GetUtcNow(), customer.Id);
         db.Reservations.Add(reservation);
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, TargetUserId = customer.ApplicationUserId, OccurredAt = time.GetUtcNow(), CorrelationId = context.TraceIdentifier });
+        // Outbox: APPOINTMENT_CONFIRMED, committed with the booking (rolled back with it on a lost race).
+        db.WhatsAppNotifications.Add(WhatsAppNotification.AppointmentConfirmed(reservation, time.GetUtcNow())!);
         if (handoff is not null)
         {
             var completedAt = time.GetUtcNow();

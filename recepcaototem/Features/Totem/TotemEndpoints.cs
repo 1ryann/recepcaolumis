@@ -268,6 +268,8 @@ public static class TotemEndpoints
             request.StartAt, request.EndAt, actor, time.GetUtcNow(), customer.Id);
         db.Reservations.Add(reservation);
         db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "RESERVATION_CREATED", Result = "SUCCEEDED", TargetEntityType = "RESERVATION", TargetEntityId = reservation.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
+        // Outbox: APPOINTMENT_CONFIRMED to the customer, committed with the assisted booking.
+        db.WhatsAppNotifications.Add(WhatsAppNotification.AppointmentConfirmed(reservation, time.GetUtcNow())!);
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
     }

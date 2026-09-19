@@ -42,7 +42,6 @@ public sealed record WhatsAppComposition(string? Phone, WhatsAppTemplate? Templa
 /// time, minutes late and (for a professional cancellation) the reschedule token. Nothing clinical, financial or
 /// free-text (notes, reasons) is ever used. A notification whose business situation changed meanwhile (visit
 /// already in service, reservation no longer approved, reschedule already used) is skipped as OBSOLETE.
-/// Each notification type contributes its own rendering; a type without one is skipped as NOT_IMPLEMENTED.
 /// </summary>
 public sealed class WhatsAppNotificationComposer(
     ApplicationDbContext db,
@@ -68,6 +67,8 @@ public sealed class WhatsAppNotificationComposer(
             WhatsAppNotificationType.ProfessionalDelayed => await ProfessionalDelayedAsync(notification, templateName, now, cancellationToken),
             WhatsAppNotificationType.ProfessionalCancelled or WhatsAppNotificationType.AppointmentCancelled =>
                 await CancelledAsync(notification, templateName, now, cancellationToken),
+            WhatsAppNotificationType.AppointmentRescheduled or WhatsAppNotificationType.AppointmentConfirmed =>
+                await ScheduledAsync(notification, templateName, now, cancellationToken),
             _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented)
         };
     }
@@ -136,6 +137,22 @@ public sealed class WhatsAppNotificationComposer(
 
         return WhatsAppComposition.Send(customer!.Value.Phone, Template(templateName,
             [customer.Value.FirstName, professionalName, Date(reservation.StartAt), Time(reservation.StartAt)], rescheduleToken));
+    }
+
+    // "Olá, {{1}}. Seu atendimento com {{2}} foi reagendado para {{3}} às {{4}}." /
+    // "Olá, {{1}}. Seu atendimento com {{2}} está confirmado para {{3}} às {{4}}."
+    private async Task<WhatsAppComposition> ScheduledAsync(WhatsAppNotification notification, string templateName,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var reservation = await ReservationAsync(notification, cancellationToken);
+        if (reservation is null || !reservation.BlocksResources || reservation.StartAt <= now)
+            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        var (customer, failure) = await CustomerRecipientAsync(reservation.CustomerId, cancellationToken);
+        if (failure is not null) return failure;
+        var professionalName = await ProfessionalNameAsync(reservation.ProfessionalId, cancellationToken);
+
+        return WhatsAppComposition.Send(customer!.Value.Phone, Template(templateName,
+            [customer.Value.FirstName, professionalName, Date(reservation.StartAt), Time(reservation.StartAt)]));
     }
 
     /// <summary>

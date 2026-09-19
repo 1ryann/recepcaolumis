@@ -70,6 +70,9 @@ public static partial class ReservationEndpoints
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             replacement.Id, AuditActions.ReservationCreated, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        // Outbox: the customer hears about the new date/time, committed with the reschedule.
+        if (WhatsAppNotification.AppointmentRescheduled(replacement, now) is { } notice)
+            db.WhatsAppNotifications.Add(notice);
         try
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -153,10 +156,14 @@ public static partial class ReservationEndpoints
         db.AuditEntries.Add(ReservationAudit.CreateSucceeded(
             reservation.Id, AuditActions.ReservationApproved, now, context.TraceIdentifier,
             Actor(context), context.Connection.RemoteIpAddress?.ToString()));
-        // Outbox, committed with the decision: an approved cancellation request notifies the original's customer.
-        if (reservation.Kind == ReservationKind.Cancellation && original is not null &&
-            WhatsAppNotification.ReservationCancelled(original, now) is { } notice)
-            db.WhatsAppNotifications.Add(notice);
+        // Outbox, committed with the decision. Only reservations that carry a customer produce a notice.
+        var notice = reservation.Kind switch
+        {
+            ReservationKind.Reschedule => WhatsAppNotification.AppointmentRescheduled(reservation, now),
+            ReservationKind.Cancellation when original is not null => WhatsAppNotification.ReservationCancelled(original, now),
+            _ => WhatsAppNotification.AppointmentConfirmed(reservation, now)
+        };
+        if (notice is not null) db.WhatsAppNotifications.Add(notice);
         return await SaveDecision(db, transaction, reservation, cancellationToken);
     }
 

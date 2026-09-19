@@ -107,6 +107,10 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         var reservation = await db.Reservations.SingleAsync(x => x.Id == created.ReservationId);
         Assert.Equal(seed.CustomerId, reservation.CustomerId);
         Assert.Equal(1, await db.Customers.CountAsync(x => x.NormalizedPhone == seed.CustomerPhone));
+        var confirmation = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationType.AppointmentConfirmed, confirmation.Type);
+        Assert.Equal($"CONFIRM:{created.ReservationId}", confirmation.IdempotencyKey);
+        Assert.Equal(seed.CustomerId, confirmation.CustomerId);
     }
 
     [Fact]

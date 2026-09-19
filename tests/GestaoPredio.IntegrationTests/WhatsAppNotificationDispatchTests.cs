@@ -104,7 +104,45 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal("OBSOLETE", notice.LastErrorCode);
     }
 
-    // ---- skipped and expired notices ----------------------------------------------------------------------
+    // ---- recipient problems never break anything ---------------------------------------------------------------
+
+    [Fact]
+    public async Task An_invalid_customer_phone_fails_the_notice_without_retrying_and_leaves_the_reservation_alone()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await ExecuteAsync($"UPDATE \"Customers\" SET \"Phone\" = '123' WHERE \"Id\" = '{seed.CustomerId}'");
+        await AddReservationNoticeAsync(seed, WhatsAppNotification.AppointmentConfirmed);
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        await ModulesApiFactory.DispatchAsync(host);
+        factory.AdvanceTime(TimeSpan.FromHours(1));
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Empty(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Failed, notice.Status);
+        Assert.Equal("RECIPIENT_PHONE_INVALID", notice.LastErrorCode);
+        Assert.Equal(1, notice.Attempts);
+        Assert.Equal(ReservationStatus.Approved, (await ReservationAsync(seed.ReservationId)).Status);
+    }
+
+    [Fact]
+    public async Task An_inactive_customer_is_reported_as_an_unavailable_recipient()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        await ExecuteAsync($"UPDATE \"Customers\" SET \"IsActive\" = false WHERE \"Id\" = '{seed.CustomerId}'");
+        await AddReservationNoticeAsync(seed, WhatsAppNotification.AppointmentConfirmed);
+        using var host = factory.WithWhatsApp(new FakeWhatsAppService());
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Failed, notice.Status);
+        Assert.Equal("RECIPIENT_UNAVAILABLE", notice.LastErrorCode);
+    }
 
     [Fact]
     public async Task A_type_without_a_configured_template_is_skipped_and_never_sent_as_free_text()
@@ -332,6 +370,32 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal("client_appointment_cancelled", template.Name);
         Assert.Equal(["Maria", "Dra. Helena Prado", LocalDate(seed.StartAt), LocalTime(seed.StartAt)], template.BodyParameters);
         Assert.Null(template.UrlButtonParameter);
+    }
+
+    [Fact]
+    public async Task Admin_reschedule_notifies_the_customer_with_the_new_date_and_time()
+    {
+        await factory.ResetAsync();
+        await factory.SeedDefaultOperatingHoursAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(2));
+        await LoginAdminAsync();
+        var token = await ConcurrencyTokenAsync(seed.ReservationId);
+        var newStart = seed.StartAt.AddHours(3);
+
+        var response = await factory.PostWithCsrfAsync($"/api/admin/reservations/{seed.ReservationId}/reschedule",
+            new { concurrencyToken = token, startAt = newStart, endAt = newStart.AddHours(1) });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationType.AppointmentRescheduled, notice.Type);
+        Assert.NotEqual(seed.ReservationId, notice.ReservationId);           // keyed by the replacement
+
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+        await ModulesApiFactory.DispatchAsync(host);
+        var (_, template) = Assert.Single(meta.Sent);
+        Assert.Equal("client_appointment_rescheduled", template.Name);
+        Assert.Equal(["Maria", "Dra. Helena Prado", LocalDate(newStart), LocalTime(newStart)], template.BodyParameters);
     }
 
     // ---- reschedule link: regenerated at send time, never persisted raw ---------------------------------------
@@ -625,6 +689,17 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         return rows.Any(row => row.Contains(value, StringComparison.Ordinal));
     }
 
+    private async Task<Reservation> ReservationAsync(Guid id)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Reservations.AsNoTracking().SingleAsync(x => x.Id == id);
+    }
+
+    private async Task ExecuteAsync(string sql)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.ExecuteSqlRawAsync(sql);
+    }
 
     private async Task StoreAsync(Func<IWhatsAppMessageStore, Task> action)
     {
