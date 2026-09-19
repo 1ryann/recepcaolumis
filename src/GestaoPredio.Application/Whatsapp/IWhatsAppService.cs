@@ -25,10 +25,24 @@ public sealed record WhatsAppSendResult(bool Success, string? MessageId, string?
 }
 
 /// <summary>
+/// A pre-approved WhatsApp Business template. <see cref="BodyParameters"/> fill {{1}}, {{2}}, … in order;
+/// <see cref="UrlButtonParameter"/>, when present, fills the dynamic suffix of the template's first URL button.
+/// </summary>
+public sealed record WhatsAppTemplate(
+    string Name,
+    string LanguageCode,
+    IReadOnlyList<string> BodyParameters,
+    string? UrlButtonParameter = null);
+
+/// <summary>
 /// The single entry point for outbound WhatsApp Cloud API calls. Callers never see the Graph API,
 /// the access token or the phone number id.
 /// </summary>
 public interface IWhatsAppService
 {
+    /// <summary>Free text: only deliverable inside the 24h customer service window.</summary>
     Task<WhatsAppSendResult> SendTextAsync(string destinationPhone, string body, CancellationToken cancellationToken);
+
+    /// <summary>Proactive, business-initiated message through an approved template.</summary>
+    Task<WhatsAppSendResult> SendTemplateAsync(string destinationPhone, WhatsAppTemplate template, CancellationToken cancellationToken);
 }

@@ -62,6 +62,7 @@ public sealed class WhatsAppMessageConfiguration : IEntityTypeConfiguration<What
     private static string TypeToStorage(WhatsAppMessageType value) => value switch
     {
         WhatsAppMessageType.Text => "TEXT",
+        WhatsAppMessageType.Template => "TEMPLATE",
         WhatsAppMessageType.Unknown => "UNKNOWN",
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Invalid WhatsApp message type.")
     };
@@ -69,6 +70,7 @@ public sealed class WhatsAppMessageConfiguration : IEntityTypeConfiguration<What
     private static WhatsAppMessageType TypeFromStorage(string value) => value switch
     {
         "TEXT" => WhatsAppMessageType.Text,
+        "TEMPLATE" => WhatsAppMessageType.Template,
         "UNKNOWN" => WhatsAppMessageType.Unknown,
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Invalid stored WhatsApp message type.")
     };

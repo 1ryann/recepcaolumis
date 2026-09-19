@@ -20,17 +20,17 @@ public sealed class PostgreSqlWhatsAppMessageStore(
     private const string UniqueMessageIdIndex = "UX_WhatsAppMessages_MessageId";
 
     public async Task RecordAcceptedAsync(string messageId, string recipientPhone, string? phoneNumberId,
-        DateTimeOffset occurredAt, CancellationToken cancellationToken)
+        WhatsAppMessageType messageType, DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         var existing = await FindAsync(messageId, cancellationToken);
         if (existing is not null)
         {
-            if (existing.ReconcileAccepted(recipientPhone, phoneNumberId, WhatsAppMessageType.Text, occurredAt))
+            if (existing.ReconcileAccepted(recipientPhone, phoneNumberId, messageType, occurredAt))
                 await db.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        db.WhatsAppMessages.Add(WhatsAppMessage.CreateAccepted(messageId, recipientPhone, phoneNumberId, occurredAt));
+        db.WhatsAppMessages.Add(WhatsAppMessage.CreateAccepted(messageId, recipientPhone, phoneNumberId, occurredAt, messageType));
         try
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -41,7 +41,7 @@ public sealed class PostgreSqlWhatsAppMessageStore(
             Detach();
             var winner = await FindAsync(messageId, cancellationToken);
             if (winner is null) throw;
-            if (winner.ReconcileAccepted(recipientPhone, phoneNumberId, WhatsAppMessageType.Text, occurredAt))
+            if (winner.ReconcileAccepted(recipientPhone, phoneNumberId, messageType, occurredAt))
                 await db.SaveChangesAsync(cancellationToken);
         }
     }
@@ -61,6 +61,7 @@ public sealed class PostgreSqlWhatsAppMessageStore(
             if (!existing.ApplyStatus(update.Status, update.ReportedAt, update.ErrorCode, update.ErrorTitle,
                     update.ErrorDetails, now))
                 return false;
+            await MirrorOnNotificationsAsync(update, now, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             return true;
         }
@@ -81,9 +82,23 @@ public sealed class PostgreSqlWhatsAppMessageStore(
             if (!winner.ApplyStatus(update.Status, update.ReportedAt, update.ErrorCode, update.ErrorTitle,
                     update.ErrorDetails, now))
                 return false;
+            await MirrorOnNotificationsAsync(update, now, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             return true;
         }
+    }
+
+    /// <summary>
+    /// Carries a status that moved the message forward onto the operational notification that sent it (same wamid),
+    /// in the same SaveChanges. The notification applies its own forward-only rule, so replays and out-of-order
+    /// statuses cannot regress it either. A status that arrives before the dispatcher stored the wamid is caught up
+    /// by the dispatcher itself.
+    /// </summary>
+    private async Task MirrorOnNotificationsAsync(WhatsAppStatusUpdate update, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var notifications = await db.WhatsAppNotifications.Where(x => x.MessageId == update.MessageId).ToListAsync(cancellationToken);
+        foreach (var notification in notifications)
+            notification.ApplyDeliveryStatus(update.Status, update.ErrorCode, now);
     }
 
     private Task<WhatsAppMessage?> FindAsync(string messageId, CancellationToken cancellationToken) =>

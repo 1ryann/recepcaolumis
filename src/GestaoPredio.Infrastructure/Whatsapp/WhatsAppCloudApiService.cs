@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using GestaoPredio.Application.Whatsapp;
 using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Whatsapp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +25,12 @@ public sealed class WhatsAppCloudApiService(
     ILogger<WhatsAppCloudApiService> logger) : IWhatsAppService
 {
     public const int MaxTextLength = 4096;
+    public const int MaxTemplateParameterLength = 1024;
+    public const int MaxTemplateParameters = 10;
+
+    private static readonly Regex TemplateName = new("^[a-z0-9_]{1,512}$", RegexOptions.CultureInvariant);
+    private static readonly Regex TemplateLanguage = new("^[a-z]{2,3}(_[A-Z]{2})?$", RegexOptions.CultureInvariant);
+    private static readonly Regex Whitespace = new(@"\s+", RegexOptions.CultureInvariant);
 
     public async Task<WhatsAppSendResult> SendTextAsync(string destinationPhone, string body, CancellationToken cancellationToken)
     {
@@ -34,11 +42,66 @@ public sealed class WhatsAppCloudApiService(
         if (string.IsNullOrWhiteSpace(body) || body.Length > MaxTextLength)
             return Fail(WhatsAppFailureCodes.InvalidMessage);
 
-        var uri = $"{settings.BaseUrl.TrimEnd('/')}/{Uri.EscapeDataString(settings.ApiVersion)}/{Uri.EscapeDataString(settings.PhoneNumberId)}/messages";
-        using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+        return await PostAsync(settings, e164, JsonContent.Create(new TextMessageRequest(e164.TrimStart('+'), new TextBody(body))),
+            WhatsAppMessageType.Text, cancellationToken);
+    }
+
+    public async Task<WhatsAppSendResult> SendTemplateAsync(string destinationPhone, WhatsAppTemplate template,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        var settings = options.CurrentValue;
+        if (!settings.IsSendConfigured)
+            return Fail(WhatsAppFailureCodes.NotConfigured);
+        if (!WhatsAppNormalizer.TryNormalize(destinationPhone, out var e164))
+            return Fail(WhatsAppFailureCodes.InvalidRecipient);
+        if (!TryBuildComponents(template, out var components))
+            return Fail(WhatsAppFailureCodes.InvalidMessage);
+
+        var content = JsonContent.Create(new TemplateMessageRequest(e164.TrimStart('+'),
+            new TemplateBody(template.Name, new TemplateLanguageBody(template.LanguageCode), components)));
+        return await PostAsync(settings, e164, content, WhatsAppMessageType.Template, cancellationToken);
+    }
+
+    /// <summary>
+    /// Meta rejects template parameters with new lines, tabs or runs of spaces, so each one is flattened to a single
+    /// line. An empty or oversized parameter, or an invalid name or language, fails closed before any HTTP call.
+    /// </summary>
+    private static bool TryBuildComponents(WhatsAppTemplate template, out List<TemplateComponent> components)
+    {
+        components = [];
+        if (template.Name is null || !TemplateName.IsMatch(template.Name) ||
+            template.LanguageCode is null || !TemplateLanguage.IsMatch(template.LanguageCode) ||
+            template.BodyParameters is null || template.BodyParameters.Count > MaxTemplateParameters)
+            return false;
+
+        var body = new List<TemplateParameter>();
+        foreach (var raw in template.BodyParameters)
         {
-            Content = JsonContent.Create(new TextMessageRequest(e164.TrimStart('+'), new TextBody(body)))
-        };
+            if (!TryFlatten(raw, out var value)) return false;
+            body.Add(new TemplateParameter(value));
+        }
+        if (body.Count > 0) components.Add(new TemplateComponent("body", null, null, body));
+
+        if (template.UrlButtonParameter is not null)
+        {
+            if (!TryFlatten(template.UrlButtonParameter, out var suffix)) return false;
+            components.Add(new TemplateComponent("button", "url", "0", [new TemplateParameter(suffix)]));
+        }
+        return true;
+    }
+
+    private static bool TryFlatten(string? raw, out string value)
+    {
+        value = Whitespace.Replace(raw ?? "", " ").Trim();
+        return value.Length is >= 1 and <= MaxTemplateParameterLength;
+    }
+
+    private async Task<WhatsAppSendResult> PostAsync(WhatsAppCloudOptions settings, string e164, HttpContent content,
+        WhatsAppMessageType messageType, CancellationToken cancellationToken)
+    {
+        var uri = $"{settings.BaseUrl.TrimEnd('/')}/{Uri.EscapeDataString(settings.ApiVersion)}/{Uri.EscapeDataString(settings.PhoneNumberId)}/messages";
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.AccessToken);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -46,13 +109,15 @@ public sealed class WhatsAppCloudApiService(
         try
         {
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeout.Token);
-            var content = await response.Content.ReadAsStringAsync(timeout.Token);
-            var result = response.IsSuccessStatusCode ? ReadSuccess(content) : ReadError(response.StatusCode, content);
+            var responseBody = await response.Content.ReadAsStringAsync(timeout.Token);
+            var result = response.IsSuccessStatusCode
+                ? ReadSuccess(responseBody, messageType)
+                : ReadError(response.StatusCode, responseBody);
             if (result is { Success: true, MessageId: { } messageId })
                 // Durable record of the wamid, so a webhook status can be matched even after a restart. The
                 // webhook may already have created the row; the store reconciles instead of duplicating.
-                await messages.RecordAcceptedAsync(messageId, e164, settings.PhoneNumberId, timeProvider.GetUtcNow(),
-                    cancellationToken);
+                await messages.RecordAcceptedAsync(messageId, e164, settings.PhoneNumberId, messageType,
+                    timeProvider.GetUtcNow(), cancellationToken);
             return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -65,7 +130,7 @@ public sealed class WhatsAppCloudApiService(
         }
     }
 
-    private WhatsAppSendResult ReadSuccess(string content)
+    private WhatsAppSendResult ReadSuccess(string content, WhatsAppMessageType messageType)
     {
         try
         {
@@ -76,7 +141,8 @@ public sealed class WhatsAppCloudApiService(
                 !string.IsNullOrWhiteSpace(id.GetString()))
             {
                 var messageId = id.GetString()!;
-                logger.LogInformation("WhatsApp text message accepted. MessageId: {MessageId}", messageId);
+                logger.LogInformation("WhatsApp message accepted. MessageType: {MessageType}; MessageId: {MessageId}",
+                    messageType, messageId);
                 return WhatsAppSendResult.Succeeded(messageId);
             }
         }
@@ -137,5 +203,32 @@ public sealed class WhatsAppCloudApiService(
     private sealed record TextBody([property: JsonPropertyName("body")] string Body)
     {
         [JsonPropertyName("preview_url")] public bool PreviewUrl => false;
+    }
+
+    private sealed record TemplateMessageRequest(
+        [property: JsonPropertyName("to")] string To,
+        [property: JsonPropertyName("template")] TemplateBody Template)
+    {
+        [JsonPropertyName("messaging_product")] public string MessagingProduct => "whatsapp";
+        [JsonPropertyName("recipient_type")] public string RecipientType => "individual";
+        [JsonPropertyName("type")] public string Type => "template";
+    }
+
+    private sealed record TemplateBody(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("language")] TemplateLanguageBody Language,
+        [property: JsonPropertyName("components")] IReadOnlyList<TemplateComponent> Components);
+
+    private sealed record TemplateLanguageBody([property: JsonPropertyName("code")] string Code);
+
+    private sealed record TemplateComponent(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("sub_type"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SubType,
+        [property: JsonPropertyName("index"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Index,
+        [property: JsonPropertyName("parameters")] IReadOnlyList<TemplateParameter> Parameters);
+
+    private sealed record TemplateParameter([property: JsonPropertyName("text")] string Text)
+    {
+        [JsonPropertyName("type")] public string Type => "text";
     }
 }

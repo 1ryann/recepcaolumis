@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GestaoPredio.Infrastructure.Notifications;
 
@@ -211,6 +212,19 @@ public static class NotificationServiceCollectionExtensions
         }
 
         services.AddScoped<INotificationService, NotificationService>();
+
+        // Operational WhatsApp notifications (outbox): business endpoints add a WhatsAppNotification row inside their
+        // own transaction; the dispatcher sends it later through the single IWhatsAppService (WhatsAppCloudApiService)
+        // and the existing webhook tracks delivery. Dispatch is off unless Whatsapp:Notifications:Enabled is true.
+        services.AddSingleton<IValidateOptions<WhatsAppNotificationOptions>, WhatsAppNotificationOptionsValidator>();
+        var notificationOptions = services.AddOptions<WhatsAppNotificationOptions>()
+            .Bind(configuration.GetSection(WhatsAppNotificationOptions.SectionName));
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
+            notificationOptions.ValidateOnStart();
+        services.AddOptions<WhatsAppTemplateOptions>().Bind(configuration.GetSection(WhatsAppTemplateOptions.SectionName));
+        services.AddScoped<WhatsAppNotificationComposer>();
+        services.AddScoped<WhatsAppNotificationDispatcher>();
+        services.AddHostedService<WhatsAppNotificationWorker>();
         return services;
     }
 }

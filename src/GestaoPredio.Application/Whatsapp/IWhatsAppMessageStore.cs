@@ -22,7 +22,12 @@ public interface IWhatsAppMessageStore
 {
     /// <summary>Records (or reconciles) the wamid the Cloud API returned for a successful send.</summary>
     Task RecordAcceptedAsync(string messageId, string recipientPhone, string? phoneNumberId,
-        DateTimeOffset occurredAt, CancellationToken cancellationToken);
+        WhatsAppMessageType messageType, DateTimeOffset occurredAt, CancellationToken cancellationToken);
+
+    /// <summary>Records a successful free-text send.</summary>
+    Task RecordAcceptedAsync(string messageId, string recipientPhone, string? phoneNumberId,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken) =>
+        RecordAcceptedAsync(messageId, recipientPhone, phoneNumberId, WhatsAppMessageType.Text, occurredAt, cancellationToken);
 
     /// <summary>
     /// Applies a webhook status, creating the record when the send response has not been stored yet.

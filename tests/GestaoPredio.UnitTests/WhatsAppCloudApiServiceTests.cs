@@ -198,6 +198,155 @@ public sealed class WhatsAppCloudApiServiceTests
         Assert.DoesNotContain("corpo secreto", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Sends_a_template_with_body_parameters_and_records_it_as_a_template_message()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"messages":[{"id":"wamid.TPL1"}]}""");
+        var store = new RecordingMessageStore();
+        var service = CreateService(handler, ConfiguredOptions(), store: store);
+
+        var result = await service.SendTemplateAsync("+5569999999999",
+            new WhatsAppTemplate("professional_client_checked_in", "pt_BR", ["Dra. Ana", "João", "14:30"]),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("wamid.TPL1", result.MessageId);
+        Assert.Equal([("wamid.TPL1", Domain.Whatsapp.WhatsAppMessageType.Template)], store.Accepted);
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests).Body);
+        var root = body.RootElement;
+        Assert.Equal("whatsapp", root.GetProperty("messaging_product").GetString());
+        Assert.Equal("5569999999999", root.GetProperty("to").GetString());
+        Assert.Equal("template", root.GetProperty("type").GetString());
+        var template = root.GetProperty("template");
+        Assert.Equal("professional_client_checked_in", template.GetProperty("name").GetString());
+        Assert.Equal("pt_BR", template.GetProperty("language").GetProperty("code").GetString());
+        var component = Assert.Single(template.GetProperty("components").EnumerateArray());
+        Assert.Equal("body", component.GetProperty("type").GetString());
+        Assert.Equal(["Dra. Ana", "João", "14:30"],
+            component.GetProperty("parameters").EnumerateArray().Select(x =>
+            {
+                Assert.Equal("text", x.GetProperty("type").GetString());
+                return x.GetProperty("text").GetString();
+            }));
+        Assert.False(root.TryGetProperty("text", out _));
+    }
+
+    [Fact]
+    public async Task A_template_url_button_parameter_is_sent_as_the_first_url_button()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"messages":[{"id":"wamid.TPL2"}]}""");
+        var service = CreateService(handler, ConfiguredOptions());
+
+        await service.SendTemplateAsync("+5569999999999",
+            new WhatsAppTemplate("client_professional_cancelled_reschedule", "pt_BR", ["Ana"], "tok-123"),
+            CancellationToken.None);
+
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests).Body);
+        var components = body.RootElement.GetProperty("template").GetProperty("components").EnumerateArray().ToArray();
+        Assert.Equal(2, components.Length);
+        var button = components[1];
+        Assert.Equal("button", button.GetProperty("type").GetString());
+        Assert.Equal("url", button.GetProperty("sub_type").GetString());
+        Assert.Equal("0", button.GetProperty("index").GetString());
+        Assert.Equal("tok-123", Assert.Single(button.GetProperty("parameters").EnumerateArray()).GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public async Task Template_parameters_are_flattened_to_a_single_line()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"messages":[{"id":"wamid.TPL3"}]}""");
+        var service = CreateService(handler, ConfiguredOptions());
+
+        await service.SendTemplateAsync("+5569999999999",
+            new WhatsAppTemplate("t", "pt_BR", ["Ana\nMaria\t  Souza"]), CancellationToken.None);
+
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests).Body);
+        var parameter = body.RootElement.GetProperty("template").GetProperty("components")[0]
+            .GetProperty("parameters")[0].GetProperty("text").GetString();
+        Assert.Equal("Ana Maria Souza", parameter);
+    }
+
+    [Theory]
+    [InlineData("", "pt_BR")]
+    [InlineData("Nome Com Espaço", "pt_BR")]
+    [InlineData("valid_name", "")]
+    [InlineData("valid_name", "portuguese")]
+    public async Task Invalid_template_name_or_language_is_rejected_without_calling_the_api(string name, string language)
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+        var service = CreateService(handler, ConfiguredOptions());
+
+        var result = await service.SendTemplateAsync("+5569999999999", new WhatsAppTemplate(name, language, ["x"]),
+            CancellationToken.None);
+
+        Assert.Equal(WhatsAppFailureCodes.InvalidMessage, result.FailureCode);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task An_empty_template_parameter_is_rejected_without_calling_the_api()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+        var service = CreateService(handler, ConfiguredOptions());
+
+        var result = await service.SendTemplateAsync("+5569999999999", new WhatsAppTemplate("t", "pt_BR", ["Ana", " "]),
+            CancellationToken.None);
+
+        Assert.Equal(WhatsAppFailureCodes.InvalidMessage, result.FailureCode);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Template_send_fails_closed_when_not_configured_or_the_recipient_is_invalid()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+        var unconfigured = ConfiguredOptions();
+        unconfigured.AccessToken = "";
+        var template = new WhatsAppTemplate("t", "pt_BR", ["x"]);
+
+        Assert.Equal(WhatsAppFailureCodes.NotConfigured,
+            (await CreateService(handler, unconfigured).SendTemplateAsync("+5569999999999", template, CancellationToken.None)).FailureCode);
+        Assert.Equal(WhatsAppFailureCodes.InvalidRecipient,
+            (await CreateService(handler, ConfiguredOptions()).SendTemplateAsync("123", template, CancellationToken.None)).FailureCode);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task A_rejected_template_maps_the_meta_error_like_a_text_message()
+    {
+        var handler = new FakeHandler(HttpStatusCode.InternalServerError, """{"error":{"code":131000,"fbtrace_id":"T"}}""");
+        var service = CreateService(handler, ConfiguredOptions());
+
+        var result = await service.SendTemplateAsync("+5569999999999", new WhatsAppTemplate("t", "pt_BR", ["x"]),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(WhatsAppFailureCodes.ProviderUnavailable, result.FailureCode);
+    }
+
+    [Fact]
+    public async Task Template_logs_never_contain_the_token_the_recipient_or_the_parameters()
+    {
+        var logs = new ListLoggerProvider();
+        foreach (var (status, body) in new[]
+                 {
+                     (HttpStatusCode.OK, """{"messages":[{"id":"wamid.OK"}]}"""),
+                     (HttpStatusCode.BadRequest, """{"error":{"code":132001,"fbtrace_id":"T"}}""")
+                 })
+        {
+            var service = CreateService(new FakeHandler(status, body), ConfiguredOptions(), logs);
+            await service.SendTemplateAsync("+5569988887777",
+                new WhatsAppTemplate("t", "pt_BR", ["Parametro Secreto"], "botao-secreto"), CancellationToken.None);
+        }
+
+        var text = logs.Text;
+        Assert.NotEmpty(text);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("988887777", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Parametro Secreto", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("botao-secreto", text, StringComparison.Ordinal);
+    }
+
     private static WhatsAppCloudOptions ConfiguredOptions() => new()
     {
         PhoneNumberId = "1004068049466823",
@@ -208,7 +357,7 @@ public sealed class WhatsAppCloudApiServiceTests
     };
 
     private static WhatsAppCloudApiService CreateService(FakeHandler handler, WhatsAppCloudOptions options,
-        ILoggerProvider? logs = null)
+        ILoggerProvider? logs = null, RecordingMessageStore? store = null)
     {
         var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -216,7 +365,7 @@ public sealed class WhatsAppCloudApiServiceTests
             if (logs is not null) builder.AddProvider(logs);
         });
         return new WhatsAppCloudApiService(new HttpClient(handler), new StaticOptionsMonitor(options),
-            new RecordingMessageStore(), TimeProvider.System,
+            store ?? new RecordingMessageStore(), TimeProvider.System,
             loggerFactory.CreateLogger<WhatsAppCloudApiService>());
     }
 
@@ -243,12 +392,12 @@ public sealed class WhatsAppCloudApiServiceTests
     /// <summary>The send path persists the accepted wamid; here it only has to not get in the way.</summary>
     private sealed class RecordingMessageStore : IWhatsAppMessageStore
     {
-        public List<string> Accepted { get; } = [];
+        public List<(string MessageId, Domain.Whatsapp.WhatsAppMessageType Type)> Accepted { get; } = [];
 
         public Task RecordAcceptedAsync(string messageId, string recipientPhone, string? phoneNumberId,
-            DateTimeOffset occurredAt, CancellationToken cancellationToken)
+            Domain.Whatsapp.WhatsAppMessageType messageType, DateTimeOffset occurredAt, CancellationToken cancellationToken)
         {
-            Accepted.Add(messageId);
+            Accepted.Add((messageId, messageType));
             return Task.CompletedTask;
         }
 

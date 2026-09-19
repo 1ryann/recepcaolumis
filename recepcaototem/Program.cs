@@ -224,6 +224,7 @@ app.MapRoomRentalInquiryEndpoints();
 app.MapReceptionEndpoints();
 app.MapAccessControlEndpoints();
 app.MapWhatsappEndpoints();
+app.MapWhatsappNotificationEndpoints();
 if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
 app.Map("/api/{**path}", () => Results.NotFound()).RequireAuthorization();
 app.MapFallbackToFile("index.html").AllowAnonymous();

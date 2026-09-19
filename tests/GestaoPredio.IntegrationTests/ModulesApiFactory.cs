@@ -210,6 +210,49 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
         });
     }
 
+    /// <summary>Every queued WhatsApp notification, oldest first (read fresh, no tracking).</summary>
+    public async Task<List<GestaoPredio.Domain.Notifications.WhatsAppNotification>> NotificationsAsync()
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().WhatsAppNotifications.AsNoTracking()
+            .OrderBy(x => x.CreatedAt).ThenBy(x => x.IdempotencyKey).ToListAsync();
+    }
+
+    /// <summary>
+    /// A derived host (same schema and clock) whose single IWhatsAppService is <paramref name="whatsApp"/>, with every
+    /// notification template configured unless overridden. The background worker stays disabled; tests drive the
+    /// dispatcher explicitly through <see cref="DispatchAsync"/>.
+    /// </summary>
+    public WebApplicationFactory<recepcaototem.Pages.IndexModel> WithWhatsApp(FakeWhatsAppService whatsApp,
+        params (string Key, string Value)[] settings) =>
+        WithWebHostBuilder(builder =>
+        {
+            foreach (var (key, value) in NotificationTemplates.Concat(settings)) builder.UseSetting(key, value);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<GestaoPredio.Application.Whatsapp.IWhatsAppService>();
+                services.AddSingleton<GestaoPredio.Application.Whatsapp.IWhatsAppService>(whatsApp);
+            });
+        });
+
+    public static readonly (string Key, string Value)[] NotificationTemplates =
+    [
+        ("Whatsapp:Templates:ClientCheckedIn", "professional_client_checked_in"),
+        ("Whatsapp:Templates:ProfessionalDelayed", "client_professional_delayed"),
+        ("Whatsapp:Templates:ProfessionalCancelled", "client_professional_cancelled_reschedule"),
+        ("Whatsapp:Templates:AppointmentCancelled", "client_appointment_cancelled"),
+        ("Whatsapp:Templates:AppointmentRescheduled", "client_appointment_rescheduled"),
+        ("Whatsapp:Templates:AppointmentConfirmed", "client_appointment_confirmed")
+    ];
+
+    public static async Task<GestaoPredio.Infrastructure.Notifications.WhatsAppDispatchSummary> DispatchAsync(
+        WebApplicationFactory<recepcaototem.Pages.IndexModel> host)
+    {
+        await using var scope = host.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<GestaoPredio.Infrastructure.Notifications.WhatsAppNotificationDispatcher>()
+            .RunOnceAsync(CancellationToken.None);
+    }
+
     public async Task SeedDefaultOperatingHoursAsync()
     {
         await using var scope = Services.CreateAsyncScope();
@@ -284,6 +327,7 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private static async Task ResetDatabaseAsync(ApplicationDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"WhatsAppNotifications\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"WhatsAppMessages\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomRentalInquiries\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomPhotos\"");

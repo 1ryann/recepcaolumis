@@ -11,7 +11,8 @@ public enum WhatsAppMessageDirection
 public enum WhatsAppMessageType
 {
     Unknown = 0,
-    Text = 1
+    Text = 1,
+    Template = 2
 }
 
 /// <summary>
@@ -60,8 +61,8 @@ public sealed class WhatsAppMessage
 
     /// <summary>The Cloud API accepted the send and returned this wamid; no webhook status has arrived yet.</summary>
     public static WhatsAppMessage CreateAccepted(string messageId, string recipient, string? phoneNumberId,
-        DateTimeOffset occurredAt) =>
-        Create(messageId, recipient, phoneNumberId, null, WhatsAppMessageType.Text, WhatsAppDeliveryStatus.Accepted,
+        DateTimeOffset occurredAt, WhatsAppMessageType messageType = WhatsAppMessageType.Text) =>
+        Create(messageId, recipient, phoneNumberId, null, messageType, WhatsAppDeliveryStatus.Accepted,
             occurredAt, null, null, null, occurredAt);
 
     /// <summary>A webhook status arrived for a message this instance has no send record for (restart, other node).</summary>
