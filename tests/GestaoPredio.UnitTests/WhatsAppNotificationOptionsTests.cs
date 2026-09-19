@@ -41,6 +41,9 @@ public sealed class WhatsAppNotificationOptionsTests
     [InlineData(nameof(WhatsAppNotificationOptions.MaxAttempts), 0)]
     [InlineData(nameof(WhatsAppNotificationOptions.LeaseSeconds), 5)]
     [InlineData(nameof(WhatsAppNotificationOptions.BatchSize), 0)]
+    [InlineData(nameof(WhatsAppNotificationOptions.DelayFirstNoticeMinutes), 0)]
+    [InlineData(nameof(WhatsAppNotificationOptions.DelayRepeatMinutes), 0)]
+    [InlineData(nameof(WhatsAppNotificationOptions.DelayMaxNotices), 11)]
     public void Out_of_range_values_are_rejected_naming_the_key(string property, int value)
     {
         var options = new WhatsAppNotificationOptions();

@@ -24,6 +24,15 @@ public sealed class WhatsAppNotificationOptions
     public int[]? RetryDelaysSeconds { get; set; }
     public string LanguageCode { get; set; } = "pt_BR";
 
+    /// <summary>First PROFESSIONAL_DELAYED notice once the appointment is this late with the client waiting.</summary>
+    public int DelayFirstNoticeMinutes { get; set; } = 10;
+    /// <summary>Minimum gap between two delay notices for the same appointment.</summary>
+    public int DelayRepeatMinutes { get; set; } = 15;
+    /// <summary>At most this many delay notices per appointment.</summary>
+    public int DelayMaxNotices { get; set; } = 2;
+    /// <summary>Appointments that started longer ago than this are no longer scanned for delays.</summary>
+    public int DelayLookbackMinutes { get; set; } = 180;
+
     /// <summary>Check-in and delay notices are pointless once this old; they are skipped as EXPIRED.</summary>
     public int OperationalMaxAgeMinutes { get; set; } = 30;
     /// <summary>Confirmation, reschedule and cancellation notices expire after this many hours.</summary>
@@ -79,6 +88,10 @@ public sealed partial class WhatsAppNotificationOptionsValidator : IValidateOpti
         if (options.RetryDelaysSeconds is { } delays && delays.Any(x => x is < 1 or > 86400))
             errors.Add("Whatsapp:Notifications:RetryDelaysSeconds deve conter valores entre 1 e 86400.");
         if (!LanguagePattern().IsMatch(options.LanguageCode ?? "")) errors.Add("Whatsapp:Notifications:LanguageCode é inválido.");
+        if (options.DelayFirstNoticeMinutes is < 1 or > 240) errors.Add("Whatsapp:Notifications:DelayFirstNoticeMinutes deve estar entre 1 e 240.");
+        if (options.DelayRepeatMinutes is < 1 or > 240) errors.Add("Whatsapp:Notifications:DelayRepeatMinutes deve estar entre 1 e 240.");
+        if (options.DelayMaxNotices is < 0 or > 10) errors.Add("Whatsapp:Notifications:DelayMaxNotices deve estar entre 0 e 10.");
+        if (options.DelayLookbackMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:DelayLookbackMinutes deve estar entre 1 e 1440.");
         if (options.OperationalMaxAgeMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:OperationalMaxAgeMinutes deve estar entre 1 e 1440.");
         if (options.SchedulingMaxAgeHours is < 1 or > 168) errors.Add("Whatsapp:Notifications:SchedulingMaxAgeHours deve estar entre 1 e 168.");
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);

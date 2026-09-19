@@ -65,6 +65,7 @@ public sealed class WhatsAppNotificationComposer(
         return notification.Type switch
         {
             WhatsAppNotificationType.ClientCheckedIn => await ClientCheckedInAsync(notification, templateName, cancellationToken),
+            WhatsAppNotificationType.ProfessionalDelayed => await ProfessionalDelayedAsync(notification, templateName, now, cancellationToken),
             WhatsAppNotificationType.ProfessionalCancelled or WhatsAppNotificationType.AppointmentCancelled =>
                 await CancelledAsync(notification, templateName, now, cancellationToken),
             _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented)
@@ -91,6 +92,25 @@ public sealed class WhatsAppNotificationComposer(
 
         return WhatsAppComposition.Send(phone, Template(templateName,
             [professional.Name, FirstName(visit.VisitorName), Time(appointmentAt)]));
+    }
+
+    // "Olá, {{1}}. Seu atendimento com {{2}} está com um atraso de aproximadamente {{3}} minutos. Pedimos que aguarde."
+    private async Task<WhatsAppComposition> ProfessionalDelayedAsync(WhatsAppNotification notification, string templateName,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var reservation = await ReservationAsync(notification, cancellationToken);
+        if (reservation is null || !reservation.BlocksResources) return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        // Only while the client is still waiting and the service has not started.
+        if (!await db.Visits.AsNoTracking().AnyAsync(x => x.ReservationId == reservation.Id && x.Status == VisitStatus.Waiting,
+                cancellationToken))
+            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.Obsolete);
+        var (customer, failure) = await CustomerRecipientAsync(reservation.CustomerId, cancellationToken);
+        if (failure is not null) return failure;
+        var professionalName = await ProfessionalNameAsync(reservation.ProfessionalId, cancellationToken);
+        var minutes = Math.Max(1, (int)Math.Floor((now - reservation.StartAt).TotalMinutes));
+
+        return WhatsAppComposition.Send(customer!.Value.Phone, Template(templateName,
+            [customer.Value.FirstName, professionalName, minutes.ToString(CultureInfo.InvariantCulture)]));
     }
 
     // PROFESSIONAL_CANCELLED: "Olá, {{1}}. Seu atendimento com {{2}}, previsto para {{3}} às {{4}}, foi cancelado. …"

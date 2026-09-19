@@ -129,7 +129,8 @@ public sealed class ReceptionApiTests(ModulesApiFactory factory)
         Assert.Empty(meta.Sent);
         Assert.Equal(WhatsAppNotificationStatus.Pending, Assert.Single(await factory.NotificationsAsync()).Status);
 
-        // …and a failing send later only reschedules the notification; the visit is untouched.
+        // …and a failing send later only reschedules the notification; the visit is untouched. (The seeded
+        // appointment is already late with the client waiting, so the same cycle may also queue a delay notice.)
         await ModulesApiFactory.DispatchAsync(host);
         var notice = Assert.Single(await factory.NotificationsAsync(), x => x.Type == WhatsAppNotificationType.ClientCheckedIn);
         Assert.Equal(WhatsAppNotificationStatus.Pending, notice.Status);

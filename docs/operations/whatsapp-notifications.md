@@ -11,6 +11,7 @@ segundo cliente HTTP da Meta.
 check-in / cancelamento / reagendamento / confirmação (transação de negócio)
   └─ grava a linha WhatsAppNotifications (PENDING) NO MESMO COMMIT
        └─ WhatsAppNotificationWorker (BackgroundService, a cada PollIntervalSeconds, se Enabled)
+            ├─ enfileira avisos de atraso devidos (PROFESSIONAL_DELAYED)
             ├─ reivindica pendentes: UPDATE … FOR UPDATE SKIP LOCKED  (PENDING → PROCESSING, lease)
             ├─ monta o template a partir dos registros reais (WhatsAppNotificationComposer)
             └─ IWhatsAppService.SendTemplateAsync → ACCEPTED (wamid) | retry | FAILED | SKIPPED
@@ -42,6 +43,20 @@ sem `CustomerId`) não geram aviso ao cliente.
 
 A chave é única no banco (`UX_WhatsAppNotifications_IdempotencyKey`): o mesmo evento nunca gera duas mensagens. Um
 check-in repetido reutiliza a visita existente e não cria nova linha; uma reserva só é cancelada uma vez.
+
+## Política de atraso (`PROFESSIONAL_DELAYED`)
+
+Condição: reserva `Approved` com cliente, cliente **já chegou** (visita `WAITING` da reserva) e atendimento **não
+iniciado**, com `StartAt` há pelo menos `DelayFirstNoticeMinutes`.
+
+- passo `n` fica devido em `DelayFirstNoticeMinutes + n × DelayRepeatMinutes` de atraso;
+- no máximo `DelayMaxNotices` passos por reserva;
+- a cada ciclo só o passo **mais recente** devido é enfileirado (um scheduler que ficou parado não dispara rajada);
+- a chave `DELAY:{reserva}:{passo}` impede repetir o mesmo passo, não importa quantos ciclos rodem;
+- no envio, se o atendimento já começou (visita não está mais `WAITING`), o aviso é `SKIPPED/OBSOLETE`.
+
+Padrão: 1º aviso aos 10 min, 2º aos 25 min, máximo 2. Minutos informados = `agora − StartAt` no envio. Tudo em
+instantes UTC; a exibição usa `Scheduling:TimeZoneId` (America/Porto_Velho) — nunca o fuso do servidor.
 
 ## Retry, falhas e expiração
 
@@ -131,6 +146,10 @@ token bruto **não existe mais** quando o `BackgroundService` processa a notific
 | `Whatsapp__Notifications__MaxAttempts` | 4 | Tentativas totais. |
 | `Whatsapp__Notifications__RetryDelaysSeconds__0..n` | 30, 120, 600 | Espera antes da 2ª, 3ª, … tentativa. |
 | `Whatsapp__Notifications__LanguageCode` | `pt_BR` | Idioma dos templates. |
+| `Whatsapp__Notifications__DelayFirstNoticeMinutes` | 10 | 1º aviso de atraso (X). |
+| `Whatsapp__Notifications__DelayRepeatMinutes` | 15 | Intervalo mínimo entre avisos de atraso (Y). |
+| `Whatsapp__Notifications__DelayMaxNotices` | 2 | Máximo de avisos de atraso por atendimento (0 desliga). |
+| `Whatsapp__Notifications__DelayLookbackMinutes` | 180 | Janela de busca de atendimentos atrasados. |
 | `Whatsapp__Notifications__OperationalMaxAgeMinutes` | 30 | Validade de check-in/atraso. |
 | `Whatsapp__Notifications__SchedulingMaxAgeHours` | 24 | Validade dos demais. |
 | `Whatsapp__Templates__ClientCheckedIn` … `__AppointmentReminder` | vazio | Nome do template aprovado por tipo. Vazio = tipo não enviado. |

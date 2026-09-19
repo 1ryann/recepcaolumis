@@ -242,6 +242,69 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.All(await factory.NotificationsAsync(), x => Assert.Equal(WhatsAppNotificationStatus.Accepted, x.Status));
     }
 
+    // ---- PROFESSIONAL_DELAYED ---------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task A_late_professional_triggers_one_notice_per_step_and_the_scheduler_never_spams()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromMinutes(-11));      // started 11 min ago
+        await AddAsync(_ => Visit.Arrive(seed.ProfessionalId, seed.RoomId, seed.ReservationId, "Maria Clara", "TOTEM",
+            factory.UtcNow.AddMinutes(-15), seed.CustomerId));
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        var first = await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(1, first.DelayNoticesQueued);
+        var (phone, template) = Assert.Single(meta.Sent);
+        Assert.Equal(CustomerPhone, phone);
+        Assert.Equal("client_professional_delayed", template.Name);
+        Assert.Equal(["Maria", "Dra. Helena Prado", "11"], template.BodyParameters);
+
+        for (var cycle = 0; cycle < 5; cycle++)                              // many cycles inside the repeat window
+        {
+            factory.AdvanceTime(TimeSpan.FromMinutes(2));
+            await ModulesApiFactory.DispatchAsync(host);
+        }
+        Assert.Single(meta.Sent);
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(5));                        // 26 min late → step 1 is due
+        await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(2, meta.Sent.Count);
+
+        factory.AdvanceTime(TimeSpan.FromMinutes(20));                       // 46 min late → max (2) reached
+        await ModulesApiFactory.DispatchAsync(host);
+        await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(2, meta.Sent.Count);
+        Assert.Equal([$"DELAY:{seed.ReservationId}:0", $"DELAY:{seed.ReservationId}:1"],
+            (await factory.NotificationsAsync()).Select(x => x.IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task No_delay_notice_before_the_threshold_without_a_waiting_client_or_once_service_started()
+    {
+        await factory.ResetAsync();
+        var early = await SeedAsync(startIn: TimeSpan.FromMinutes(-9));      // below the 10-minute threshold
+        await AddAsync(_ => Visit.Arrive(early.ProfessionalId, early.RoomId, early.ReservationId, "Ana", "TOTEM", factory.UtcNow, early.CustomerId));
+        await SeedAsync(startIn: TimeSpan.FromMinutes(-30));                  // late, but the client never arrived
+        var started = await SeedAsync(startIn: TimeSpan.FromMinutes(-30));    // late, client already in service
+        var visit = await AddAsync(_ => Visit.Arrive(started.ProfessionalId, started.RoomId, started.ReservationId, "Bia", "TOTEM", factory.UtcNow.AddMinutes(-35), started.CustomerId));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            (await db.Visits.SingleAsync(x => x.Id == visit.Id)).StartService("prof", factory.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta);
+
+        var summary = await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Equal(0, summary.DelayNoticesQueued);
+        Assert.Empty(meta.Sent);
+        Assert.Empty(await factory.NotificationsAsync());
+    }
+
     // ---- cancellation / reschedule through the real admin endpoints -------------------------------------------
 
     [Fact]

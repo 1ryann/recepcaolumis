@@ -1,18 +1,23 @@
 using GestaoPredio.Application.Whatsapp;
 using GestaoPredio.Domain.Notifications;
+using GestaoPredio.Domain.Reservations;
+using GestaoPredio.Domain.Visits;
 using GestaoPredio.Domain.Whatsapp;
 using GestaoPredio.Infrastructure.Persistence;
+using GestaoPredio.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace GestaoPredio.Infrastructure.Notifications;
 
-public sealed record WhatsAppDispatchSummary(int Claimed, int Accepted, int Retried, int Failed, int Skipped);
+public sealed record WhatsAppDispatchSummary(int DelayNoticesQueued, int Claimed, int Accepted, int Retried, int Failed, int Skipped);
 
 /// <summary>
-/// One dispatch cycle: claim and send due notifications. Safe to run on several instances at once: a notification
-/// is claimed by a single UPDATE … FOR UPDATE SKIP LOCKED, so two dispatchers never hold the same row.
+/// One dispatch cycle: queue due delay notices, then claim and send due notifications. Safe to run on several
+/// instances at once: a notification is claimed by a single UPDATE … FOR UPDATE SKIP LOCKED, so two dispatchers
+/// never hold the same row, and the unique idempotency key stops a second delay notice for the same step.
 /// Delivery is at-least-once only in one corner: if the process dies after Meta accepted but before the wamid is
 /// stored, the lease expires and the message is sent again. Everything else is exactly once.
 /// </summary>
@@ -35,6 +40,7 @@ public sealed class WhatsAppNotificationDispatcher(
 
     public async Task<WhatsAppDispatchSummary> RunOnceAsync(CancellationToken cancellationToken)
     {
+        var queued = await QueueDelayNoticesAsync(cancellationToken);
         var ids = await ClaimAsync(cancellationToken);
         int accepted = 0, retried = 0, failed = 0, skipped = 0;
         foreach (var id in ids)
@@ -47,7 +53,54 @@ public sealed class WhatsAppNotificationDispatcher(
                 case WhatsAppNotificationStatus.Skipped: skipped++; break;
             }
         }
-        return new WhatsAppDispatchSummary(ids.Count, accepted, retried, failed, skipped);
+        return new WhatsAppDispatchSummary(queued, ids.Count, accepted, retried, failed, skipped);
+    }
+
+    /// <summary>
+    /// PROFESSIONAL_DELAYED policy: the client has checked in (visit WAITING) for an approved appointment whose start
+    /// is at least <c>DelayFirstNoticeMinutes</c> in the past. Step n becomes due at first + n × repeat; only the
+    /// latest due step is queued (a late scan never sends a burst of catch-up notices), at most
+    /// <c>DelayMaxNotices</c> steps exist, and the key DELAY:{reservation}:{step} makes each step single-use.
+    /// Times are instants (UTC), so the result does not depend on the server's local time zone.
+    /// </summary>
+    public async Task<int> QueueDelayNoticesAsync(CancellationToken cancellationToken)
+    {
+        var settings = options.CurrentValue;
+        if (settings.DelayMaxNotices == 0) return 0;
+        var now = timeProvider.GetUtcNow();
+        var first = TimeSpan.FromMinutes(settings.DelayFirstNoticeMinutes);
+        var repeat = TimeSpan.FromMinutes(settings.DelayRepeatMinutes);
+        var latestStart = now - first;
+        var earliestStart = now - TimeSpan.FromMinutes(settings.DelayLookbackMinutes);
+
+        var late = await db.Reservations.AsNoTracking()
+            .Where(r => r.Status == ReservationStatus.Approved && r.Kind != ReservationKind.Cancellation &&
+                        r.CustomerId != null && r.StartAt <= latestStart && r.StartAt >= earliestStart &&
+                        db.Visits.Any(v => v.ReservationId == r.Id && v.Status == VisitStatus.Waiting))
+            .ToListAsync(cancellationToken);
+
+        var queued = 0;
+        foreach (var reservation in late)
+        {
+            var step = (int)Math.Floor((now - reservation.StartAt - first) / repeat);
+            if (step >= settings.DelayMaxNotices) continue;
+            var key = WhatsAppNotification.DelayKey(reservation.Id, step);
+            if (await db.WhatsAppNotifications.AnyAsync(x => x.IdempotencyKey == key, cancellationToken)) continue;
+            db.WhatsAppNotifications.Add(WhatsAppNotification.ProfessionalDelayed(reservation, step, now));
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                queued++;
+                logger.LogInformation("WhatsApp notification queued. Type: {Type}; ReservationId: {ReservationId}; Step: {Step}",
+                    WhatsAppNotificationType.ProfessionalDelayed, reservation.Id, step);
+            }
+            catch (DbUpdateException exception) when (IsDuplicateKey(exception))
+            {
+                // Another dispatcher queued the same step first: that is the idempotency guarantee working.
+                db.ChangeTracker.Clear();
+            }
+        }
+        return queued;
     }
 
     private async Task<List<Guid>> ClaimAsync(CancellationToken cancellationToken)
@@ -175,4 +228,9 @@ public sealed class WhatsAppNotificationDispatcher(
             "WhatsApp notification processed. Outcome: {Outcome}; NotificationId: {NotificationId}; Type: {Type}; Recipient: {Recipient}; ReservationId: {ReservationId}; VisitId: {VisitId}; Attempt: {Attempt}; MessageId: {MessageId}; Code: {Code}",
             outcome, notification.Id, notification.Type, notification.Recipient, notification.ReservationId, notification.VisitId,
             notification.Attempts, notification.MessageId, notification.LastErrorCode);
+
+    private static bool IsDuplicateKey(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } postgres &&
+        (postgres.ConstraintName is null ||
+         postgres.ConstraintName.Contains(WhatsAppNotificationConfiguration.IdempotencyIndex, StringComparison.Ordinal));
 }
