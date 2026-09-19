@@ -1,4 +1,3 @@
-import { BriefcaseBusiness } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { totemApi, type TotemProfessionalCardDto } from '../api/modules'
@@ -24,9 +23,7 @@ import { LumisLogo } from '../theme/LumisLogo'
 // A visitor who *does* have a code is never trapped by a professionals-list failure: both
 // empty and error offer "Tenho código" straight to `/totem/check-in`. All data comes from
 // `totemApi.professionals` — there are no hardcoded professionals or photos here.
-//
-// "Alugar sala" navigates to the public room catalog at `/totem/salas` (`TotemRoomsCatalog`),
-// backed by the anonymous `GET /api/totem/rooms` endpoint.
+// "Alugar sala" is not offered here: it is the third option on the `/totem` entry screen.
 type Phase = 'loading' | 'ready' | 'empty' | 'error'
 
 export function TotemProfessionals() {
@@ -112,14 +109,6 @@ export function TotemProfessionals() {
         <div className="totem-professionals-inner">
           <div className="totem-professionals-header-row">
             <h1 className="totem-professionals-title">Escolha o profissional</h1>
-            <button
-              type="button"
-              className="totem-professionals-rent-cta"
-              onClick={() => navigate('/totem/salas')}
-            >
-              <BriefcaseBusiness size={16} aria-hidden="true" />
-              Alugar sala
-            </button>
           </div>
 
           {phase === 'loading' && (

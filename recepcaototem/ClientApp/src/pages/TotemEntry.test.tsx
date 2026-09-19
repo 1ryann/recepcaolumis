@@ -27,6 +27,7 @@ const renderAt = () => render(
       <Route path="/totem" element={<TotemEntry />} />
       <Route path="/totem/check-in" element={<div>CHECKIN</div>} />
       <Route path="/totem/profissionais" element={<div>CARROSSEL</div>} />
+      <Route path="/totem/salas" element={<div>SALAS</div>} />
     </Routes>
   </MemoryRouter></ThemeProvider>,
 )
@@ -51,4 +52,22 @@ test('"Não tenho código" navigates to /totem/profissionais', () => {
   renderAt()
   fireEvent.click(screen.getByRole('button', { name: /^não tenho código$/i }))
   expect(screen.getByText('CARROSSEL')).toBeInTheDocument()
+})
+
+test('"Alugar sala" is a third option centred below the two, one column wide, in the same card style', () => {
+  renderAt()
+  const rent = screen.getByRole('button', { name: /^alugar sala$/i })
+  expect(rent.style.gridColumn).toBe('1 / -1')
+  expect(rent.style.justifySelf).toBe('center')
+  // The one-column width uses nested min()/max(), which jsdom's CSS parser drops; it is checked in a real browser.
+})
+
+test('"Alugar sala" is a third option below the two, in the same card style, navigating to /totem/salas', () => {
+  renderAt()
+  const buttons = screen.getAllByRole('button')
+  const rent = screen.getByRole('button', { name: /^alugar sala$/i })
+  expect(buttons.indexOf(rent)).toBeGreaterThan(buttons.indexOf(screen.getByRole('button', { name: /^não tenho código$/i })))
+  expect(rent).toHaveClass('totem-entry-card')
+  fireEvent.click(rent)
+  expect(screen.getByText('SALAS')).toBeInTheDocument()
 })

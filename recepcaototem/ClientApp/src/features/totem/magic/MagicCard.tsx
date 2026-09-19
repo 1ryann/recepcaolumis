@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent, type ReactNode } from 'react'
+import { useRef, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 
 // A real <button> with a faint radial highlight that follows the pointer. The highlight is
@@ -8,11 +8,13 @@ export function MagicCard({
   as,
   onClick,
   className,
+  style,
   children,
 }: {
   as?: 'button'
   onClick?: () => void
   className?: string
+  style?: CSSProperties
   children: ReactNode
 }) {
   const ref = useRef<HTMLButtonElement>(null)
@@ -39,6 +41,7 @@ export function MagicCard({
       ref={ref}
       type="button"
       className={`totem-magic-card ${className ?? ''}`.trim()}
+      style={style}
       onClick={onClick}
       onPointerMove={onPointerMove}
     >
