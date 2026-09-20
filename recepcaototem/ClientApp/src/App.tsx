@@ -57,6 +57,12 @@ function ProductionApp() {
   <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
   <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
   <Route path="/totem/handoff" element={<TotemHandoff />} />
+  {/* The same catalogue for a visitor's own browser, reached from the landing page. Same
+      components; useRoomsSurface reads the path to drop the kiosk clock and offer
+      WhatsApp. A separate route rather than a flag on the tablet — see that module. */}
+  <Route path="/salas" element={<TotemRoomsCatalog />} />
+  <Route path="/salas/:id" element={<TotemRoomDetail />} />
+  <Route path="/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
   <Route path="/reagendar/:token" element={<RescheduleLink />} />
   <Route path="/change-password" element={<ChangePassword />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>

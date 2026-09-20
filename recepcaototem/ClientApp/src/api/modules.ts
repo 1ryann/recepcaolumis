@@ -217,7 +217,23 @@ export type ProfessionalUserLinkDto =
   | { linked: false }
   | { linked: true, userId: string, displayName: string, email: string }
 
-export interface RoomDto {
+export type RoomCategory = 'CONSULTORIO' | 'REUNIAO' | 'CRIATIVA'
+export type RoomAmenity = 'CLIMATIZADA' | 'MOBILIADA' | 'WIFI' | 'JANELA' | 'PIA' | 'ACESSIVEL'
+
+// The attributes the public catalogue advertises. Every one is optional: a room is
+// registered with a name and its rates long before anyone measures or photographs it, and
+// the catalogue leaves out what it does not know rather than printing a zero.
+export interface RoomFeatureFields {
+  monthlyRate: number | null
+  areaSquareMeters: number | null
+  bathroomCount: number | null
+  capacityMin: number | null
+  capacityMax: number | null
+  category: RoomCategory | null
+  amenities: RoomAmenity[]
+}
+
+export interface RoomDto extends RoomFeatureFields {
   id: string
   name: string
   description: string | null
@@ -229,7 +245,7 @@ export interface RoomDto {
   concurrencyToken: string
 }
 
-export interface RoomInput {
+export interface RoomInput extends RoomFeatureFields {
   name: string
   description: string | null
   hourlyRate: number
@@ -920,6 +936,10 @@ export interface PublicRoomCardDto {
   availability: PublicRoomAvailability
   availableFrom: string | null
   coverPhotoUrl: string | null
+  monthlyRate: number | null
+  capacityMin: number | null
+  capacityMax: number | null
+  category: RoomCategory | null
 }
 
 export interface PublicRoomDetailDto {
@@ -929,6 +949,20 @@ export interface PublicRoomDetailDto {
   availability: PublicRoomAvailability
   availableFrom: string | null
   photoUrls: string[]
+  monthlyRate: number | null
+  // Null when the room has no such rate, which the backend also reports for a rate left at
+  // zero — "R$ 0,00/hora" would be an advertisement, not an absence.
+  hourlyRate: number | null
+  dailyRate: number | null
+  areaSquareMeters: number | null
+  bathroomCount: number | null
+  capacityMin: number | null
+  capacityMax: number | null
+  category: RoomCategory | null
+  amenities: RoomAmenity[]
+  // Assembled by the server from the configured reception number; the browser never learns
+  // the number itself. Null when none is configured, and the button is then not offered.
+  whatsappUrl: string | null
 }
 
 export interface RoomRentalInquiryInput {

@@ -14,7 +14,9 @@ namespace GestaoPredio.Infrastructure.Files;
 /// </summary>
 public sealed class RoomImageNormalizer : IRoomImageNormalizer
 {
-    public const int MaximumSide = 1600;
+    /// Full HD on the longest side: the largest a room photo is ever displayed at, and
+    /// the point past which a bigger file buys nothing on screen.
+    public const int MaximumSide = 1920;
     private const int Quality = 82;
 
     public async Task<NormalizedImage> NormalizeAsync(Stream source, CancellationToken cancellationToken)

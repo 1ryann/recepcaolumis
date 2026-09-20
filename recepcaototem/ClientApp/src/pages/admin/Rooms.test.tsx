@@ -2,16 +2,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Rooms } from './Rooms'
 import { roomsApi, roomPhotosApi } from '../../api/modules'
+import { aRoomDto, noRoomFeatures } from '../../test/roomFixtures'
 
 vi.mock('../../api/modules', () => ({
   roomsApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), changeStatus: vi.fn() },
   roomPhotosApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn(), reorder: vi.fn(), setCover: vi.fn() },
 }))
 
-const room = {
-  id: 'room-1', name: 'Sala 101', description: 'Ambiente silencioso', hourlyRate: 100.99, dailyRate: 800,
-  isActive: true, createdAt: '2026-09-05T00:00:00Z', updatedAt: '2026-09-05T00:00:00Z', concurrencyToken: 'room-token-1',
-}
+const room = aRoomDto({
+  name: 'Sala 101', description: 'Ambiente silencioso', hourlyRate: 100.99, dailyRate: 800,
+  createdAt: '2026-09-05T00:00:00Z', updatedAt: '2026-09-05T00:00:00Z', concurrencyToken: 'room-token-1',
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -38,7 +39,9 @@ test('sends strictly parsed monetary JSON numbers for create and update', async 
   fireEvent.change(screen.getByLabelText('Tarifa por hora'), { target: { value: '0,10' } })
   fireEvent.change(screen.getByLabelText('Tarifa diária'), { target: { value: '100,99' } })
   fireEvent.click(screen.getByRole('button', { name: 'Cadastrar sala' }))
-  await waitFor(() => expect(roomsApi.create).toHaveBeenCalledWith({ name: 'Sala 102', description: null, hourlyRate: 0.1, dailyRate: 100.99 }))
+  await waitFor(() => expect(roomsApi.create).toHaveBeenCalledWith({
+    name: 'Sala 102', description: null, hourlyRate: 0.1, dailyRate: 100.99, ...noRoomFeatures,
+  }))
   fireEvent.click(screen.getByRole('button', { name: 'Editar Sala 101' }))
   fireEvent.change(screen.getByLabelText('Nome da sala'), { target: { value: 'Sala 101 editada' } })
   fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))

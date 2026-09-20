@@ -23,8 +23,8 @@ public sealed class RoomImageNormalizerTests
 
         result.Content.Position = 0;
         using var output = await Image.LoadAsync(result.Content, CancellationToken.None);
-        Assert.Equal(1600, output.Width);
-        Assert.Equal(1067, output.Height); // 3:2 preserved, not squared off
+        Assert.Equal(1920, output.Width);
+        Assert.Equal(1280, output.Height); // 3:2 preserved, not squared off
     }
 
     [Fact]
@@ -39,8 +39,8 @@ public sealed class RoomImageNormalizerTests
 
         result.Content.Position = 0;
         using var output = await Image.LoadAsync(result.Content, CancellationToken.None);
-        Assert.Equal(1600, output.Height);
-        Assert.Equal(800, output.Width);
+        Assert.Equal(1920, output.Height);
+        Assert.Equal(960, output.Width);
     }
 
     [Fact]

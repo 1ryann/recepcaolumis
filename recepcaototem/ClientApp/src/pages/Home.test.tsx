@@ -19,7 +19,7 @@ test('the landing presents the building and leads with renting a room', () => {
   renderWith(anonymous)
   expect(screen.queryByText(/Módulo ainda não disponível/i)).not.toBeInTheDocument()
   const rent = screen.getByRole('link', { name: /alugar sala/i })
-  expect(rent).toHaveAttribute('href', '/totem/salas')
+  expect(rent).toHaveAttribute('href', '/salas')
   // The visitor also gets a way in as a customer, without competing with the main action.
   expect(screen.getByRole('link', { name: /sou cliente/i })).toHaveAttribute('href', '/cliente/login')
 })
@@ -63,7 +63,7 @@ test('an authenticated GERENTE sends the team access to /recepcao', () => {
 
 test('a failing session check does not remove the Home — it renders as public', () => {
   renderWith({ status: 'error', user: null })
-  expect(screen.getByRole('link', { name: /alugar sala/i })).toHaveAttribute('href', '/totem/salas')
+  expect(screen.getByRole('link', { name: /alugar sala/i })).toHaveAttribute('href', '/salas')
   expect(screen.getByRole('link', { name: /Área do Cliente/i })).toHaveAttribute('href', '/cliente/login')
   expect(screen.getByRole('link', { name: /Área do Profissional/i })).toHaveAttribute('href', '/profissional/login')
   expect(screen.getByRole('link', { name: /Acesso da equipe/i })).toHaveAttribute('href', '/login')

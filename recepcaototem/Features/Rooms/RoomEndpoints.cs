@@ -57,7 +57,7 @@ public static class RoomEndpoints
         if (await db.Rooms.AnyAsync(x => x.NormalizedName == normalizedName, cancellationToken)) return NameConflict();
 
         var now = timeProvider.GetUtcNow();
-        var room = Room.Create(input.Name, input.Description, input.HourlyRate, input.DailyRate, now);
+        var room = Room.Create(input.Name, input.Description, input.HourlyRate, input.DailyRate, now, input.Features);
         db.Rooms.Add(room);
         db.AuditEntries.Add(CreateAudit(context, room.Id, "ROOM_CREATED", now));
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -92,11 +92,14 @@ public static class RoomEndpoints
         if (!string.Equals(room.Description, input.Description, StringComparison.Ordinal)) changedFields.Add(AuditFields.Description);
         if (room.HourlyRate != input.HourlyRate) changedFields.Add(AuditFields.HourlyRate);
         if (room.DailyRate != input.DailyRate) changedFields.Add(AuditFields.DailyRate);
+        // All seven catalogue attributes compare at once. Without this an edit that touched
+        // only them would fall into the no-op return below and be silently discarded.
+        if (room.Features != input.Features) changedFields.Add(AuditFields.Features);
         if (changedFields.Count == 0) return Results.Ok(room.ToResponse());
 
         db.Entry(room).Property(x => x.Version).OriginalValue = expectedVersion;
         var now = timeProvider.GetUtcNow();
-        room.Update(input.Name, input.Description, input.HourlyRate, input.DailyRate, now);
+        room.Update(input.Name, input.Description, input.HourlyRate, input.DailyRate, now, input.Features);
         var audit = CreateAudit(context, room.Id, "ROOM_UPDATED", now);
         audit.SetChangedFields(changedFields);
         db.AuditEntries.Add(audit);

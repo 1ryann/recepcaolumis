@@ -1,3 +1,4 @@
+import { noRoomFeatures } from '../../test/roomFixtures'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { RoomPhotoManager } from './RoomPhotoManager'
@@ -9,7 +10,7 @@ vi.mock('../../api/modules', () => ({
 
 const room: RoomDto = {
   id: 'room-1', name: 'Sala 101', description: null, hourlyRate: 100, dailyRate: 800,
-  isActive: true, createdAt: '2026-09-05T00:00:00Z', updatedAt: '2026-09-05T00:00:00Z', concurrencyToken: 'rv',
+  isActive: true, createdAt: '2026-09-05T00:00:00Z', updatedAt: '2026-09-05T00:00:00Z', concurrencyToken: 'rv', ...noRoomFeatures,
 }
 
 const photo = (id: string, sortOrder: number, isCover = false) =>

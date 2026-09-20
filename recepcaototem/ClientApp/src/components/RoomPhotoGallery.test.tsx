@@ -171,3 +171,35 @@ test('the autoplay timer is cleared on unmount', () => {
   expect(clearSpy).toHaveBeenCalled()
   clearSpy.mockRestore()
 })
+
+// Before these existed, the only way through the gallery on the page itself was the
+// thumbnail strip — small, and not obvious as a control on a kiosk.
+test('the inline arrows walk the main photo without opening the lightbox', () => {
+  render(<RoomPhotoGallery photoUrls={['/a.jpg', '/b.jpg', '/c.jpg']} roomName="Sala Alfa" />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Próxima foto' }))
+  expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', '/b.jpg')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Foto anterior' }))
+  expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', '/a.jpg')
+  // Wrapping backwards from the first lands on the last.
+  fireEvent.click(screen.getByRole('button', { name: 'Foto anterior' }))
+  expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', '/c.jpg')
+})
+
+test('a single photo gets no arrows', () => {
+  render(<RoomPhotoGallery photoUrls={['/only.jpg']} roomName="Sala Alfa" />)
+  expect(screen.queryByRole('button', { name: 'Próxima foto' })).not.toBeInTheDocument()
+})
+
+// Both sets carry the same labels, so leaving the page's arrows mounted behind an open
+// lightbox would give a screen reader two different controls answering to "Próxima foto".
+test('the page arrows step aside while the lightbox is open', () => {
+  render(<RoomPhotoGallery photoUrls={['/a.jpg', '/b.jpg']} roomName="Sala Alfa" />)
+  expect(screen.getAllByRole('button', { name: 'Próxima foto' })).toHaveLength(1)
+
+  fireEvent.click(screen.getByRole('button', { name: /ampliar foto/i }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: 'Próxima foto' })).toHaveLength(1)
+})

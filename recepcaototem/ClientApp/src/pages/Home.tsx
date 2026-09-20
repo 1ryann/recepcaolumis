@@ -77,7 +77,7 @@ export function Home() {
             da agenda, do check-in e dos avisos. Você só precisa atender.
           </p>
           <div className="landing-cta">
-            <Link className="landing-cta-primary" to="/totem/salas">
+            <Link className="landing-cta-primary" to="/salas">
               Alugar sala <ArrowRight size={18} aria-hidden="true" />
             </Link>
             <Link className="landing-cta-secondary" to="/cliente/login">Sou cliente</Link>
@@ -108,7 +108,7 @@ export function Home() {
             ))}
           </ol>
           <RevealOnScroll delay={80}>
-            <Link className="landing-cta-primary landing-steps-cta" to="/totem/salas">
+            <Link className="landing-cta-primary landing-steps-cta" to="/salas">
               Ver salas disponíveis <ArrowRight size={18} aria-hidden="true" />
             </Link>
           </RevealOnScroll>

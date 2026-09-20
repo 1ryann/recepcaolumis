@@ -1,3 +1,4 @@
+import { noRoomFeatures } from '../../test/roomFixtures'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from '../../api/client'
@@ -45,7 +46,7 @@ beforeEach(() => {
   vi.mocked(leasesApi.list).mockResolvedValue({ items: [lease], page: 1, pageSize: 20, totalCount: 1 })
   vi.mocked(tenantsApi.list).mockResolvedValue({ items: [{ id: 'tenant-1', name: 'Clínica Aurora', kind: 'LEGAL_ENTITY', isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 't' }], page: 1, pageSize: 100, totalCount: 1 })
   vi.mocked(professionalsApi.list).mockResolvedValue({ items: [{ id: 'professional-1', name: 'Ana Lima', profession: 'Fisio', whatsApp: '+5565999999999', isActive: true, hasPhoto: false, photoUrl: null, hasLinkedUser: false, createdAt: '', updatedAt: '', concurrencyToken: 'p' }], page: 1, pageSize: 100, totalCount: 1 })
-  vi.mocked(roomsApi.list).mockResolvedValue({ items: [{ id: 'room-1', name: 'Sala 101', description: null, hourlyRate: 100, dailyRate: 500, isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 'r' }], page: 1, pageSize: 100, totalCount: 1 })
+  vi.mocked(roomsApi.list).mockResolvedValue({ items: [{ ...noRoomFeatures, id: 'room-1', name: 'Sala 101', description: null, hourlyRate: 100, dailyRate: 500, isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 'r' }], page: 1, pageSize: 100, totalCount: 1 })
 })
 
 test('converts an API instant to the browser local datetime input without treating UTC as local time', () => {

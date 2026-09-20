@@ -34,6 +34,11 @@ test('the room rental flow is routed identically on both route trees', async () 
     '<Route path="/totem/salas" element={<TotemRoomsCatalog />} />',
     '<Route path="/totem/salas/:id" element={<TotemRoomDetail />} />',
     '<Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />',
+    // The same catalogue on its public route. It has to exist on both trees or the dev
+    // server silently bounces `/salas` to the fallback while production serves it.
+    '<Route path="/salas" element={<TotemRoomsCatalog />} />',
+    '<Route path="/salas/:id" element={<TotemRoomDetail />} />',
+    '<Route path="/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />',
     '<Route path="interesses-locacao" element={<RoomRentalInquiries />} />',
   ]) {
     expect(appSource).toContain(route)

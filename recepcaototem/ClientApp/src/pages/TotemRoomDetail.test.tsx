@@ -1,3 +1,4 @@
+import { aPublicRoomDetail } from '../test/roomFixtures'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -29,14 +30,12 @@ const renderAt = (id = 'r1') => render(
   </MemoryRouter></ThemeProvider>,
 )
 
-const room: PublicRoomDetailDto = {
+const room: PublicRoomDetailDto = aPublicRoomDetail({
   id: 'r1',
   name: 'Sala Alfa',
   description: 'Ampla e bem iluminada.',
-  availability: 'AVAILABLE_NOW',
-  availableFrom: null,
   photoUrls: ['https://cdn.example/alfa-1.jpg', 'https://cdn.example/alfa-2.jpg'],
-}
+})
 const roomSoon: PublicRoomDetailDto = {
   ...room,
   availability: 'AVAILABLE_SOON',
@@ -215,4 +214,94 @@ test('a successful submit sends exactly six fields and navigates with the exact 
   // The modal closes on success too — it should not still be showing the form underneath
   // the page that navigated away.
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+// ── Surface, price and features ──────────────────────────────────────────────────────
+
+const renderPublicAt = (id = 'r1') => render(
+  <ThemeProvider><MemoryRouter initialEntries={[`/salas/${id}`]}>
+    <Routes>
+      <Route path="/salas/:id" element={<TotemRoomDetail />} />
+    </Routes>
+  </MemoryRouter></ThemeProvider>,
+)
+
+const describedRoom = aPublicRoomDetail({
+  id: 'r1', name: 'Sala Premium', description: 'Espaço de alto padrão.',
+  monthlyRate: 3100, hourlyRate: 45, dailyRate: 280,
+  areaSquareMeters: 25, bathroomCount: 1, capacityMin: 4, capacityMax: 8,
+  category: 'CONSULTORIO', amenities: ['CLIMATIZADA', 'MOBILIADA'],
+  whatsappUrl: 'https://wa.me/5569999999999?text=Ol%C3%A1',
+})
+
+test('the monthly price leads and the per-use rates sit beneath it', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  renderPublicAt()
+  await screen.findByText('Sala Premium')
+  expect(screen.getByText(/3\.100,00/)).toBeInTheDocument()
+  expect(screen.getByText('/mês')).toBeInTheDocument()
+  expect(screen.getByText(/45,00\/hora · R\$\s?280,00\/dia/)).toBeInTheDocument()
+})
+
+test('the feature strip lists only what the room actually carries', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  renderPublicAt()
+  await screen.findByText('Sala Premium')
+  expect(screen.getByText('25m²')).toBeInTheDocument()
+  expect(screen.getByText('1 Banheiro')).toBeInTheDocument()
+  expect(screen.getByText('4 a 8 pessoas')).toBeInTheDocument()
+  expect(screen.getByText('Climatizada')).toBeInTheDocument()
+  expect(screen.getByText('Mobiliada')).toBeInTheDocument()
+  // Not ticked, so not shown — the strip is not a checklist of absences.
+  expect(screen.queryByText('Wi-Fi')).not.toBeInTheDocument()
+})
+
+// A room registered today, before anyone has priced or measured it, is an ordinary room.
+test('an undescribed room renders without a price block or a feature strip', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(aPublicRoomDetail({ id: 'r1', name: 'Sala crua' }))
+  renderPublicAt()
+  await screen.findByText('Sala crua')
+  expect(screen.queryByTestId('room-price')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('room-specs')).not.toBeInTheDocument()
+  expect(screen.queryByText(/R\$/)).not.toBeInTheDocument()
+  // Still fully usable: the inquiry is the point of the page.
+  expect(screen.getByRole('button', { name: /tenho interesse/i })).toBeInTheDocument()
+})
+
+test('WhatsApp is offered in a browser and links to the URL the server built', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  renderPublicAt()
+  await screen.findByText('Sala Premium')
+  const link = screen.getByRole('link', { name: /falar pelo whatsapp/i })
+  expect(link).toHaveAttribute('href', describedRoom.whatsappUrl)
+  expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+})
+
+// Tapping it on the kiosk would land the visitor on a WhatsApp they cannot use.
+test('WhatsApp is not offered on the kiosk', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  renderAt()
+  await screen.findByText('Sala Premium')
+  expect(screen.queryByRole('link', { name: /falar pelo whatsapp/i })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /tenho interesse/i })).toBeInTheDocument()
+})
+
+test('WhatsApp is not offered when the server configured no number', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue({ ...describedRoom, whatsappUrl: null })
+  renderPublicAt()
+  await screen.findByText('Sala Premium')
+  expect(screen.queryByRole('link', { name: /falar pelo whatsapp/i })).not.toBeInTheDocument()
+})
+
+test('the kiosk clock shows on the kiosk and not in a browser', async () => {
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  const kiosk = renderAt()
+  await screen.findByText('Sala Premium')
+  expect(kiosk.container.querySelector('.totem-clock')).not.toBeNull()
+  kiosk.unmount()
+
+  vi.mocked(totemRoomApi.detail).mockResolvedValue(describedRoom)
+  const web = renderPublicAt()
+  await screen.findByText('Sala Premium')
+  expect(web.container.querySelector('.totem-clock')).toBeNull()
 })

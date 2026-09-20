@@ -1,3 +1,4 @@
+import { noRoomFeatures } from '../test/roomFixtures'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiClient } from './client'
 import { leasesApi, professionalReservationsApi, professionalsApi, professionalLeasesApi,
@@ -57,9 +58,9 @@ test('photo and user-link operations use dedicated endpoints', async () => {
 test('room operations use server paging and opaque concurrency tokens', async () => {
   const signal = new AbortController().signal
   await roomsApi.list({ search: 'sala', status: 'all', page: 1, pageSize: 20 }, signal)
-  await roomsApi.create({ name: 'Sala 1', description: null, hourlyRate: 0.1, dailyRate: 100.99 })
+  await roomsApi.create({ name: 'Sala 1', description: null, hourlyRate: 0.1, dailyRate: 100.99, ...noRoomFeatures })
   await roomsApi.update('r-1', {
-    name: 'Sala 1', description: null, hourlyRate: 0.1, dailyRate: 100.99, concurrencyToken: 'rv',
+    name: 'Sala 1', description: null, hourlyRate: 0.1, dailyRate: 100.99, concurrencyToken: 'rv', ...noRoomFeatures,
   })
   await roomsApi.changeStatus('r-1', true, 'rv2')
   expect(apiClient.get).toHaveBeenCalledWith('/api/admin/rooms', {

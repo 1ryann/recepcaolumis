@@ -3,6 +3,7 @@ using GestaoPredio.Application.Rooms;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Customers;
 using recepcaototem.Features.Rooms;
@@ -44,13 +45,16 @@ public static class TotemRoomEndpoints
             if (availability is null) continue;
             result.Add(new PublicRoomCard(room.Id, room.Name, room.Description, availability.Status,
                 availability.AvailableFrom, coversByRoom.TryGetValue(room.Id, out var cover)
-                    ? PhotoUrl(room.Id, cover.Id, cover.PrivateFileId) : null));
+                    ? PhotoUrl(room.Id, cover.Id, cover.PrivateFileId) : null,
+                room.MonthlyRate, room.CapacityMin, room.CapacityMax,
+                room.Category is { } category ? RoomCategoryCode.From(category) : null));
         }
         return Results.Ok(result);
     }
 
     private static async Task<IResult> Detail(Guid id, HttpContext context, CustomerPublicRateLimiter limiter,
-        ApplicationDbContext db, TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
+        ApplicationDbContext db, IOptions<WhatsappOptions> whatsappOptions,
+        TimeZoneInfo timeZone, TimeProvider time, CancellationToken ct)
     {
         using var rate = await limiter.AcquireAsync(RemoteIp(context), $"room:{id}", ct);
         if (!rate.IsAcquired) return TooManyRequests();
@@ -64,7 +68,30 @@ public static class TotemRoomEndpoints
             .OrderByDescending(x => x.IsCover).ThenBy(x => x.SortOrder).ThenBy(x => x.Id)
             .Select(x => new { x.Id, x.PrivateFileId }).ToListAsync(ct);
         return Results.Ok(new PublicRoomDetail(room.Id, room.Name, room.Description, availability.Status,
-            availability.AvailableFrom, photos.Select(x => PhotoUrl(room.Id, x.Id, x.PrivateFileId)).ToArray()));
+            availability.AvailableFrom, photos.Select(x => PhotoUrl(room.Id, x.Id, x.PrivateFileId)).ToArray(),
+            room.MonthlyRate, Advertised(room.HourlyRate), Advertised(room.DailyRate),
+            room.AreaSquareMeters, room.BathroomCount, room.CapacityMin, room.CapacityMax,
+            room.Category is { } category ? RoomCategoryCode.From(category) : null,
+            [.. room.Amenities.Select(RoomAmenityCode.From)],
+            ReceptionWhatsappUrl(whatsappOptions, room.Name)));
+    }
+
+    /// Hourly and daily rates are required on a room and default to zero, so a room nobody
+    /// has priced carries 0 rather than null. Advertising "R$ 0,00/hora" would be a lie, so
+    /// zero is reported as no price at all.
+    private static decimal? Advertised(decimal rate) => rate > 0m ? rate : null;
+
+    /// The reception's WhatsApp with the room's name already typed in. Built here so the
+    /// browser never learns the number or assembles a wa.me link, and null — rather than an
+    /// error — when no number is configured, which Development legitimately does.
+    private static string? ReceptionWhatsappUrl(IOptions<WhatsappOptions> options, string roomName)
+    {
+        string phone;
+        try { phone = options.Value.FinanceiroPhoneNumber; }
+        catch (OptionsValidationException) { return null; }
+
+        var message = $"Olá! Tenho interesse na {roomName} do LUMIS.";
+        return WhatsappLinkBuilder.TryBuild(phone, message, out var url) ? url : null;
     }
 
     private static async Task<IResult> Photo(Guid roomId, Guid photoId, HttpContext context,

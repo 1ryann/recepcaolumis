@@ -1,0 +1,74 @@
+/* The two blocks the room form adds to the shared `.fields-area` grid: the heading that
+   separates the required rates from the optional catalogue attributes, and the amenity
+   checklist. Both live here rather than in styles.css, which loads first (see the note at
+   the top of main.tsx). */
+
+.field-section {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--lumis-border-soft);
+  color: var(--lumis-text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.field-section small {
+  color: var(--lumis-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.field-checks {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 14px;
+}
+
+.field-checks legend {
+  padding: 0 0 8px;
+  color: var(--lumis-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--lumis-input-border);
+  border-radius: 11px;
+  background: var(--lumis-input-bg);
+  color: var(--lumis-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.field-check input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.field-check:has(input:checked) {
+  border-color: var(--lumis-input-border-focus);
+}
+
+/* The legend is a grid item like the checkboxes, so it needs the whole first row to
+   itself rather than sharing it with the first amenity. */
+.field-checks legend { grid-column: 1 / -1; }
+
+@media (max-width: 640px) {
+  .field-checks { grid-template-columns: 1fr 1fr; }
+}

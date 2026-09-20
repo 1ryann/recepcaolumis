@@ -1,0 +1,151 @@
+/* The room catalogue. Refines the `.totem-rooms-*` defaults in styles.css (which loads
+   first — see the note at the top of main.tsx) into the full-bleed photo grid: the photo
+   fills the card, the name and the chips sit over it, and the grid uses nearly the whole
+   screen instead of a narrow column. */
+
+.totem-rooms-inner {
+  max-width: min(1680px, 96vw);
+}
+
+.totem-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 19vw, 300px), 1fr));
+  gap: clamp(12px, 1.2vw, 20px);
+}
+
+/* "Disponíveis em breve" is a short list of rooms that are not yet rentable, so it reads
+   as a sidebar to the main grid rather than a second grid: one row that scrolls sideways.
+   The row is masked at both ends so a half-visible card fades out instead of being cut on
+   a hard line. */
+/* Flex, not a column-flow grid: the card has no in-flow content (both the photo and the
+   caption are absolutely positioned) and gets its height from `aspect-ratio` against a
+   definite width. In a grid the implicit row's height and the stretched item's height
+   each depend on the other, and the circularity resolves to zero — the section rendered
+   its heading and an empty strip. A flex row with `align-items: flex-start` leaves the
+   height to the aspect ratio, which is the one thing that does know it. */
+.totem-rooms-grid.is-scroller {
+  --totem-rooms-fade: clamp(24px, 3%, 64px);
+  display: flex;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* The fade zone is padding, and the strip bleeds back out by the same amount. So at
+     rest no card sits under the gradient — the first one is at full strength and lines up
+     with the grid above — and a card only dissolves once it has actually scrolled under
+     the edge. Masking without this dimmed a card that was not being cut at all. */
+  padding-inline: var(--totem-rooms-fade);
+  margin-inline: calc(-1 * var(--totem-rooms-fade));
+  scroll-padding-inline: var(--totem-rooms-fade);
+  padding-bottom: 6px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0,
+    #000 var(--totem-rooms-fade), #000 calc(100% - var(--totem-rooms-fade)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0,
+    #000 var(--totem-rooms-fade), #000 calc(100% - var(--totem-rooms-fade)), transparent 100%);
+}
+.totem-rooms-grid.is-scroller > * {
+  flex: 0 0 clamp(220px, 19vw, 300px);
+  scroll-snap-align: start;
+}
+
+/* The card is the photo. Everything else sits on top of it. */
+.totem-rooms-card {
+  position: relative;
+  display: block;
+  padding: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  min-height: 0;
+}
+
+.totem-rooms-card-media {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+.totem-rooms-card-photo,
+.totem-rooms-card-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+/* The scrim is part of the card, not a block under the photo: it starts fully transparent
+   at mid-height and deepens toward the base, so the photo is never cut by a visible band
+   and the text stays legible over a bright ceiling or a white wall. */
+.totem-rooms-card-body {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: clamp(28px, 4vh, 44px) clamp(12px, 1.2vw, 18px) clamp(12px, 1.4vh, 16px);
+  text-align: left;
+  background: linear-gradient(to top,
+    rgba(0, 0, 0, .88) 0%,
+    rgba(0, 0, 0, .74) 28%,
+    rgba(0, 0, 0, .42) 58%,
+    rgba(0, 0, 0, .14) 82%,
+    rgba(0, 0, 0, 0) 100%);
+}
+
+.totem-rooms-card-name {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(15px, 1.5vw, 19px);
+  font-weight: 650;
+  letter-spacing: -.01em;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, .55);
+}
+
+.totem-rooms-card-availability {
+  margin: 0;
+  color: rgba(255, 255, 255, .82);
+  font-size: clamp(11px, 1.1vw, 13px);
+}
+
+.room-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.room-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .92);
+  font-size: clamp(10px, 1vw, 12px);
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+
+.room-chip-price {
+  border-color: rgba(255, 255, 255, .3);
+  background: rgba(255, 255, 255, .17);
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .totem-rooms-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(46vw, 260px), 1fr));
+  }
+  .totem-rooms-grid.is-scroller > * { flex-basis: min(60vw, 260px); }
+}
+
+@media (max-width: 560px) {
+  .totem-rooms-grid { grid-template-columns: 1fr; }
+  .totem-rooms-grid.is-scroller { --totem-rooms-fade: 18px; }
+  .totem-rooms-grid.is-scroller > * { flex-basis: 78vw; }
+  .totem-rooms-card { aspect-ratio: 16 / 10; }
+}

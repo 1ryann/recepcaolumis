@@ -1,6 +1,7 @@
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { roomsBasePath, useRoomsSurface } from '../features/rooms/useRoomsSurface'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { LumisLogo } from '../theme/LumisLogo'
 
@@ -54,11 +55,17 @@ function isValidState(value: unknown): value is RoomInterestNavState {
 export function TotemRoomInterestSuccess() {
   const location = useLocation()
   const state = location.state
-  if (!isValidState(state)) return <Navigate to="/totem/salas" replace />
-  return <TotemRoomInterestSuccessScreen state={state} />
+  const surface = useRoomsSurface()
+  const basePath = roomsBasePath(surface)
+  if (!isValidState(state)) return <Navigate to={basePath} replace />
+  return <TotemRoomInterestSuccessScreen state={state} basePath={basePath} homePath={surface === 'kiosk' ? '/totem' : '/'} />
 }
 
-function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState }) {
+function TotemRoomInterestSuccessScreen({ state, basePath, homePath }: {
+  state: RoomInterestNavState
+  basePath: string
+  homePath: string
+}) {
   const navigate = useNavigate()
   const [qrDataUrl, setQrDataUrl] = useState('')
 
@@ -71,12 +78,12 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
   }, [state.whatsappUrl])
 
   // Leaving always replaces this entry: the QR state never stays in history.
-  const leave = useCallback((to: '/totem' | '/totem/salas') => navigate(to, { replace: true }), [navigate])
+  const leave = useCallback((to: string) => navigate(to, { replace: true }), [navigate])
 
   const idleTimer = useRef<number | undefined>(undefined)
   const restartIdleTimer = useCallback(() => {
     window.clearTimeout(idleTimer.current)
-    idleTimer.current = window.setTimeout(() => leave('/totem'), IDLE_RETURN_MS)
+    idleTimer.current = window.setTimeout(() => leave(homePath), IDLE_RETURN_MS)
   }, [leave])
 
   useEffect(() => {
@@ -101,7 +108,7 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
         <button
           type="button"
           className="totem-room-interest-logo-link"
-          onClick={() => leave('/totem')}
+          onClick={() => leave(homePath)}
           aria-label="Voltar ao início"
         >
           <LumisLogo
@@ -137,10 +144,10 @@ function TotemRoomInterestSuccessScreen({ state }: { state: RoomInterestNavState
         </button>
 
         <div className="totem-room-interest-actions">
-          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave('/totem/salas')}>
+          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave(basePath)}>
             ← Voltar para salas
           </button>
-          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave('/totem')}>
+          <button type="button" className="totem-btn totem-btn-ghost" onClick={() => leave(homePath)}>
             Início
           </button>
         </div>

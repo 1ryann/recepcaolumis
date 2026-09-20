@@ -1,3 +1,4 @@
+import { noRoomFeatures } from '../../test/roomFixtures'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { operatingHoursApi, roomBlocksApi, roomsApi } from '../../api/modules'
@@ -10,7 +11,7 @@ const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(operatingHoursApi.get).mockResolvedValue({ configured: true, days, concurrencyToken: 'oh-1' })
-  vi.mocked(roomsApi.list).mockResolvedValue({ items: [{ id: 'room-1', name: 'Sala 1', description: null, hourlyRate: 50, dailyRate: 200, isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 'room-1' }], page: 1, pageSize: 100, totalCount: 1 })
+  vi.mocked(roomsApi.list).mockResolvedValue({ items: [{ ...noRoomFeatures, id: 'room-1', name: 'Sala 1', description: null, hourlyRate: 50, dailyRate: 200, isActive: true, createdAt: '', updatedAt: '', concurrencyToken: 'room-1' }], page: 1, pageSize: 100, totalCount: 1 })
   vi.mocked(roomBlocksApi.list).mockResolvedValue({ items: [], page: 1, pageSize: 20, totalCount: 0 })
 })
 

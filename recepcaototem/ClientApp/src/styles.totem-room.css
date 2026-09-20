@@ -1,7 +1,7 @@
 /* Room detail on the Totem. Overrides the defaults in styles.css (loaded first) for the two
    things that were shrinking the photo: the page was capped at 1100px on a kiosk screen that
    is far wider, and the frame forced a 6:5 crop on photos that are shot in landscape. Rooms
-   are now stored at up to 1600px on their own aspect ratio (RoomImageNormalizer), so there
+   are now stored at up to 1920px on their own aspect ratio (RoomImageNormalizer), so there
    are pixels to fill this. */
 
 .totem-room-detail-inner {
@@ -31,4 +31,104 @@
   .totem-room-detail-content { grid-template-columns: minmax(0, 1fr); }
   .totem-room-detail-photo,
   .totem-room-detail-fallback { min-height: clamp(240px, 38vh, 420px); }
+}
+
+/* ── Detail page: price, feature strip, gallery arrows and the WhatsApp button ──────── */
+
+.room-price { margin: 0; }
+
+.room-price-main {
+  margin: 0;
+  color: var(--lumis-heading);
+  font-size: clamp(26px, 3.2vw, 40px);
+  font-weight: 640;
+  letter-spacing: -.03em;
+  line-height: 1.05;
+}
+
+.room-price-unit {
+  color: var(--lumis-muted);
+  font-size: .42em;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.room-price-secondary {
+  margin: 6px 0 0;
+  color: var(--lumis-muted);
+  font-size: clamp(13px, 1.4vw, 16px);
+}
+
+/* Auto-fit rather than a fixed column count: the strip has between one and nine entries
+   depending on how much of the room has been described, and a fixed grid would leave
+   holes in a half-described room. */
+.room-specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: clamp(10px, 1.4vw, 18px);
+  margin: 0;
+  padding: clamp(14px, 1.6vh, 20px) 0;
+  list-style: none;
+  border-block: 1px solid var(--lumis-border-soft);
+}
+
+.room-spec {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  color: var(--lumis-muted);
+  font-size: clamp(11px, 1.1vw, 13px);
+  font-weight: 600;
+  text-align: center;
+}
+
+.room-spec svg { color: var(--lumis-text-dim); }
+
+.totem-room-detail-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* WhatsApp's own green, because the button promises WhatsApp specifically — the one
+     place in this interface where a brand colour carries the meaning. */
+  background: #25d366;
+  border: 1px solid #25d366;
+  color: #04210f;
+  font-weight: 680;
+  text-decoration: none;
+}
+.totem-room-detail-whatsapp:hover { background: #1fbb5a; border-color: #1fbb5a; }
+
+/* Prev/next over the main photo. The gallery box is the positioning context. */
+.totem-room-detail-gallery { position: relative; }
+
+.totem-room-detail-nav {
+  position: absolute;
+  top: clamp(120px, 24vh, 340px);
+  display: grid;
+  place-items: center;
+  width: clamp(44px, 3.4vw, 56px);
+  height: clamp(44px, 3.4vw, 56px);
+  border-radius: 50%;
+  border: 1px solid var(--lumis-border-strong);
+  background: rgba(0, 0, 0, .55);
+  color: var(--lumis-text-dim);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background-color .2s ease, transform .2s ease;
+  z-index: 2;
+}
+.totem-room-detail-nav:hover { background: rgba(0, 0, 0, .74); transform: scale(1.05); }
+.totem-room-detail-nav:focus-visible { outline: 2px solid var(--lumis-kiosk-accent); outline-offset: 3px; }
+.totem-room-detail-nav.is-prev { left: clamp(8px, 1vw, 16px); }
+.totem-room-detail-nav.is-next { right: clamp(8px, 1vw, 16px); }
+
+@media (max-width: 900px) {
+  .totem-room-detail-nav { top: clamp(90px, 16vh, 180px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .totem-room-detail-nav { transition: none; }
+  .totem-room-detail-nav:hover { transform: none; }
 }

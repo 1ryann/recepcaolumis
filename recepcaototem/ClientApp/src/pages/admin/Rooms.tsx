@@ -1,7 +1,7 @@
 import { Building2, Images, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
-import { type ModuleStatus, type PagedResponse, type RoomDto, roomsApi } from '../../api/modules'
+import { type ModuleStatus, type PagedResponse, type RoomDto, type RoomInput, roomsApi } from '../../api/modules'
 import { Modal } from '../../components/Modal'
 import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
 import { RoomForm } from '../../features/rooms/RoomForm'
@@ -49,7 +49,7 @@ export function Rooms() {
     }
     throw reason
   }
-  const save = async (input: { name: string, description: string | null, hourlyRate: number, dailyRate: number }) => {
+  const save = async (input: RoomInput) => {
     setSaving(true)
     try {
       if (formRoom) upsert(await roomsApi.update(formRoom.id, { ...input, concurrencyToken: formRoom.concurrencyToken }))
@@ -85,7 +85,7 @@ export function Rooms() {
             : <div className="rooms-admin-grid">{result.items.map(room => <article className="room-admin-card" key={room.id}>
               <div className="room-admin-heading"><span className="room-admin-icon"><Building2 size={20} /></span><div><strong title={room.name}>{room.name}</strong><StatusBadge status={room.isActive ? 'active' : 'inactive'} /></div></div>
               <p>{room.description || 'Sem descrição cadastrada.'}</p>
-              <dl className="room-rates"><div><dt>Por hora</dt><dd>{formatBrl(room.hourlyRate)}</dd></div><div><dt>Diária</dt><dd>{formatBrl(room.dailyRate)}</dd></div></dl>
+              <dl className="room-rates"><div><dt>Por hora</dt><dd>{formatBrl(room.hourlyRate)}</dd></div><div><dt>Diária</dt><dd>{formatBrl(room.dailyRate)}</dd></div>{room.monthlyRate !== null && <div><dt>Mensal</dt><dd>{formatBrl(room.monthlyRate)}</dd></div>}</dl>
               <div className="room-admin-actions"><button className="secondary-button" onClick={() => setFormRoom(room)} aria-label={`Editar ${room.name}`}><Pencil size={16} /> Editar</button><button className="secondary-button" onClick={(event) => { photoTriggerRef.current = event.currentTarget; setPhotoRoom(room) }} aria-label={`Gerenciar fotos de ${room.name}`}><Images size={16} /> Fotos</button><button className="ghost-button" disabled={saving} onClick={() => void toggle(room)} aria-label={`${room.isActive ? 'Desativar' : 'Ativar'} ${room.name}`}>{room.isActive ? <UserMinus size={16} /> : <UserPlus size={16} />}{room.isActive ? 'Desativar' : 'Ativar'}</button></div>
             </article>)}</div>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}

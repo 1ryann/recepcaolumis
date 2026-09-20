@@ -56,6 +56,9 @@ export default function DevelopmentApp() {
         <Route path="/totem/salas" element={<TotemRoomsCatalog />} />
         <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
         <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
+        <Route path="/salas" element={<TotemRoomsCatalog />} />
+        <Route path="/salas/:id" element={<TotemRoomDetail />} />
+        <Route path="/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
           <Route path="/cliente" element={<CustomerShell />}>

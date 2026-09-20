@@ -5,31 +5,33 @@ import { totemRoomApi, type PublicRoomCardDto } from '../api/modules'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { BlurFade } from '../features/totem/magic/BlurFade'
+import { RoomChips } from '../features/rooms/RoomChips'
+import { availabilityLabel } from '../features/rooms/roomAvailability'
+import { roomsBasePath, useRoomsSurface } from '../features/rooms/useRoomsSurface'
 import { LumisLogo } from '../theme/LumisLogo'
+import '../styles.totem-rooms.css'
 
-// The `/totem/salas` screen — the public room-rental catalog reached from the "Alugar
-// sala" CTA on `/totem/profissionais`. Anyone can view it without a check-in code; all
-// data comes from the anonymous `GET /api/totem/rooms` endpoint, which already hides
-// Tenant/Professional/ContractedRate/HourlyRate/DailyRate — this page must never display
-// a price or tariff of any kind. Rooms are split into two sections: "Disponíveis agora"
-// (shown first) and "Disponíveis em breve" (ordered by availableFrom then name); a
-// section is rendered only when it has at least one room. Tapping a card navigates to
-// `/totem/salas/{id}` (built in a later task — this screen only issues the navigation).
-// Four phases share the kiosk shell, mirroring TotemProfessionals:
+// The room-rental catalogue, served on two routes by one component: `/totem/salas` on the
+// kiosk in the lobby, and `/salas` in a visitor's own browser from the landing page. See
+// useRoomsSurface for why the route decides rather than a device flag; here the surface
+// only changes the chrome (the kiosk clock) and where "back" leads.
+//
+// All data comes from the anonymous `GET /api/totem/rooms`. That endpoint used to hide
+// every price on purpose; it now advertises the monthly one, because a catalogue whose
+// prices are secret makes the visitor write in to ask. What it still hides is who occupies
+// a room and on what terms.
+//
+// Rooms are split into "Disponíveis agora" (a grid, shown first) and "Disponíveis em
+// breve" (a row that scrolls sideways, ordered by availableFrom then name); a section is
+// rendered only when it has at least one room.
+// Four phases share the shell, mirroring TotemProfessionals:
 //   loading -> shimmer skeleton cards
 //   ready   -> the Now/Soon sections
 //   empty   -> "Nenhuma sala disponível no momento." + Tentar novamente + Voltar
 //   error   -> "Não foi possível carregar as salas." + the same two buttons
-// The LUMIS logo doubles as the way back to `/totem`, same as every other Totem screen.
+// The LUMIS logo doubles as the way back — to `/totem` on the kiosk, to the landing page
+// in a browser.
 type Phase = 'loading' | 'ready' | 'empty' | 'error'
-
-// DateOnly comes over the wire as a bare "YYYY-MM-DD" string. Parsing it with `new Date`
-// would read it as UTC midnight and can roll to the previous/next day once converted to
-// local time — split it by hand instead to build the PT-BR "DD/MM/AAAA" label.
-function dateLabel(value: string) {
-  const [year, month, day] = value.split('-')
-  return `${day}/${month}/${year}`
-}
 
 function groupRooms(rooms: PublicRoomCardDto[]) {
   const now = rooms.filter((room) => room.availability === 'AVAILABLE_NOW')
@@ -44,6 +46,10 @@ function RoomCard({ room, onSelect }: { room: PublicRoomCardDto, onSelect: () =>
   const [imageFailed, setImageFailed] = useState(false)
   const showPhoto = Boolean(room.coverPhotoUrl) && !imageFailed
 
+  // The photo fills the card and the name sits over it. The description moved to the
+  // detail page: at this size it was a paragraph nobody reads, and the chips say more in
+  // less space. A room with no photo keeps the door icon behind the same overlay, so the
+  // grid stays even while the photos are still being taken.
   return (
     <button type="button" className="totem-rooms-card" onClick={onSelect}>
       <div className="totem-rooms-card-media">
@@ -62,10 +68,10 @@ function RoomCard({ room, onSelect }: { room: PublicRoomCardDto, onSelect: () =>
       </div>
       <div className="totem-rooms-card-body">
         <h3 className="totem-rooms-card-name">{room.name}</h3>
-        {room.description && <p className="totem-rooms-card-description">{room.description}</p>}
+        <RoomChips room={room} />
         {room.availability === 'AVAILABLE_SOON' && room.availableFrom && (
           <p className="totem-rooms-card-availability">
-            {`Disponível em breve — a partir de ${dateLabel(room.availableFrom)}`}
+            {`Próxima disponibilidade: ${availabilityLabel(room.availableFrom)}`}
           </p>
         )}
       </div>
@@ -75,6 +81,11 @@ function RoomCard({ room, onSelect }: { room: PublicRoomCardDto, onSelect: () =>
 
 export function TotemRoomsCatalog() {
   const navigate = useNavigate()
+  const surface = useRoomsSurface()
+  const basePath = roomsBasePath(surface)
+  // On the kiosk the logo returns to the kiosk's own home; in a browser it returns to the
+  // landing page, which is where the visitor came from.
+  const homePath = surface === 'kiosk' ? '/totem' : '/'
   const [phase, setPhase] = useState<Phase>('loading')
   const [rooms, setRooms] = useState<PublicRoomCardDto[]>([])
 
@@ -106,7 +117,7 @@ export function TotemRoomsCatalog() {
   }, [load])
 
   const { now, soon } = groupRooms(rooms)
-  const goToDetail = (id: string) => navigate(`/totem/salas/${id}`)
+  const goToDetail = (id: string) => navigate(`${basePath}/${encodeURIComponent(id)}`)
 
   return (
     <main className="totem-rooms">
@@ -116,7 +127,7 @@ export function TotemRoomsCatalog() {
         <button
           type="button"
           className="totem-rooms-logo-link"
-          onClick={() => navigate('/totem')}
+          onClick={() => navigate(homePath)}
           aria-label="Voltar ao início"
         >
           <LumisLogo
@@ -126,12 +137,15 @@ export function TotemRoomsCatalog() {
             height={40}
           />
         </button>
-        <KioskClock />
+        {surface === 'kiosk' && <KioskClock />}
       </header>
 
       <BlurFade>
         <div className="totem-rooms-inner">
-          <h1 className="totem-rooms-title">Alugar sala</h1>
+          {/* The cards say what this page is; a banner over them only pushed the grid
+              down. The heading stays in the document for screen readers and the outline,
+              which would otherwise start at the "Disponíveis agora" section. */}
+          <h1 className="sr-only">Salas para alugar</h1>
 
           {phase === 'loading' && (
             <div className="totem-rooms-skeletons">
@@ -156,7 +170,7 @@ export function TotemRoomsCatalog() {
               {soon.length > 0 && (
                 <section className="totem-rooms-section">
                   <h2 className="totem-rooms-section-title">Disponíveis em breve</h2>
-                  <div className="totem-rooms-grid">
+                  <div className="totem-rooms-grid is-scroller">
                     {soon.map((room) => (
                       <RoomCard key={room.id} room={room} onSelect={() => goToDetail(room.id)} />
                     ))}
@@ -172,7 +186,7 @@ export function TotemRoomsCatalog() {
               <button type="button" className="totem-btn totem-btn-primary" onClick={load}>
                 Tentar novamente
               </button>
-              <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate('/totem')}>
+              <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate(homePath)}>
                 Voltar
               </button>
             </div>
@@ -184,7 +198,7 @@ export function TotemRoomsCatalog() {
               <button type="button" className="totem-btn totem-btn-primary" onClick={load}>
                 Tentar novamente
               </button>
-              <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate('/totem')}>
+              <button type="button" className="totem-btn totem-btn-ghost" onClick={() => navigate(homePath)}>
                 Voltar
               </button>
             </div>

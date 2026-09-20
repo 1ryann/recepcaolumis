@@ -126,6 +126,33 @@ export function RoomPhotoGallery({ photoUrls, roomName }: { photoUrls: string[];
         )}
       </button>
 
+      {/* Prev/next over the main photo. The lightbox has had these all along; on the page
+          itself the only way through the gallery was the thumbnails, which are small and
+          not obvious as a control on a kiosk.
+          They are withheld while the lightbox is open: the lightbox's own arrows carry the
+          same labels, and two controls answering to "Próxima foto" is ambiguous for a
+          screen reader and for a test alike. The page behind a modal offers nothing. */}
+      {hasMultiple && !lightboxOpen && (
+        <button
+          type="button"
+          className="totem-room-detail-nav is-prev"
+          aria-label="Foto anterior"
+          onClick={showPrev}
+        >
+          <ChevronLeft size={26} aria-hidden="true" />
+        </button>
+      )}
+      {hasMultiple && !lightboxOpen && (
+        <button
+          type="button"
+          className="totem-room-detail-nav is-next"
+          aria-label="Próxima foto"
+          onClick={showNext}
+        >
+          <ChevronRight size={26} aria-hidden="true" />
+        </button>
+      )}
+
       {hasMultiple && (
         <div className="totem-room-detail-dots" role="group" aria-label="Selecionar foto">
           {photoUrls.map((_, index) => (

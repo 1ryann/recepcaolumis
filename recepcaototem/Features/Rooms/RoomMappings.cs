@@ -14,5 +14,12 @@ internal static class RoomMappings
         room.IsActive,
         room.CreatedAt,
         room.UpdatedAt,
-        ConcurrencyToken.Encode(room.Version));
+        ConcurrencyToken.Encode(room.Version),
+        room.MonthlyRate,
+        room.AreaSquareMeters,
+        room.BathroomCount,
+        room.CapacityMin,
+        room.CapacityMax,
+        room.Category is { } category ? RoomCategoryCode.From(category) : null,
+        [.. room.Amenities.Select(RoomAmenityCode.From)]);
 }

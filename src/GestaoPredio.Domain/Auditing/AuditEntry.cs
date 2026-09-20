@@ -12,7 +12,7 @@ public sealed class AuditEntry
   AuditFields.IsActive, AuditFields.PhotoFileId, AuditFields.ApplicationUserId,
   AuditFields.TenantId, AuditFields.ProfessionalId, AuditFields.RoomId, AuditFields.Mode,
   AuditFields.ContractedRate, AuditFields.BillingStartAt, AuditFields.BillingDueDay,
-  AuditFields.OccupancyStartAt, AuditFields.OccupancyEndAt
+  AuditFields.OccupancyStartAt, AuditFields.OccupancyEndAt, AuditFields.Features
  }.ToFrozenSet(StringComparer.Ordinal);
 
  public Guid Id { get; set; }
@@ -73,4 +73,7 @@ public static class AuditFields
  public const string OccupancyStartAt = "OccupancyStartAt";
  public const string OccupancyEndAt = "OccupancyEndAt";
 
+ /// A room's public-catalogue attributes, audited as one field: they are set and cleared
+ /// together, and naming each of the seven would turn the audit row into noise.
+ public const string Features = "Features";
 }
