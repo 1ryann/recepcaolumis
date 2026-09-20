@@ -23,6 +23,7 @@ import { CustomerReservationDetail } from './pages/customer/CustomerReservationD
 import { TotemCheckIn } from './pages/TotemCheckIn'
 import { TotemEntry } from './pages/TotemEntry'
 import { TotemHandoff } from './pages/TotemHandoff'
+import { RescheduleLink } from './pages/RescheduleLink'
 import { TotemProfessionals } from './pages/TotemProfessionals'
 import { TotemRoomsCatalog } from './pages/TotemRoomsCatalog'
 import { TotemRoomDetail } from './pages/TotemRoomDetail'
@@ -56,6 +57,7 @@ function ProductionApp() {
   <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
   <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
   <Route path="/totem/handoff" element={<TotemHandoff />} />
+  <Route path="/reagendar/:token" element={<RescheduleLink />} />
   <Route path="/change-password" element={<ChangePassword />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
    <Route path="/cliente" element={<CustomerShell />}>

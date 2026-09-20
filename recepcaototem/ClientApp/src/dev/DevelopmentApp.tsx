@@ -20,6 +20,7 @@ import { CustomerReservationDetail } from '../pages/customer/CustomerReservation
 import { TotemCheckIn } from '../pages/TotemCheckIn'
 import { TotemEntry } from '../pages/TotemEntry'
 import { TotemHandoff } from '../pages/TotemHandoff'
+import { RescheduleLink } from '../pages/RescheduleLink'
 import { TotemProfessionals } from '../pages/TotemProfessionals'
 import { TotemRoomsCatalog } from '../pages/TotemRoomsCatalog'
 import { TotemRoomDetail } from '../pages/TotemRoomDetail'
@@ -51,6 +52,7 @@ export default function DevelopmentApp() {
         <Route path="/totem/check-in" element={<TotemCheckIn />} />
         <Route path="/totem/profissionais" element={<TotemProfessionals />} />
         <Route path="/totem/handoff" element={<TotemHandoff />} />
+        <Route path="/reagendar/:token" element={<RescheduleLink />} />
         <Route path="/totem/salas" element={<TotemRoomsCatalog />} />
         <Route path="/totem/salas/:id" element={<TotemRoomDetail />} />
         <Route path="/totem/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />

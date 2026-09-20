@@ -1042,3 +1042,33 @@ export const receptionApi = {
     return apiClient.get<ReceptionProfessionalDto[]>('/api/reception/professionals', { signal })
   },
 }
+
+export interface RescheduleLinkDto {
+  professionalId: string
+  professionalName: string
+  originalStartAt: string
+  originalEndAt: string
+  durationMinutes: number
+  expiresAt: string
+}
+
+export interface RescheduleConfirmationDto {
+  reservationId: string
+  startAt: string
+  endAt: string
+  professionalName: string
+  roomName: string
+}
+
+/** Public, one-time reschedule link sent in the PROFESSIONAL_CANCELLED template. No session, no CSRF. */
+export const rescheduleApi = {
+  resolve(token: string) {
+    return apiClient.postPublic<RescheduleLinkDto>('/api/reschedule/resolve', { token })
+  },
+  slots(token: string, date: string, signal?: AbortSignal) {
+    return apiClient.get<AvailabilitySlotDto[]>('/api/reschedule/slots', { query: { token, date }, signal })
+  },
+  confirm(input: { token: string, startAt: string, endAt: string }) {
+    return apiClient.postPublic<RescheduleConfirmationDto>('/api/reschedule/confirm', input)
+  },
+}
