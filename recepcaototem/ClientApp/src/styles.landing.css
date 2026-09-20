@@ -225,3 +225,241 @@
   .landing-cta-primary:hover,
   .landing-access-card:hover { transform: none; }
 }
+
+/* Scroll reveal. Same language as the Totem's BlurFade: a short rise out of a soft blur.
+   `.is-in` is set by RevealOnScroll the first time the block enters the viewport. */
+.landing-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  filter: blur(6px);
+  transition: opacity 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
+              transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
+              filter 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.landing-reveal.is-in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  will-change: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}
+
+/* Scroll-linked pass. Where the browser supports scroll-driven animations, the reveal is
+   tied to the element's position on screen instead of firing once: it advances as you
+   scroll down and rewinds as you scroll up, the way animejs.com behaves. The JS reveal
+   above stays as the fallback for browsers without `animation-timeline` (and for
+   prefers-reduced-motion, which is excluded here). */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .landing-reveal {
+      transition: none;
+      animation: landing-scroll-in linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 32%;
+    }
+
+    /* The hero is already on screen at load: it plays once, it is not scrubbed. */
+    .landing-hero.landing-reveal {
+      animation: landing-hero-in 760ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+      animation-timeline: auto;
+    }
+
+    /* Section headings travel a little further, so the page reads as it assembles. */
+    .landing-section > .landing-reveal:first-child {
+      animation-range: entry 0% cover 28%;
+    }
+  }
+}
+
+@keyframes landing-scroll-in {
+  from { opacity: 0; transform: translateY(42px) scale(0.985); filter: blur(10px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes landing-hero-in {
+  from { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* ---- Intro: light opening from the centre -------------------------------------------
+   Two panels part from the middle, a vertical beam flares and fades, the logo emerges
+   from the centre and the hero copy and buttons follow. It runs once per page load, on
+   top of everything, and never blocks input (pointer-events: none). Content is in the DOM
+   from the start — the intro only animates it — so screen readers and crawlers see the
+   page normally. Fully disabled under prefers-reduced-motion. */
+.landing-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.landing-intro-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 56%;
+  animation: landing-panel-left 1450ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+/* The inner edge dissolves instead of ending on a line: the panel itself fades out over
+   its last third, so there is never a hard boundary between the cover and the page. */
+.landing-intro-panel.is-left {
+  left: 0;
+  background: linear-gradient(to right,
+    var(--lumis-bg) 0%, var(--lumis-bg) 58%,
+    color-mix(in srgb, var(--lumis-bg) 88%, transparent) 74%,
+    color-mix(in srgb, var(--lumis-bg) 55%, transparent) 86%,
+    color-mix(in srgb, var(--lumis-bg) 20%, transparent) 94%,
+    transparent 100%);
+}
+
+.landing-intro-panel.is-right {
+  right: 0;
+  animation-name: landing-panel-right;
+  background: linear-gradient(to left,
+    var(--lumis-bg) 0%, var(--lumis-bg) 58%,
+    color-mix(in srgb, var(--lumis-bg) 88%, transparent) 74%,
+    color-mix(in srgb, var(--lumis-bg) 55%, transparent) 86%,
+    color-mix(in srgb, var(--lumis-bg) 20%, transparent) 94%,
+    transparent 100%);
+}
+
+/* A wide, blurred sheen riding the inner edge — light, not a band. */
+.landing-intro-panel::after {
+  content: '';
+  position: absolute;
+  top: -10%;
+  bottom: -10%;
+  width: 300px;
+  filter: blur(40px);
+  opacity: 0.55;
+  background: linear-gradient(to left, color-mix(in srgb, var(--lumis-text) 14%, transparent), transparent 78%);
+}
+
+.landing-intro-panel.is-left::after { right: -40px; }
+.landing-intro-panel.is-right::after { left: -40px; transform: scaleX(-1); }
+
+/* The seam: a thin beam that flares as the panels part, then burns out. */
+.landing-intro-beam {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 0;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--lumis-text) 70%, transparent) 30%, color-mix(in srgb, var(--lumis-text) 70%, transparent) 70%, transparent);
+  filter: blur(2.5px);
+  animation: landing-beam 1200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.landing-intro-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(70vw, 620px);
+  height: min(70vw, 620px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lumis-text) 18%, transparent), transparent 62%);
+  animation: landing-glow 1400ms ease-out both;
+}
+
+@keyframes landing-panel-left {
+  0%, 30% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+
+@keyframes landing-panel-right {
+  0%, 30% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes landing-beam {
+  0% { height: 0; opacity: 0; }
+  18% { height: 62vh; opacity: 1; }
+  45% { height: 100vh; opacity: 0.9; width: 3px; }
+  100% { height: 100vh; opacity: 0; width: 1px; }
+}
+
+@keyframes landing-glow {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.35); }
+}
+
+/* The logo emerges from the middle of the opening, then settles into the header. */
+/* The mark is born in the middle of the opening and dissolves once the page is there. */
+.landing-intro-mark {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: landing-mark 1850ms cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+@keyframes landing-mark {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.55); filter: blur(18px); }
+  22% { opacity: 1; filter: blur(0); transform: translate(-50%, -50%) scale(1.06); }
+  58% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -52%) scale(0.94); filter: blur(4px); }
+}
+
+/* The header logo takes over as the mark fades. */
+.landing-logo { animation: landing-copy-in 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 1500ms both; }
+
+/* Hero copy follows the opening; the two buttons come in from the centre, outwards. */
+.landing-hero .landing-eyebrow,
+.landing-hero h1,
+.landing-hero p { animation: landing-copy-in 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
+.landing-hero .landing-eyebrow { animation-delay: 1560ms; }
+.landing-hero h1 { animation-delay: 1640ms; }
+.landing-hero p { animation-delay: 1740ms; }
+
+.landing-cta .landing-cta-primary { animation: landing-cta-left 620ms cubic-bezier(0.22, 0.61, 0.36, 1) 1840ms both; }
+.landing-cta .landing-cta-secondary { animation: landing-cta-right 620ms cubic-bezier(0.22, 0.61, 0.36, 1) 1920ms both; }
+
+@keyframes landing-copy-in {
+  from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes landing-cta-left {
+  from { opacity: 0; transform: translateX(-26px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes landing-cta-right {
+  from { opacity: 0; transform: translateX(26px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-intro { display: none; }
+  .landing-logo,
+  .landing-hero .landing-eyebrow,
+  .landing-hero h1,
+  .landing-hero p,
+  .landing-cta .landing-cta-primary,
+  .landing-cta .landing-cta-secondary { animation: none; }
+}
+
+/* The overlay stops existing visually once the opening ends. */
+.landing-intro { animation: landing-intro-hide 1900ms step-end both; }
+
+@keyframes landing-intro-hide {
+  from { visibility: visible; }
+  to { visibility: hidden; }
+}

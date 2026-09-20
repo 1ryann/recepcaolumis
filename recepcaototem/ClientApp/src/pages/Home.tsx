@@ -2,6 +2,7 @@ import { ArrowRight, BriefcaseBusiness, CalendarDays, MessageCircle, QrCode, Spa
 import { Link } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 import { LumisBackground } from '../features/lumis/LumisBackground'
+import { RevealOnScroll } from '../features/landing/RevealOnScroll'
 import { LumisLogo } from '../theme/LumisLogo'
 import '../styles.landing.css'
 
@@ -50,6 +51,18 @@ export function Home() {
   return (
     <main className="landing">
       <LumisBackground />
+
+      {/* Opening: the light parts from the centre and the logo emerges from it. */}
+      <div className="landing-intro" aria-hidden="true">
+        <span className="landing-intro-glow" />
+        <span className="landing-intro-beam" />
+        <span className="landing-intro-panel is-left" />
+        <span className="landing-intro-panel is-right" />
+        <span className="landing-intro-mark">
+          <LumisLogo alt="" width={196} height={60} />
+        </span>
+      </div>
+
       <div className="landing-inner">
         <header className="landing-head">
           <LumisLogo className="landing-logo" alt="LUMIS" width={132} height={40} />
@@ -72,35 +85,38 @@ export function Home() {
         </section>
 
         <section className="landing-section" aria-labelledby="espaco">
-          <h2 id="espaco">O espaço</h2>
+          <RevealOnScroll><h2 id="espaco">O espaço</h2></RevealOnScroll>
           <div className="landing-grid">
-            {highlights.map(({ icon: Icon, title, text }) => (
-              <article className="landing-card" key={title}>
+            {highlights.map(({ icon: Icon, title, text }, index) => (
+              <RevealOnScroll as="article" className="landing-card" key={title} delay={index * 80}>
                 <span className="landing-card-icon" aria-hidden="true"><Icon size={20} /></span>
                 <strong>{title}</strong>
                 <p>{text}</p>
-              </article>
+              </RevealOnScroll>
             ))}
           </div>
         </section>
 
         <section className="landing-section" aria-labelledby="como-funciona">
-          <h2 id="como-funciona">Como funciona</h2>
+          <RevealOnScroll><h2 id="como-funciona">Como funciona</h2></RevealOnScroll>
           <ol className="landing-steps">
-            {steps.map(({ number, title, text }) => (
-              <li className="landing-step" key={number}>
+            {steps.map(({ number, title, text }, index) => (
+              <RevealOnScroll as="li" className="landing-step" key={number} delay={index * 80}>
                 <span className="landing-step-number" aria-hidden="true">{number}</span>
                 <div><strong>{title}</strong><p>{text}</p></div>
-              </li>
+              </RevealOnScroll>
             ))}
           </ol>
-          <Link className="landing-cta-primary landing-steps-cta" to="/totem/salas">
-            Ver salas disponíveis <ArrowRight size={18} aria-hidden="true" />
-          </Link>
+          <RevealOnScroll delay={80}>
+            <Link className="landing-cta-primary landing-steps-cta" to="/totem/salas">
+              Ver salas disponíveis <ArrowRight size={18} aria-hidden="true" />
+            </Link>
+          </RevealOnScroll>
         </section>
 
         <section className="landing-section" id="acessos" aria-labelledby="acessos-titulo">
-          <h2 id="acessos-titulo">Já usa o LUMIS?</h2>
+          <RevealOnScroll><h2 id="acessos-titulo">Já usa o LUMIS?</h2></RevealOnScroll>
+          <RevealOnScroll as="div" delay={60}>
           <nav className="landing-access" aria-label="Acessos do Lumis">
             <Link className="landing-access-card" to={cliente.href}>
               <span className="landing-card-icon" aria-hidden="true"><CalendarDays size={20} /></span>
@@ -124,11 +140,12 @@ export function Home() {
           <Link className="landing-team" to={team.href}>
             {team.label} <ArrowRight size={15} aria-hidden="true" />
           </Link>
+          </RevealOnScroll>
         </section>
       </div>
 
       <footer className="landing-footer">
-        Desenvolvido por <strong>RYNEX</strong>
+        Desenvolvido por <strong>RYVEX</strong>
       </footer>
     </main>
   )
