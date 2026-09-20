@@ -15,13 +15,24 @@ function renderWith(session: { status: string; user: { roles: string[] } | null 
 const anonymous = { status: 'anonymous', user: null }
 const authed = (roles: string[]) => ({ status: 'authenticated', user: { roles } })
 
-test('/ no longer shows the "Módulo ainda não disponível" placeholder', () => {
+test('the landing presents the building and leads with renting a room', () => {
   renderWith(anonymous)
   expect(screen.queryByText(/Módulo ainda não disponível/i)).not.toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: /Gestão inteligente/i })).toBeInTheDocument()
+  const rent = screen.getByRole('link', { name: /alugar sala/i })
+  expect(rent).toHaveAttribute('href', '/totem/salas')
+  // The visitor also gets a way in as a customer, without competing with the main action.
+  expect(screen.getByRole('link', { name: /sou cliente/i })).toHaveAttribute('href', '/cliente/login')
 })
 
-test('a visitor sees the three ways in, pointing at the public login routes', () => {
+test('it explains the space and how renting works', () => {
+  renderWith(anonymous)
+  expect(screen.getByRole('heading', { name: /o espaço/i })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /como funciona/i })).toBeInTheDocument()
+  expect(screen.getByText(/whatsapp/i)).toBeInTheDocument()
+  expect(screen.getByText(/qr/i)).toBeInTheDocument()
+})
+
+test('a visitor still finds the three ways in, pointing at the public login routes', () => {
   renderWith(anonymous)
   expect(screen.getByRole('link', { name: /Área do Cliente/i })).toHaveAttribute('href', '/cliente/login')
   expect(screen.getByRole('link', { name: /Área do Profissional/i })).toHaveAttribute('href', '/profissional/login')
@@ -52,14 +63,8 @@ test('an authenticated GERENTE sends the team access to /recepcao', () => {
 
 test('a failing session check does not remove the Home — it renders as public', () => {
   renderWith({ status: 'error', user: null })
-  expect(screen.getByRole('heading', { name: /Gestão inteligente/i })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /alugar sala/i })).toHaveAttribute('href', '/totem/salas')
   expect(screen.getByRole('link', { name: /Área do Cliente/i })).toHaveAttribute('href', '/cliente/login')
   expect(screen.getByRole('link', { name: /Área do Profissional/i })).toHaveAttribute('href', '/profissional/login')
-  expect(screen.getByRole('link', { name: /Acesso da equipe/i })).toHaveAttribute('href', '/login')
-})
-
-test('while the session is still loading the Home shows the public login targets', () => {
-  renderWith({ status: 'loading', user: null })
-  expect(screen.getByRole('link', { name: /Área do Cliente/i })).toHaveAttribute('href', '/cliente/login')
   expect(screen.getByRole('link', { name: /Acesso da equipe/i })).toHaveAttribute('href', '/login')
 })

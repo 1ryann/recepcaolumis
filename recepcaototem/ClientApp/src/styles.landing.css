@@ -1,0 +1,227 @@
+/* Public landing page at `/`. Kept out of styles.css on purpose: this file owns only the
+   landing, and it reuses the --lumis-* tokens declared there, so light and dark themes
+   follow the rest of the app with no extra rules. */
+
+.landing {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--lumis-text);
+}
+
+.landing-inner {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 32px) 0;
+  flex: 1;
+}
+
+.landing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: clamp(32px, 7vw, 72px);
+}
+
+.landing-logo { height: auto; }
+
+.landing-head-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--lumis-text-secondary);
+  text-decoration: none;
+  padding: 8px 14px;
+  border: 1px solid var(--lumis-border);
+  border-radius: 999px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.landing-head-link:hover { color: var(--lumis-text); border-color: var(--lumis-text-secondary); }
+
+.landing-hero { max-width: 660px; margin-bottom: clamp(44px, 9vw, 96px); }
+
+.landing-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lumis-muted);
+  margin-bottom: 18px;
+}
+
+.landing-hero h1 {
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 0 0 18px;
+  color: var(--lumis-heading);
+}
+
+.landing-hero p {
+  font-size: clamp(1rem, 2.2vw, 1.12rem);
+  line-height: 1.6;
+  color: var(--lumis-text-secondary);
+  margin: 0 0 28px;
+  max-width: 54ch;
+}
+
+.landing-cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+.landing-cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: var(--lumis-text);
+  color: var(--lumis-bg);
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.landing-cta-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.landing-cta-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 14px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--lumis-border);
+  color: var(--lumis-text);
+  text-decoration: none;
+  transition: border-color 120ms ease;
+}
+
+.landing-cta-secondary:hover { border-color: var(--lumis-text-secondary); }
+
+.landing-section { margin-bottom: clamp(40px, 8vw, 88px); }
+
+.landing-section h2 {
+  font-size: clamp(1.25rem, 3vw, 1.6rem);
+  letter-spacing: -0.01em;
+  margin: 0 0 22px;
+  color: var(--lumis-heading);
+}
+
+/* Four highlights: one row on a wide screen, two by two on a tablet, stacked on a phone. */
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: clamp(12px, 2vw, 18px);
+}
+
+.landing-card {
+  background: var(--lumis-surface);
+  border: 1px solid var(--lumis-border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.landing-card strong { display: block; margin: 12px 0 6px; font-size: 1rem; }
+
+.landing-card p { margin: 0; font-size: 0.92rem; line-height: 1.55; color: var(--lumis-text-secondary); }
+
+.landing-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--lumis-surface-3);
+  color: var(--lumis-text);
+}
+
+.landing-steps {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: clamp(12px, 2vw, 18px);
+}
+
+.landing-step { display: flex; gap: 14px; align-items: flex-start; }
+
+.landing-step strong { display: block; margin-bottom: 4px; }
+
+.landing-step p { margin: 0; font-size: 0.92rem; line-height: 1.55; color: var(--lumis-text-secondary); }
+
+.landing-step-number {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--lumis-border);
+  font-size: 0.88rem;
+  color: var(--lumis-text-secondary);
+}
+
+.landing-steps-cta { margin-top: 4px; }
+
+.landing-access {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: clamp(12px, 2vw, 18px);
+  margin-bottom: 18px;
+}
+
+.landing-access-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--lumis-border);
+  background: var(--lumis-surface);
+  color: var(--lumis-text);
+  text-decoration: none;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.landing-access-card:hover { border-color: var(--lumis-text-secondary); transform: translateY(-1px); }
+
+.landing-access-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+
+.landing-access-body small { color: var(--lumis-text-secondary); font-size: 0.85rem; }
+
+.landing-access-arrow { color: var(--lumis-muted); flex: none; }
+
+.landing-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--lumis-text-secondary);
+  text-decoration: none;
+}
+
+.landing-team:hover { color: var(--lumis-text); }
+
+.landing-footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 24px 16px 28px;
+  font-size: 0.82rem;
+  color: var(--lumis-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-cta-primary,
+  .landing-access-card { transition: none; }
+  .landing-cta-primary:hover,
+  .landing-access-card:hover { transform: none; }
+}

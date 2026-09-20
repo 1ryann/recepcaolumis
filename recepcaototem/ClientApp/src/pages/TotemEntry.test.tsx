@@ -54,20 +54,8 @@ test('"Não tenho código" navigates to /totem/profissionais', () => {
   expect(screen.getByText('CARROSSEL')).toBeInTheDocument()
 })
 
-test('"Alugar sala" is a third option centred below the two, one column wide, in the same card style', () => {
+test('the kiosk no longer offers "Alugar sala" — renting moved to the public landing page', () => {
   renderAt()
-  const rent = screen.getByRole('button', { name: /^alugar sala$/i })
-  expect(rent.style.gridColumn).toBe('1 / -1')
-  expect(rent.style.justifySelf).toBe('center')
-  // The one-column width uses nested min()/max(), which jsdom's CSS parser drops; it is checked in a real browser.
-})
-
-test('"Alugar sala" is a third option below the two, in the same card style, navigating to /totem/salas', () => {
-  renderAt()
-  const buttons = screen.getAllByRole('button')
-  const rent = screen.getByRole('button', { name: /^alugar sala$/i })
-  expect(buttons.indexOf(rent)).toBeGreaterThan(buttons.indexOf(screen.getByRole('button', { name: /^não tenho código$/i })))
-  expect(rent).toHaveClass('totem-entry-card')
-  fireEvent.click(rent)
-  expect(screen.getByText('SALAS')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /alugar sala/i })).not.toBeInTheDocument()
+  expect(screen.getAllByRole('button')).toHaveLength(2)
 })
