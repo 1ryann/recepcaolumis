@@ -136,3 +136,14 @@ test('error -> message + Tentar novamente (refetches)', async () => {
   fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
   await screen.findByRole('listbox')
 })
+
+test('the heading is followed by a subtitle that says what the screen is for', async () => {
+  vi.mocked(totemApi.professionals).mockResolvedValue(people)
+  renderAt()
+  expect(await screen.findByRole('heading', { name: 'Escolha o profissional' })).toBeInTheDocument()
+  // The reference screenshot's copy mentions finding an available room, which belongs to
+  // the rental flow, not to this one — this screen books an appointment.
+  const subtitle = screen.getByText(/toque no profissional que você veio encontrar/i)
+  expect(subtitle).toBeInTheDocument()
+  expect(subtitle.textContent).not.toMatch(/sala/i)
+})

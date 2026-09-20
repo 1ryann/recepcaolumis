@@ -1,3 +1,4 @@
+import { ArrowRight, Briefcase } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { TotemProfessionalCardDto } from '../../api/modules'
 import { professionalInitials } from './professionalInitials'
@@ -210,7 +211,7 @@ export function TotemProfessionalCarousel({
               aria-selected={active}
               aria-label={
                 active
-                  ? `${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}, toque para continuar`
+                  ? `${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}, toque para selecionar`
                   : `${professional.name}, ${professional.profession}, ${STATUS_LABEL[professional.status]}`
               }
               data-offset={offset}
@@ -230,13 +231,22 @@ export function TotemProfessionalCarousel({
             >
               <Photo url={professional.photoUrl} name={professional.name} />
               <strong className="totem-carousel-name">{professional.name}</strong>
-              <span className="totem-carousel-profession">{professional.profession}</span>
               <span className={`totem-carousel-status ${STATUS_CLASS[professional.status]}`}>
                 <i className="totem-carousel-status-dot" aria-hidden="true" />
                 {STATUS_LABEL[professional.status]}
               </span>
+              <span className="totem-carousel-profession">
+                <Briefcase className="totem-carousel-profession-icon" size={16} aria-hidden="true" />
+                {professional.profession}
+              </span>
               {active && onContinue && (
-                <span className="totem-carousel-hint" aria-hidden="true">Toque para continuar</span>
+                // A <span>, not a <button>: the card itself is already the button, and a
+                // nested one would be invalid HTML and would swallow the card's own click.
+                // The card's aria-label carries the same affordance for screen readers.
+                <span className="totem-carousel-select" aria-hidden="true">
+                  Selecionar
+                  <ArrowRight size={18} aria-hidden="true" />
+                </span>
               )}
               <BorderBeam active={active} />
             </button>

@@ -165,3 +165,45 @@ test('side click centres and active click continues', () => {
   fireEvent.click(screen.getAllByRole('option')[1])
   expect(next).toHaveBeenCalledTimes(1)
 })
+
+test('the centred card offers an explicit Selecionar affordance and the side cards do not', () => {
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} onContinue={vi.fn()} />)
+  const options = screen.getAllByRole('option')
+  expect(within(options[0]).getByText('Selecionar')).toBeInTheDocument()
+  expect(within(options[1]).queryByText('Selecionar')).toBeNull()
+  expect(within(options[2]).queryByText('Selecionar')).toBeNull()
+})
+
+test('the Selecionar affordance is decoration, never a button nested inside the card button', () => {
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} onContinue={vi.fn()} />)
+  const active = screen.getAllByRole('option')[0]
+  // The card itself is the <button>; a nested <button> would be invalid HTML and would
+  // swallow the card's own click. The affordance only looks like one.
+  expect(active.querySelector('button')).toBeNull()
+  expect(active.querySelector('.totem-carousel-select')).not.toBeNull()
+})
+
+test('a card with no onContinue shows no Selecionar affordance', () => {
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} />)
+  expect(screen.queryByText('Selecionar')).toBeNull()
+})
+
+test('the status pill keeps its word on the redesigned card, not colour alone', () => {
+  render(<TotemProfessionalCarousel professionals={people} onActiveChange={vi.fn()} onContinue={vi.fn()} />)
+  const active = screen.getAllByRole('option')[0]
+  const pill = active.querySelector('.totem-carousel-status')
+  expect(pill).not.toBeNull()
+  expect(pill!.textContent).toContain('Disponível')
+})
+
+test('the redesigned sizes live in the page stylesheet so styles.css stays untouched', () => {
+  const sheet = readFileSync(resolve(process.cwd(), 'src/styles.totem-professionals.css'), 'utf8')
+  // The card is deliberately bigger than the clamp(280px, 28vw, 320px) of styles.css.
+  const width = sheet.match(/--totem-card-width:\s*clamp\((\d+)px, [\d.]+vw, (\d+)px\)/)
+  expect(width).not.toBeNull()
+  expect(Number(width![1])).toBeGreaterThan(280)
+  expect(Number(width![2])).toBeGreaterThan(320)
+  expect(sheet).toMatch(/@media \(max-width: 900px\)/)
+  expect(sheet).toMatch(/@media \(max-width: 560px\)/)
+  expect(sheet).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
+})

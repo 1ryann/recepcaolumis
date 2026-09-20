@@ -1,0 +1,216 @@
+/* Professional selection on the Totem. Refines the `.totem-carousel-*` defaults in
+   styles.css (which loads first — see the note at the top of main.tsx) to the proportions
+   of the reference screenshot: a taller, wider centred card with a large round avatar, the
+   status as a pill under the name, the profession on an icon line, and an explicit
+   "Selecionar" affordance at the foot of the centred card.
+
+   Everything here is presentation only. The carousel's behaviour — scroll-snap layout,
+   `data-offset` coverflow tiers, arrows, dots, keyboard navigation — is untouched, so the
+   card can grow without any of the positioning maths in TotemProfessionalCarousel.tsx
+   having to know about it. */
+
+.totem-carousel {
+  --totem-card-width: clamp(290px, 20vw, 360px);
+  --totem-stage-height: clamp(500px, 58vh, 600px);
+  /* A gutter on each side for the arrows to live in. Absolutely positioned children are
+     placed against the padding box, so the arrows land in this gutter instead of on top
+     of the outer cards, and the stage narrows to roughly the three cards of the
+     reference. The viewport's own centring padding is a percentage of its width, so it
+     follows the narrower stage and the centred card stays centred. */
+  padding-inline: clamp(56px, 6vw, 104px);
+}
+
+/* Soft edges instead of a guillotine. The scroller used to clip the outer cards on a hard
+   vertical line; `ProgressiveBlur` was meant to hide that but paints nothing any more (its
+   fill was removed because a coloured overlay showed as a rectangle over the animated
+   background rays). Masking the scroller solves the same problem the other way round: it
+   fades the card's own pixels to transparent, so there is no overlay to show a seam, and
+   the background stays untouched. */
+.totem-carousel-viewport {
+  --totem-edge-fade: clamp(28px, 4%, 72px);
+  -webkit-mask-image: linear-gradient(to right, transparent 0,
+    #000 var(--totem-edge-fade), #000 calc(100% - var(--totem-edge-fade)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0,
+    #000 var(--totem-edge-fade), #000 calc(100% - var(--totem-edge-fade)), transparent 100%);
+}
+
+.totem-carousel-card {
+  gap: clamp(9px, 1.1vh, 14px);
+  min-height: clamp(350px, 40vh, 410px);
+  border-radius: 24px;
+  padding: clamp(20px, 2vw, 28px);
+}
+
+.totem-carousel-card.is-active {
+  min-height: clamp(400px, 50vh, 470px);
+  border-radius: 28px;
+}
+
+/* One avatar size for every card: the side cards already read smaller through the
+   coverflow `scale()`, so a second size would double the difference. */
+.totem-carousel-photo {
+  width: clamp(92px, 7vw, 124px);
+  height: clamp(92px, 7vw, 124px);
+}
+
+/* In a centred column flex, a text child is sized to its longest line and simply overflows
+   the card — "Profissional Tester Ryan" lost its last letters off the right edge. Capping
+   the width lets the name wrap instead. */
+.totem-carousel-name,
+.totem-carousel-profession,
+.totem-carousel-status {
+  max-width: 100%;
+}
+
+.totem-carousel-name {
+  font-size: clamp(17px, 2vw, 22px);
+  text-wrap: balance;
+}
+
+.totem-carousel-card.is-active .totem-carousel-name {
+  font-size: clamp(20px, 2.4vw, 28px);
+}
+
+/* The status becomes the pill under the name. It keeps its own colour and its word — the
+   pill is a surface behind them, never a replacement for either. */
+.totem-carousel-status {
+  gap: 8px;
+  margin-top: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.totem-carousel-profession {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: clamp(13px, 1.5vw, 16px);
+}
+
+.totem-carousel-profession-icon {
+  flex: none;
+  opacity: .75;
+}
+
+/* Looks like a button, is a <span>: the card itself is the button (see the note beside
+   this element in TotemProfessionalCarousel.tsx). */
+.totem-carousel-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: auto;
+  width: 100%;
+  padding: clamp(12px, 1.4vh, 16px) 20px;
+  border: 1px solid var(--lumis-border-strong);
+  border-radius: 16px;
+  color: var(--lumis-text-dim);
+  font-size: clamp(14px, 1.5vw, 17px);
+  font-weight: 650;
+  letter-spacing: .01em;
+  transition: background-color .22s ease, border-color .22s ease;
+}
+
+.totem-carousel-card.is-active:hover .totem-carousel-select {
+  background: rgba(var(--lumis-ink-rgb), .1);
+  border-color: var(--lumis-kiosk-accent);
+}
+
+/* `margin-top: auto` above pushes the affordance to the foot of the card, which only
+   works while the card stacks from the top rather than centring its whole column. */
+.totem-carousel-card.is-active {
+  justify-content: flex-start;
+  padding-top: clamp(28px, 3vw, 40px);
+}
+
+/* Tablet and small laptop: the stage keeps three cards but stops eating the screen. */
+@media (max-width: 900px) {
+  .totem-carousel {
+    --totem-card-width: clamp(260px, 42vw, 320px);
+    --totem-stage-height: clamp(440px, 56vh, 540px);
+  }
+  /* Below this width only the outer sliver of a neighbour fits, and its avatar and name
+     sit outside the stage — it read as an empty bordered box. A deeper fade turns that
+     sliver into a hint of depth instead. */
+  .totem-carousel-viewport { --totem-edge-fade: 15%; }
+  .totem-carousel-card { min-height: clamp(330px, 40vh, 390px); }
+  .totem-carousel-card.is-active { min-height: clamp(380px, 46vh, 440px); }
+  .totem-carousel-photo {
+    width: clamp(96px, 16vw, 124px);
+    height: clamp(96px, 16vw, 124px);
+  }
+}
+
+/* Phone: one card at a time. The width and the viewport's edge padding share the same
+   variable, so the single card still settles dead-centre. */
+@media (max-width: 560px) {
+  .totem-carousel {
+    --totem-card-width: min(74vw, 300px);
+    --totem-stage-height: calc(var(--totem-card-width) * 1.6);
+    /* No room for an arrow gutter here: keeping it pushed the card wider than the stage,
+       which broke the centring and let the arrows sit over the name. The arrows go back
+       to the stage edges, clear of a card this narrow. */
+    padding-inline: 0;
+  }
+  /* One card fills the stage, so the edge fade only has to hide the snap boundary — at
+     the 15% of the tablet rule it would eat into the card itself. */
+  .totem-carousel-viewport { --totem-edge-fade: 16px; }
+  .totem-carousel-card {
+    min-height: calc(var(--totem-card-width) * 1.15);
+    padding: 22px;
+  }
+  .totem-carousel-card.is-active {
+    min-height: calc(var(--totem-card-width) * 1.35);
+    padding-top: 26px;
+  }
+  .totem-carousel-photo {
+    width: clamp(88px, 26vw, 120px);
+    height: clamp(88px, 26vw, 120px);
+  }
+  .totem-carousel-card.is-active .totem-carousel-name { font-size: 21px; }
+  .totem-carousel-select { padding: 13px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .totem-carousel-select { transition: none; }
+}
+
+/* Heading block: the short rule above the title and the line of copy below it, both from
+   the reference screenshot. The rule is decoration and is hidden from assistive tech in
+   the markup. */
+.totem-professionals-header-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 1.4vh, 16px);
+  text-align: center;
+}
+
+.totem-professionals-rule {
+  width: 44px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--lumis-border-strong);
+}
+
+.totem-professionals-subtitle {
+  margin: 0;
+  max-width: 36ch;
+  color: var(--lumis-muted);
+  font-size: clamp(14px, 1.6vw, 18px);
+  line-height: 1.45;
+}
+
+/* The shell caps this page at 980px, which squeezed the stage until the arrows sat on top
+   of the outer cards. The reference gives the carousel roughly two thirds of the screen,
+   so the page widens for this screen only — the heading block keeps its own measure. */
+.totem-professionals-inner {
+  max-width: min(1440px, 94vw);
+}
+
+.totem-professionals-header-row {
+  max-width: 820px;
+  margin-inline: auto;
+}

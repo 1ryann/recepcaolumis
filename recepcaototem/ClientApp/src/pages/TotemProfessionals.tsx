@@ -6,6 +6,7 @@ import { KioskClock } from '../features/totem/KioskClock'
 import { TotemProfessionalCarousel } from '../features/totem/TotemProfessionalCarousel'
 import { BlurFade } from '../features/totem/magic/BlurFade'
 import { LumisLogo } from '../theme/LumisLogo'
+import '../styles.totem-professionals.css'
 
 // The `/totem/profissionais` screen. A visitor without a check-in code lands here from
 // `/totem`, picks one professional in the coverflow carousel, and a second tap on the
@@ -108,7 +109,11 @@ export function TotemProfessionals() {
       <BlurFade>
         <div className="totem-professionals-inner">
           <div className="totem-professionals-header-row">
+            <span className="totem-professionals-rule" aria-hidden="true" />
             <h1 className="totem-professionals-title">Escolha o profissional</h1>
+            <p className="totem-professionals-subtitle">
+              Toque no profissional que você veio encontrar.
+            </p>
           </div>
 
           {phase === 'loading' && (
