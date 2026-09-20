@@ -1,0 +1,34 @@
+/* Room detail on the Totem. Overrides the defaults in styles.css (loaded first) for the two
+   things that were shrinking the photo: the page was capped at 1100px on a kiosk screen that
+   is far wider, and the frame forced a 6:5 crop on photos that are shot in landscape. Rooms
+   are now stored at up to 1600px on their own aspect ratio (RoomImageNormalizer), so there
+   are pixels to fill this. */
+
+.totem-room-detail-inner {
+  max-width: min(1560px, 94vw);
+}
+
+.totem-room-detail-content {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+}
+
+/* 3:2 is what a phone camera produces, so the frame crops almost nothing. */
+.totem-room-detail-photo,
+.totem-room-detail-fallback {
+  aspect-ratio: 3 / 2;
+  min-height: clamp(360px, 56vh, 820px);
+}
+
+/* The strip below the photo grows with it, so the thumbnails stay legible on a big screen,
+   and shares the 3:2 shape instead of squaring the picture down to a 64px box. */
+.totem-room-detail-thumb {
+  width: clamp(84px, 8vw, 150px);
+  height: auto;
+  aspect-ratio: 3 / 2;
+}
+
+@media (max-width: 900px) {
+  .totem-room-detail-content { grid-template-columns: minmax(0, 1fr); }
+  .totem-room-detail-photo,
+  .totem-room-detail-fallback { min-height: clamp(240px, 38vh, 420px); }
+}

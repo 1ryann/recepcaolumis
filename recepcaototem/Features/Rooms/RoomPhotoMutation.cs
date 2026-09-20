@@ -22,7 +22,7 @@ public static class RoomPhotoMutation
 
     public static async Task<IResult> UploadAsync(Guid roomId, HttpRequest request, HttpContext context,
         ApplicationDbContext db, IPrivateFileStorage storage, IProfessionalPhotoValidator validator,
-        IImageNormalizer imageNormalizer, ILeaseResourceLock resourceLock,
+        IRoomImageNormalizer imageNormalizer, ILeaseResourceLock resourceLock,
         IOptions<PrivateFileStorageOptions> storageOptions, TimeProvider timeProvider,
         ILoggerFactory loggerFactory, CancellationToken cancellationToken)
     {

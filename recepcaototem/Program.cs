@@ -86,6 +86,7 @@ builder.Services.AddSingleton<RescheduleTokenRateLimiter>();
 builder.Services.AddScoped<AuthAuditService>();
 builder.Services.AddPrivateFileStorage(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<IImageNormalizer, ImageSharpImageNormalizer>();
+builder.Services.AddSingleton<IRoomImageNormalizer, RoomImageNormalizer>();
 builder.Services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
 builder.Services.AddSingleton<IValidateOptions<WhatsappOptions>>(
     new WhatsappOptionsValidator(builder.Environment.EnvironmentName));

@@ -326,8 +326,10 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             Assert.Equal("image/webp", (await Image.DetectFormatAsync(stream)).DefaultMimeType);
             stream.Position = 0;
             using var image = await Image.LoadAsync(stream);
-            Assert.Equal(512, image.Width);
-            Assert.Equal(512, image.Height);
+            // A room photo keeps its shape and its pixels: the 800x600 source is stored as-is
+            // (no square crop, no upscale), only re-encoded to WebP.
+            Assert.Equal(800, image.Width);
+            Assert.Equal(600, image.Height);
             Assert.DoesNotContain(file.StorageKey, System.Text.Json.JsonSerializer.Serialize(first));
             Assert.DoesNotContain(file.StorageKey, System.Text.Json.JsonSerializer.Serialize(await db.AuditEntries.ToListAsync()));
         }
@@ -549,21 +551,13 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
     }
 
     [Fact]
-    public async Task Normalized_webp_exceeding_valid_limit_returns_invalid_photo_without_artifacts()
+    public async Task Normalized_output_exceeding_valid_limit_returns_invalid_photo_without_artifacts()
     {
         await PrepareAsync();
-        const long maximumBytes = 100;
-        var bytes = TestImageData.WebP();
-        Assert.InRange(bytes.Length, 1, maximumBytes);
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var normalizer = scope.ServiceProvider.GetRequiredService<IImageNormalizer>();
-            await using var source = new MemoryStream(bytes);
-            var normalized = await normalizer.NormalizeAsync(source, default);
-            await using (normalized.Content) Assert.True(normalized.Length > maximumBytes);
-        }
-
-        AssertError(await UploadAsync(variant: "webp", maximumBytes: maximumBytes), 400, "INVALID_ROOM_PHOTO");
+        // The source fits the limit; only the normalized output goes over it, which is the
+        // path under test. A stub produces that output, so the assertion does not depend on
+        // how well WebP happens to compress a synthetic picture.
+        AssertError(await UploadAsync(failure: "normalize-big", maximumBytes: 64 * 1024), 400, "INVALID_ROOM_PHOTO");
         await AssertEmptyAsync();
     }
 
@@ -642,7 +636,12 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
         });
         return await RoomPhotoMutation.UploadAsync(roomId ?? _roomId, context.Request, context, db, storage,
             services.GetRequiredService<IProfessionalPhotoValidator>(),
-            failure == "normalize-cancel" ? new CancelNormalizer() : services.GetRequiredService<IImageNormalizer>(),
+            failure switch
+            {
+                "normalize-cancel" => new CancelNormalizer(),
+                "normalize-big" => new BigNormalizer(maximumBytes ?? options.Value.RoomPhotoMaxBytes),
+                _ => services.GetRequiredService<IRoomImageNormalizer>(),
+            },
             resourceLock, options,
             services.GetRequiredService<TimeProvider>(), services.GetRequiredService<ILoggerFactory>(), default);
     }
@@ -738,7 +737,15 @@ public sealed class RoomPhotoTests(ModulesApiFactory factory)
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
-    private sealed class CancelNormalizer : IImageNormalizer
+    private sealed class BigNormalizer(long limit) : IRoomImageNormalizer
+    {
+        public Task<NormalizedImage> NormalizeAsync(Stream source, CancellationToken cancellationToken)
+        {
+            var content = new MemoryStream(new byte[limit + 1]);
+            return Task.FromResult(new NormalizedImage(content, content.Length));
+        }
+    }
+    private sealed class CancelNormalizer : IRoomImageNormalizer
     {
         public Task<NormalizedImage> NormalizeAsync(Stream source, CancellationToken cancellationToken) => throw new OperationCanceledException();
     }

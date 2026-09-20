@@ -7,6 +7,7 @@ import { RoomPhotoGallery } from '../components/RoomPhotoGallery'
 import { LumisBackground } from '../features/lumis/LumisBackground'
 import { KioskClock } from '../features/totem/KioskClock'
 import { LumisLogo } from '../theme/LumisLogo'
+import '../styles.totem-room.css'
 
 // `/totem/salas/:id` — reached from a card on `/totem/salas` (Task 9). Shows the room's
 // full photo gallery, description (no price/tariff, ever — the backend DTO never carries
