@@ -1,0 +1,40 @@
+name: Deploy — Lumis
+
+# Dispara a cada push na branch em produção. O comando enviado por SSH é ignorado:
+# a chave da VPS é restrita (authorized_keys "command=") e SEMPRE executa deploy/lumis.sh
+# (git pull --ff-only + docker compose build + up -d --force-recreate).
+# Quando a produção passar a ser a main, trocar a branch aqui e no script da VPS.
+on:
+  push:
+    branches: [codex/reception-backend]
+
+concurrency:
+  group: deploy-lumis
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_rsa
+          printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_rsa -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" "echo trigger"
