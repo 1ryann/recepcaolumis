@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, ImagePlus, Star } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { type RoomDto, type RoomPhotoDto, roomPhotosApi } from '../../api/modules'
 import { EmptyState } from '../../components/PageElements'
+import { shrinkPhotoForUpload } from '../../utils/shrinkPhoto'
 
 const accepted = 'image/jpeg,image/png,image/webp'
 const maxPhotos = 8
@@ -55,7 +56,7 @@ export function RoomPhotoManager({ room, onClose: _onClose }: { room: RoomDto; o
 
   const upload = (file: File | undefined, input: HTMLInputElement) => {
     if (!file) return
-    void runMutation(() => roomPhotosApi.upload(room.id, file), 'Não foi possível enviar a foto.')
+    void runMutation(async () => roomPhotosApi.upload(room.id, await shrinkPhotoForUpload(file)), 'Não foi possível enviar a foto.')
       .finally(() => { input.value = '' })
   }
   const remove = (photoId: string) => {

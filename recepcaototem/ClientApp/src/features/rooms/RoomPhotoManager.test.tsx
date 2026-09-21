@@ -3,10 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { RoomPhotoManager } from './RoomPhotoManager'
 import { roomPhotosApi, type RoomDto } from '../../api/modules'
+import { shrinkPhotoForUpload } from '../../utils/shrinkPhoto'
 
 vi.mock('../../api/modules', () => ({
   roomPhotosApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn(), reorder: vi.fn(), setCover: vi.fn() },
 }))
+vi.mock('../../utils/shrinkPhoto', () => ({ shrinkPhotoForUpload: vi.fn(async (file: File) => file) }))
 
 const room: RoomDto = {
   id: 'room-1', name: 'Sala 101', description: null, hourlyRate: 100, dailyRate: 800,
@@ -18,6 +20,7 @@ const photo = (id: string, sortOrder: number, isCover = false) =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(shrinkPhotoForUpload).mockImplementation(async file => file)
 })
 
 test('shows a loading state, then an error with retry when the initial load fails', async () => {
@@ -168,4 +171,27 @@ test('never displays the storage key or file id, only the photo url and metadata
   await screen.findAllByRole('img')
   expect(screen.queryByText(/storage/i)).not.toBeInTheDocument()
   expect(screen.queryByText('photo-1')).not.toBeInTheDocument()
+})
+
+test('uploads the shrunk version of the selected photo, not the original', async () => {
+  vi.mocked(roomPhotosApi.list).mockResolvedValue([])
+  vi.mocked(roomPhotosApi.upload).mockResolvedValue(photo('photo-1', 0))
+  const original = new File(['x'], 'IMG_2031.png', { type: 'image/png' })
+  const shrunk = new File(['y'], 'IMG_2031.jpg', { type: 'image/jpeg' })
+  vi.mocked(shrinkPhotoForUpload).mockResolvedValue(shrunk)
+  render(<RoomPhotoManager room={room} onClose={vi.fn()} />)
+  await screen.findByText(/nenhuma foto/i)
+  fireEvent.change(screen.getByLabelText(/adicionar foto/i), { target: { files: [original] } })
+  await waitFor(() => expect(roomPhotosApi.upload).toHaveBeenCalledWith('room-1', shrunk))
+  expect(shrinkPhotoForUpload).toHaveBeenCalledWith(original)
+})
+
+test('shows why a photo could not be prepared and does not upload it', async () => {
+  vi.mocked(roomPhotosApi.list).mockResolvedValue([])
+  vi.mocked(shrinkPhotoForUpload).mockRejectedValue(new Error('A foto é grande demais. Envie uma imagem de até 5 MB.'))
+  render(<RoomPhotoManager room={room} onClose={vi.fn()} />)
+  await screen.findByText(/nenhuma foto/i)
+  fireEvent.change(screen.getByLabelText(/adicionar foto/i), { target: { files: [new File(['x'], 'enorme.jpg', { type: 'image/jpeg' })] } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('A foto é grande demais. Envie uma imagem de até 5 MB.')
+  expect(roomPhotosApi.upload).not.toHaveBeenCalled()
 })
