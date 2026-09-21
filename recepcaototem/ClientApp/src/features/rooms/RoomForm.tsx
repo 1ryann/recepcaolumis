@@ -143,7 +143,7 @@ export function RoomForm({ room, pending, onCancel, onSubmit }: {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a sala.') }
   }
 
-  return <form className="form-grid simple-form" onSubmit={submit}>
+  return <form className="form-grid simple-form room-form" onSubmit={submit}>
     <div className="fields-area full-fields">
       <label className="field-label span-2">Nome da sala
         <input className="field-input" required maxLength={100} value={values.name} onChange={event => set('name', event.target.value)} placeholder="Ex.: Sala 101" />

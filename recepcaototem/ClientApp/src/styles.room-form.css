@@ -3,6 +3,34 @@
    checklist. Both live here rather than in styles.css, which loads first (see the note at
    the top of main.tsx). */
 
+/* `.form-grid` is two columns — a 165px photo rail and the fields — and this form has no
+   photo rail, so without an override its eleven fields are crushed into 165px while the
+   rest of a 760px modal sits empty. The form claims the whole width itself rather than
+   relying on a `.form-grid.simple-form` rule, because that rule is not in the repository:
+   it exists only in an uncommitted edit to styles.css, so the form rendered correctly on
+   this machine and squeezed on the deployed build. A layout this form depends on belongs
+   in the stylesheet this form ships with. */
+.room-form {
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Same reason: the field pairs and the full-width rows are this form’s own layout.
+   `.fields-area` already sets them in styles.css, but stating them here keeps the form
+   whole if that file moves underneath it. */
+.room-form .fields-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.room-form .span-2 { grid-column: span 2; }
+.room-form .span-all { grid-column: 1 / -1; }
+
+@media (max-width: 640px) {
+  .room-form .fields-area { grid-template-columns: 1fr; }
+  .room-form .span-2 { grid-column: span 1; }
+}
+
 .field-section {
   display: flex;
   align-items: baseline;

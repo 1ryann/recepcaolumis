@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { RoomForm } from './RoomForm'
@@ -76,4 +78,21 @@ test('a maximum capacity without a minimum is refused before reaching the server
 
   expect(screen.getByRole('alert')).toHaveTextContent(/capacidade mínima antes da máxima/i)
   expect(onSubmit).not.toHaveBeenCalled()
+})
+
+// This form shipped broken to the deployed build and rendered fine locally. `.form-grid`
+// is a 165px photo rail plus a fields column; the rule that collapses it for a form with
+// no photo lived only in an uncommitted edit to styles.css, so eleven fields were crushed
+// into 165px on staging. A form's own layout has to travel in the stylesheet the form
+// ships with, and this pins that.
+test('the form declares its own full-width layout rather than inheriting one', () => {
+  const sheet = readFileSync(resolve(process.cwd(), 'src/styles.room-form.css'), 'utf8')
+  expect(sheet).toMatch(/\.room-form\s*\{[^}]*grid-template-columns:\s*1fr/)
+  expect(sheet).toMatch(/\.room-form \.fields-area\s*\{[^}]*grid-template-columns:\s*1fr 1fr/)
+  expect(sheet).toMatch(/\.room-form \.span-2\s*\{[^}]*grid-column:\s*span 2/)
+})
+
+test('the form element carries the class that layout hangs on', () => {
+  const { container } = render(<RoomForm room={null} pending={false} onCancel={noop} onSubmit={async () => {}} />)
+  expect(container.querySelector('form')).toHaveClass('room-form')
 })
