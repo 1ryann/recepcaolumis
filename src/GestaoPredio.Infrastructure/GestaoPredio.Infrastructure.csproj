@@ -9,10 +9,6 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11"><PrivateAssets>all</PrivateAssets></PackageReference>
 </ItemGroup>
 <ItemGroup>
-<Compile Remove="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
-<None Include="Persistence/Migrations/SqlServerLegacy/**/*.cs" />
-</ItemGroup>
-<ItemGroup>
 <InternalsVisibleTo Include="recepcaototem" />
 <InternalsVisibleTo Include="GestaoPredio.UnitTests" />
 </ItemGroup>
