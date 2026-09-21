@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
+import { ApiError } from '../../api/client'
 import { customerApi, whatsAppOptInApi, type CustomerProfessionalDto } from '../../api/modules'
 import { CustomerBooking } from './CustomerBooking'
 
@@ -74,4 +75,19 @@ test('does not ask again when the customer already opted in', async () => {
   await screen.findByLabelText(/profissional/i)
   await vi.waitFor(() => expect(whatsAppOptInApi.customer).toHaveBeenCalled())
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+})
+
+// A slot that starts while the page sits open is refused as SLOT_IN_THE_PAST. It is a 409 like a slot someone else
+// just took, but "acabou de ser ocupado" would be false: nobody took it, it went by. The server's own message says so.
+test('a slot that has already started is explained as such, not as taken by someone else', async () => {
+  vi.mocked(customerApi.availability).mockResolvedValue([{ startAt: '2026-09-21T14:00:00Z', endAt: '2026-09-21T15:00:00Z' } as never])
+  vi.mocked(customerApi.createReservation).mockRejectedValue(
+    new ApiError(409, 'SLOT_IN_THE_PAST', 'Esse horário já passou. Escolha um horário a partir de agora.'))
+  renderAt('/cliente/agendar')
+
+  fireEvent.click(await screen.findByRole('button', { name: /até/ }))
+  fireEvent.click(screen.getByRole('button', { name: /confirmar agendamento/i }))
+
+  expect(await screen.findByText('Esse horário já passou. Escolha um horário a partir de agora.')).toBeInTheDocument()
+  expect(screen.queryByText(/acabou de ser ocupado/i)).not.toBeInTheDocument()
 })

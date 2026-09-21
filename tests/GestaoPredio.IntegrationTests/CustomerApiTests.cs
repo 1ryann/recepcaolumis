@@ -229,6 +229,69 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
         Assert.NotNull(token.RevokedAt);
     }
 
+    // 14:00 in America/Porto_Velho on the default test day. A 10:00 slot the same day has already started, and the
+    // default operating hours (the whole day) still cover it, so nothing but the clock can turn it away. Found on
+    // staging: at 14:29 the portal listed 09:00 onwards and booked 10:00, a slot four hours gone.
+    private static readonly DateTimeOffset Afternoon = new(2026, 1, 15, 18, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset MorningSameDay = new(2026, 1, 15, 14, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly TestDay = new(2026, 1, 15);
+
+    [Fact]
+    public async Task Customer_availability_never_offers_a_slot_that_has_already_started()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(Afternoon);
+        var seed = await SeedCustomerReservationAsync(Afternoon.AddDays(1));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
+
+        var slots = await factory.Client.GetFromJsonAsync<SlotPayload[]>(
+            $"/api/customer/availability?professionalId={seed.ProfessionalId}&date={TestDay:yyyy-MM-dd}&durationMinutes=60");
+
+        Assert.NotEmpty(slots!); // the rest of the afternoon is still open
+        Assert.All(slots!, slot => Assert.True(slot.StartAt > Afternoon, $"{slot.StartAt:O} has already started"));
+    }
+
+    [Fact]
+    public async Task Customer_cannot_book_a_slot_that_has_already_started()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(Afternoon);
+        var seed = await SeedCustomerReservationAsync(Afternoon.AddDays(1));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
+
+        var response = await factory.PostWithCsrfAsync("/api/customer/reservations",
+            new { professionalId = seed.ProfessionalId, startAt = MorningSameDay, endAt = MorningSameDay.AddHours(1) });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("SLOT_IN_THE_PAST", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await db.Reservations.AnyAsync(x => x.StartAt == MorningSameDay));
+        // No booking, so no APPOINTMENT_CONFIRMED either: on staging this produced a notice the worker then had to
+        // discard as obsolete.
+        Assert.Empty(await db.WhatsAppNotifications.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Customer_cannot_reschedule_into_a_slot_that_has_already_started()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(Afternoon);
+        var seed = await SeedCustomerReservationAsync(Afternoon.AddDays(1));
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(seed.Email, seed.Password)).StatusCode);
+
+        var response = await factory.PostWithCsrfAsync($"/api/customer/reservations/{seed.ReservationId}/reschedule",
+            new { professionalId = seed.ProfessionalId, startAt = MorningSameDay, endAt = MorningSameDay.AddHours(1),
+                concurrencyToken = seed.ConcurrencyToken });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("SLOT_IN_THE_PAST", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(ReservationStatus.Approved,
+            (await db.Reservations.AsNoTracking().SingleAsync(x => x.Id == seed.ReservationId)).Status);
+    }
+
     private async Task<CustomerSeed> SeedCustomerReservationAsync(DateTimeOffset startAt)
     {
         await factory.SeedDefaultOperatingHoursAsync();
@@ -257,4 +320,5 @@ public sealed class CustomerApiTests(ModulesApiFactory factory)
     private sealed record TokenPayload(string Token);
     private sealed record VisitPayload(Guid VisitId, string Status);
     private sealed record ErrorPayload(string Code, string Message);
+    private sealed record SlotPayload(DateTimeOffset StartAt, DateTimeOffset EndAt);
 }

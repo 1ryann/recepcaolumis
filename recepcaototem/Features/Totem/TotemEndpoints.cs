@@ -208,11 +208,13 @@ public static class TotemEndpoints
             notFoundWhenMetadataUnusable: true, ct);
     }
 
+    // Same list as the customer portal, so it drops the slots that have already started. Walk-ins that start now go
+    // through /api/totem/immediate, which is unaffected.
     private static async Task<IResult> Availability(Guid professionalId, DateOnly date, int durationMinutes,
-        ApplicationDbContext db, IAppointmentAvailabilityService availability, CancellationToken ct)
+        ApplicationDbContext db, IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct)
     {
         var request = new CustomerAvailabilityRequest(professionalId, date, durationMinutes);
-        return await CustomerSchedulingEndpoints.Availability(request, db, availability, ct);
+        return await CustomerSchedulingEndpoints.Availability(request, db, availability, time, ct);
     }
 
     private static async Task<IResult> ResolveCustomer(TotemCustomerResolveRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, CancellationToken ct)

@@ -55,11 +55,13 @@ public static class ReschedulingEndpoints
         if (!lease.IsAcquired) return TooMany();
         if (date is null) return Invalid();
 
-        var resolved = await LoadAsync(raw, db, time.GetUtcNow(), ct);
+        var now = time.GetUtcNow();
+        var resolved = await LoadAsync(raw, db, now, ct);
         if (resolved is null) return Invalid();
         var slots = await availability.FindSlotsAsync(
             resolved.Value.Original.ProfessionalId, date.Value, DurationMinutes(resolved.Value.Original), ct);
-        return Results.Ok(slots.Select(slot => new AvailabilitySlotResponse(slot.StartAt, slot.EndAt)).ToArray());
+        // The link arrives by WhatsApp and is often opened hours later, when the morning's slots are long gone.
+        return Results.Ok(AppointmentAvailabilityResults.Upcoming(slots, now));
     }
 
     private static async Task<IResult> Confirm(RescheduleConfirmRequest request, HttpContext context,
@@ -79,6 +81,9 @@ public static class ReschedulingEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var resolved = await LoadAsync(raw, db, now, ct);
         if (resolved is null) return Invalid();
+        // After the token is proven valid (an invalid link still reads as invalid) and long before it is consumed, so
+        // a refused slot leaves the single-use link working for another choice.
+        if (AppointmentAvailabilityResults.HasStarted(request.StartAt, now)) return AppointmentAvailabilityResults.SlotInThePast();
         var (token, original, professionalName) = resolved.Value;
 
         var originalDuration = original.EndAt - original.StartAt;

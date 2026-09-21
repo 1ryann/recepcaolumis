@@ -69,15 +69,15 @@ public static class CustomerSchedulingEndpoints
             .Select(x => new CustomerProfessionalResponse(x.Id, x.Name, x.Profession, x.Description)).ToArrayAsync(ct));
 
     internal static async Task<IResult> Availability([AsParameters] CustomerAvailabilityRequest request,
-        ApplicationDbContext db, IAppointmentAvailabilityService availability, CancellationToken ct)
+        ApplicationDbContext db, IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct)
     {
         if (request.ProfessionalId == Guid.Empty || request.DurationMinutes is < 15 or > 480 || request.DurationMinutes % 15 != 0)
             return Results.BadRequest(new ApiError("INVALID_AVAILABILITY", "Os dados de disponibilidade são inválidos."));
         if (!await db.Professionals.AnyAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct)) return Results.NotFound();
         var slots = await availability.FindSlotsAsync(
             request.ProfessionalId, request.Date, request.DurationMinutes, ct);
-        return Results.Ok(slots.Select(slot =>
-            new AvailabilitySlotResponse(slot.StartAt, slot.EndAt)).ToArray());
+        // Today's list used to start at opening time whatever the hour, so a customer at 14:29 was offered 09:00.
+        return Results.Ok(AppointmentAvailabilityResults.Upcoming(slots, time.GetUtcNow()));
     }
 
     private static async Task<Customer?> GetCustomer(ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken ct)
@@ -117,6 +117,8 @@ public static class CustomerSchedulingEndpoints
     {
         var customer = await GetCustomer(principal, db, ct); if (customer is null) return Results.NotFound();
         if (request.ProfessionalId == Guid.Empty || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
+        // Before the handoff is looked at, so a refused slot leaves a kiosk invite untouched and usable.
+        if (AppointmentAvailabilityResults.HasStarted(request.StartAt, time.GetUtcNow())) return AppointmentAvailabilityResults.SlotInThePast();
         var professional = await db.Professionals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.ProfessionalId && x.IsActive, ct);
         if (professional is null) return Results.NotFound();
 
@@ -342,6 +344,7 @@ public static class CustomerSchedulingEndpoints
         if (original.Version != version) return Modified();
         if (request.ProfessionalId != original.ProfessionalId || request.EndAt <= request.StartAt) return Results.BadRequest(new ApiError("INVALID_RESERVATION", "Os dados da reserva são inválidos."));
         var now = time.GetUtcNow();
+        if (AppointmentAvailabilityResults.HasStarted(request.StartAt, now)) return AppointmentAvailabilityResults.SlotInThePast();
         var roomIds = await db.Rooms.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, [original.ProfessionalId]), ct);

@@ -112,6 +112,9 @@ export function CustomerBooking() {
       if (handoffToken && caught instanceof ApiError && (caught.code === 'HANDOFF_EXPIRED' || caught.code === 'HANDOFF_ALREADY_USED')) {
         setHandoffToken(null)
         setHandoffError('Este convite expirou. Você pode escolher o profissional normalmente.')
+      } else if (caught instanceof ApiError && caught.code === 'SLOT_IN_THE_PAST') {
+        // Also a 409, but nobody took the slot: it started while the page was open. The server says so plainly.
+        setError(caught.message)
       } else {
         setError(caught instanceof ApiError && caught.status === 409 ? 'Esse horário acabou de ser ocupado. Escolha outro.' : 'Não foi possível criar o agendamento.')
       }

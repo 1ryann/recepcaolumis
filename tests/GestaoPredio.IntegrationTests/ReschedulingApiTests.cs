@@ -160,6 +160,45 @@ public sealed class ReschedulingApiTests(ModulesApiFactory factory)
         Assert.DoesNotContain("items", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    // 14:00 in America/Porto_Velho. The seed opens 08:00–18:00, so a 10:00 slot the same day is inside the operating
+    // hours and has already started: only the clock can turn it away. The link arrives by WhatsApp and may be opened
+    // hours later, which is exactly when the morning's slots have gone.
+    private static readonly DateTimeOffset Afternoon = new(2026, 1, 15, 18, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly TestDay = new(2026, 1, 15);
+
+    [Fact]
+    public async Task The_link_never_offers_a_slot_that_has_already_started()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(Afternoon);
+        var seed = await SeedCancelledReservationAsync();
+
+        var slots = await factory.Client.GetFromJsonAsync<SlotPayload[]>(
+            $"/api/reschedule/slots?token={Uri.EscapeDataString(seed.Token)}&date={TestDay:yyyy-MM-dd}");
+
+        Assert.NotEmpty(slots!); // 14:15 onwards is still open
+        Assert.All(slots!, slot => Assert.True(slot.StartAt > Afternoon, $"{slot.StartAt:O} has already started"));
+    }
+
+    [Fact]
+    public async Task The_link_rejects_a_slot_that_has_already_started_and_keeps_the_token_usable()
+    {
+        await factory.ResetAsync();
+        factory.FreezeTime(Afternoon);
+        var seed = await SeedCancelledReservationAsync();
+        var startAt = Utc(TestDay, new TimeOnly(10, 0));
+
+        var response = await factory.Client.PostAsJsonAsync("/api/reschedule/confirm",
+            new { token = seed.Token, startAt, endAt = startAt.AddHours(1) });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("SLOT_IN_THE_PAST", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // A refused slot must not burn the single-use link: the customer picks another time with the same button.
+        Assert.Null((await db.RescheduleTokens.AsNoTracking().SingleAsync(x => x.ReservationId == seed.Reservation.Id)).UsedAt);
+    }
+
     private async Task<Seed> SeedCancelledReservationAsync(bool expired = false, bool totemCustomer = false)
     {
         var now = factory.UtcNow;
