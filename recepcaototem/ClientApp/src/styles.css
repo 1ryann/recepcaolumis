@@ -4043,6 +4043,9 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 /* `span 2` in a single-column grid would create an implicit extra column; `1 / -1` means "full row"
    in both the two-column and the stacked layout. */
 .span-2 { grid-column: 1 / -1; }
+/* A button sharing a form row with a labelled field (Locações → "Novo locatário"). As a grid item it
+   stretched to the label + input height; it now sits on the input's baseline at the input's height. */
+.fields-area > .field-inline-action { align-self: end; min-height: 47px; margin-top: 0; }
 .modal-actions { padding-top: var(--lumis-modal-footer-gap); margin-top: 0; }
 .simple-form .modal-actions { margin-top: 0; }
 @media (max-width: 560px) {
