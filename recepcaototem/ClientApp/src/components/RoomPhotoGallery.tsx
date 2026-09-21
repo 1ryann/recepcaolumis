@@ -71,10 +71,13 @@ export function RoomPhotoGallery({ photoUrls, roomName }: { photoUrls: string[];
 
   const stopAutoplay = () => setAutoplayActive(false)
 
+  // A thumbnail chooses which photo the gallery shows; it does not enlarge it. It used to
+  // open the lightbox as well, which meant that simply picking a different photo threw a
+  // full-page overlay the visitor had to dismiss before they could read the rest of the
+  // room. Enlarging belongs to the main photo, which is the obvious target for it.
   const selectThumbnail = (index: number) => {
     stopAutoplay()
     setCurrentIndex(index)
-    setLightboxOpen(true)
   }
 
   const openLightboxOnCurrent = () => {

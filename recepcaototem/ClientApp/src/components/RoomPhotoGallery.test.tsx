@@ -48,13 +48,16 @@ test('clicking a thumbnail swaps the main photo to match', () => {
   expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', photos[1])
 })
 
-test('clicking a thumbnail also opens the lightbox on that photo', () => {
+// A thumbnail picks which photo to look at; it does not enlarge it. Opening the lightbox
+// on a thumbnail click meant that choosing a different photo threw an overlay over the
+// whole page, which the visitor then had to dismiss to carry on reading the room. The
+// main photo is the control that enlarges.
+test('clicking a thumbnail does not open the lightbox', () => {
   render(<RoomPhotoGallery photoUrls={photos} roomName="Sala Alfa" />)
   const thumbs = screen.getAllByRole('button', { name: /ver foto/i })
   fireEvent.click(thumbs[2])
-  const dialog = screen.getByRole('dialog')
-  expect(dialog).toBeInTheDocument()
-  expect(screen.getByAltText('Foto ampliada da sala Sala Alfa')).toHaveAttribute('src', photos[2])
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', photos[2])
 })
 
 test('clicking the main photo opens the lightbox on the currently selected photo', () => {
@@ -147,11 +150,11 @@ test('autoplay never starts with a single photo', () => {
   expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', photos[0])
 })
 
+// No lightbox to dismiss any more: the click picks the photo and the gallery stays put.
 test('autoplay stops permanently after a manual thumbnail click', () => {
   render(<RoomPhotoGallery photoUrls={photos} roomName="Sala Alfa" />)
   const thumbs = screen.getAllByRole('button', { name: /ver foto/i })
   fireEvent.click(thumbs[1])
-  fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
   advance(20000)
   expect(screen.getByAltText('Foto da sala Sala Alfa')).toHaveAttribute('src', photos[1])
 })
