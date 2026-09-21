@@ -8,30 +8,46 @@
   max-width: min(1560px, 94vw);
 }
 
+/* One grid runs down the whole page: the gallery/sidebar row and the band of panels under
+   it share these columns and this gap, so the seam between Descrição and Comodidades falls
+   exactly under the seam between the photo and the card. `.totem-room-detail-about` repeats
+   both values verbatim, and a test asserts the two stay equal — change one, change both.
+   The gap overrides styles.css's clamp(24px, 4vw, 56px), which at a desktop width opened a
+   56px trench between the photo and the card. */
 .totem-room-detail-content {
   grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: clamp(20px, 2.2vw, 30px);
 }
 
-/* 3:2 is what a phone camera produces, so the frame crops almost nothing. */
+/* 16:9. A phone shoots 3:2, so this frame does crop — deliberately: at 3:2 the gallery
+   stood ~190px taller than the sidebar card beside it, leaving a band of empty page. The
+   photo is `object-fit: cover` (styles.css), so the crop is centred rather than squashing
+   anything. `min-height` is gone: it was forcing the frame past its own ratio on a wide
+   column, which is what made the picture so tall in the first place. */
 .totem-room-detail-photo,
 .totem-room-detail-fallback {
-  aspect-ratio: 3 / 2;
-  min-height: clamp(360px, 56vh, 820px);
+  aspect-ratio: 16 / 9;
+  /* styles.css sets `min-height: clamp(340px, 46vh, 560px)` here, and a minimum height
+     beats a ratio: on a 1200px-tall viewport it stretched the frame to 552px where 16:9
+     wants 426px, so the photo rendered at 1.37:1 no matter what ratio this file declared.
+     Clearing the floor is what actually makes the ratio hold. */
+  min-height: 0;
 }
 
-/* The strip below the photo grows with it, so the thumbnails stay legible on a big screen,
-   and shares the 3:2 shape instead of squaring the picture down to a 64px box. */
+/* The strip below the photo grows with it, so the thumbnails stay legible on a big screen.
+   They share the main photo's 16:9 rather than squaring the picture down to a 64px box: a
+   thumbnail in a different shape from the frame it fills is a small lie about what you
+   will get when you pick it. */
 .totem-room-detail-thumb {
   width: clamp(84px, 8vw, 150px);
   height: auto;
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 16 / 9;
 }
 
-@media (max-width: 900px) {
-  .totem-room-detail-content { grid-template-columns: minmax(0, 1fr); }
-  .totem-room-detail-photo,
-  .totem-room-detail-fallback { min-height: clamp(240px, 38vh, 420px); }
-}
+/* The narrow-screen collapse for both grids lives at the foot of this file, not here: a
+   media query carries no extra specificity, so an override placed above the rule it
+   overrides simply loses. `.totem-room-detail-about` is declared further down, and this
+   block silently failed to collapse it — two 208px/122px columns on a 390px phone. */
 
 /* ── Detail page: price, feature strip, gallery arrows and the WhatsApp button ──────── */
 
@@ -53,10 +69,37 @@
   letter-spacing: 0;
 }
 
-.room-price-secondary {
-  margin: 6px 0 0;
-  color: var(--lumis-muted);
-  font-size: clamp(13px, 1.4vw, 16px);
+/* The hourly and daily rates as two cells with a rule between them, the way a rate card
+   reads. Flex rather than a two-column grid because a room let only by the hour has one
+   cell, and a grid would leave a hole where the second belongs. */
+.room-price-rates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: clamp(12px, 1.6vw, 22px);
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-price-rate {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+/* The divider belongs between cells, never before the first or after the last — so it is
+   drawn as the leading edge of every cell after the first. */
+.room-price-rate + .room-price-rate {
+  padding-left: clamp(12px, 1.6vw, 22px);
+  border-left: 1px solid var(--lumis-border-soft);
+}
+
+.room-price-rate strong {
+  color: var(--lumis-heading);
+  font-size: clamp(19px, 2.1vw, 26px);
+  font-weight: 640;
+  letter-spacing: -.02em;
 }
 
 /* Auto-fit rather than a fixed column count: the strip has between one and nine entries
@@ -100,12 +143,22 @@
 }
 .totem-room-detail-whatsapp:hover { background: #1fbb5a; border-color: #1fbb5a; }
 
-/* Prev/next over the main photo. The gallery box is the positioning context. */
-.totem-room-detail-gallery { position: relative; }
+/* Prev/next over the main photo. The gallery box is the positioning context, and declaring
+   it an inline-size container lets the arrows be placed against the photo's height rather
+   than the gallery's — the gallery also contains the dots and the thumbnail strip, so its
+   own 50% sits well below the picture. */
+.totem-room-detail-gallery {
+  position: relative;
+  container-type: inline-size;
+}
 
+/* The photo is 16:9 of the gallery's width, so its height is 56.25cqw and its middle is
+   28.125cqw. Half the button's own height comes back off that to centre it. This replaces
+   a fixed `clamp(120px, 24vh, 340px)`, which was tuned for the old 3:2 frame and would now
+   sit low — or, on a short viewport, below the picture entirely. */
 .totem-room-detail-nav {
   position: absolute;
-  top: clamp(120px, 24vh, 340px);
+  top: calc(28.125cqw - clamp(22px, 1.7vw, 28px));
   display: grid;
   place-items: center;
   width: clamp(44px, 3.4vw, 56px);
@@ -124,11 +177,180 @@
 .totem-room-detail-nav.is-prev { left: clamp(8px, 1vw, 16px); }
 .totem-room-detail-nav.is-next { right: clamp(8px, 1vw, 16px); }
 
-@media (max-width: 900px) {
-  .totem-room-detail-nav { top: clamp(90px, 16vh, 180px); }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .totem-room-detail-nav { transition: none; }
   .totem-room-detail-nav:hover { transform: none; }
+}
+
+/* ── Redesigned detail layout: sidebar card, description panel, top bar ─────────────── */
+
+/* The sidebar is a card pinned to the top of the gallery, not a column centred against
+   it. styles.css centres `.totem-room-detail-info` vertically and stretches it to the
+   gallery's full height, which suited the old short column (name/status/button) but
+   leaves a tall card floating in the middle of a long gallery. Both overrides are stated
+   here, with the markup that needs them. */
+.totem-room-detail-info {
+  /* `align-self` is the one that matters. A grid stretches its children to the row's
+     tallest, so a card shorter than the gallery was being pulled to the gallery's height
+     and — once `justify-content` stopped centring the content — ended in 194px of dead
+     space below the last element. That hole is what made the page read as empty. The card
+     keeps its own height; the gallery sets the row's. */
+  align-self: start;
+  justify-content: flex-start;
+  min-height: 0;
+  position: sticky;
+  top: clamp(16px, 3vh, 32px);
+  padding: clamp(20px, 2.4vw, 30px);
+  border: 1px solid var(--lumis-border-soft);
+  border-radius: 20px;
+  background: var(--lumis-surface);
+}
+
+/* What the room is for, under its name — the category, when one is set. */
+.totem-room-detail-category {
+  margin: -6px 0 0;
+  color: var(--lumis-muted);
+  font-size: clamp(13px, 1.4vw, 16px);
+  font-weight: 500;
+}
+
+/* `.totem-room-detail-content` is a two-column grid (gallery | sidebar) declared in
+   styles.css. This panel is its third child: without an explicit span it would sit in
+   column one of a second row at half width, with an empty cell beside it. */
+/* Descrição and Comodidades are one card divided by a rule, not two boxes with a gap
+   between them. The box lives here, on the band; the panels inside are just its columns.
+   `gap: 0` is what lets the rule be the only thing between them, and `overflow: hidden`
+   keeps that rule from running past the rounded corners. */
+.totem-room-detail-about {
+  grid-column: 1 / -1;
+  display: grid;
+  /* Deliberately identical to `.totem-room-detail-content` above — see the note there. */
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 0;
+  border: 1px solid var(--lumis-border-soft);
+  border-radius: 20px;
+  background: var(--lumis-surface);
+  overflow: hidden;
+}
+
+/* A room with prose but nothing ticked would otherwise leave the right column of the card
+   empty, which is the hole this redesign set out to remove. The lone panel takes it all. */
+.totem-room-detail-panel:only-child {
+  grid-column: 1 / -1;
+}
+
+.totem-room-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.6vh, 18px);
+  padding: clamp(20px, 2.4vw, 30px);
+}
+
+.totem-room-detail-panel + .totem-room-detail-panel {
+  border-left: 1px solid var(--lumis-border-soft);
+}
+
+.totem-room-detail-panel-title {
+  margin: 0;
+  color: var(--lumis-heading);
+  font-size: clamp(17px, 1.9vw, 21px);
+  font-weight: 640;
+  letter-spacing: -.02em;
+}
+
+/* However wide the band gets, prose stops being readable past about seventy characters —
+   and the single 1258px line this used to produce was the other half of the "empty" look.
+   The panel keeps its width; the paragraph does not. */
+.totem-room-detail-description {
+  max-width: 62ch;
+}
+
+/* Auto-fit so a room with two comforts does not stretch them across the panel, and one
+   with eight wraps instead of shrinking the type. No rule above the list any more: it has
+   its own panel and heading now, rather than trailing the prose. */
+.room-amenities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px clamp(14px, 2vw, 26px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-amenity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--lumis-text);
+  font-size: clamp(13px, 1.3vw, 15px);
+  font-weight: 500;
+}
+
+.room-amenity svg {
+  flex: none;
+  color: var(--lumis-kiosk-accent);
+}
+
+/* The measurements read as name-above-value, so the name is the quiet line and the value
+   the loud one — the reverse of the old single-line chip. */
+.room-spec-title {
+  color: var(--lumis-muted);
+  font-size: .88em;
+  font-weight: 600;
+}
+
+.room-spec-value {
+  color: var(--lumis-text);
+  font-size: 1.06em;
+  font-weight: 640;
+}
+
+/* Mark and navigation sit together on the left, the way the reference does it, rather than
+   pushing the links to the far corner where they read as account controls. */
+.rooms-top-brand {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 3vw, 44px);
+}
+
+.rooms-top-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2vw, 30px);
+}
+
+.rooms-top-link {
+  color: var(--lumis-muted);
+  font-size: clamp(13px, 1.4vw, 15px);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.rooms-top-link:hover { color: var(--lumis-text); }
+
+.rooms-top-link:focus-visible {
+  outline: 2px solid var(--lumis-kiosk-accent);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+
+/* ── Narrow screens. Last in the file on purpose: every rule below overrides one declared
+      above it, and a media query adds no specificity of its own. ──────────────────────── */
+@media (max-width: 900px) {
+  /* Both grids collapse together, for the same reason they match at full width. */
+  .totem-room-detail-content,
+  .totem-room-detail-about { grid-template-columns: minmax(0, 1fr); }
+
+  /* Once the grid is one column the sidebar is just the next block down: sticking it to
+     the viewport would pin it over the description as the visitor scrolls. */
+  .totem-room-detail-info { position: static; }
+
+  /* Stacked, the rule has to turn with them: a left border on a full-width block draws a
+     stripe down the side of the card instead of separating anything. */
+  .totem-room-detail-panel + .totem-room-detail-panel {
+    border-left: 0;
+    border-top: 1px solid var(--lumis-border-soft);
+  }
 }
