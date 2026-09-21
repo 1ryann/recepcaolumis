@@ -9,7 +9,9 @@
 
 .totem-rooms-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 19vw, 300px), 1fr));
+  /* A shade narrower than the 300px it was, so a wide kiosk fits five columns
+     instead of four and does not leave a column of empty space beside the last row. */
+  grid-template-columns: repeat(auto-fill, minmax(clamp(210px, 17vw, 272px), 1fr));
   gap: clamp(12px, 1.2vw, 20px);
 }
 
@@ -43,7 +45,7 @@
     #000 var(--totem-rooms-fade), #000 calc(100% - var(--totem-rooms-fade)), transparent 100%);
 }
 .totem-rooms-grid.is-scroller > * {
-  flex: 0 0 clamp(220px, 19vw, 300px);
+  flex: 0 0 clamp(210px, 17vw, 272px);
   scroll-snap-align: start;
 }
 
@@ -109,31 +111,39 @@
   font-size: clamp(11px, 1.1vw, 13px);
 }
 
+/* Icon + word, no pill. As bordered pills the three chips did not fit a card this wide:
+   they wrapped, every caption grew to a different height and the names stopped lining up.
+   Stripped down they usually fit one line — and when they do not, they wrap rather than
+   truncate. A clipped "4p" in place of "4p-8p", or "Cons" for "Consultório", is not a
+   tidier card, it is the wrong capacity. The caption's min-height keeps the grid even
+   whether a card ends up with one line of chips or two. */
 .room-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  align-content: flex-start;
+  gap: 5px clamp(9px, 0.9vw, 14px);
+  width: 100%;
+  font-size: clamp(10px, 1vw, 12.5px);
+  /* Two lines, always reserved. See the note beside this element in RoomChips.tsx: the
+     reservation is what lines the room names up across a grid row. */
+  min-height: calc(2 * 1.45em + 5px);
 }
 
 .room-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, .18);
-  background: rgba(255, 255, 255, .1);
-  color: rgba(255, 255, 255, .92);
-  font-size: clamp(10px, 1vw, 12px);
+  color: rgba(255, 255, 255, .78);
   font-weight: 600;
   white-space: nowrap;
-  backdrop-filter: blur(6px);
 }
 
+.room-chip svg { flex: none; opacity: .8; }
+
 .room-chip-price {
-  border-color: rgba(255, 255, 255, .3);
-  background: rgba(255, 255, 255, .17);
   color: #fff;
+  font-weight: 700;
 }
 
 @media (max-width: 900px) {

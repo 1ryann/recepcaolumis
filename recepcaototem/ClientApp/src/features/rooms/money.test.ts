@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { formatBrl, parseRoomRate, ROOM_RATE_MAXIMUM } from './money'
+import { formatBrl, formatBrlCompact, parseRoomRate, ROOM_RATE_MAXIMUM } from './money'
 
 test.each([
   ['0', 0], ['0,01', 0.01], ['100', 100], ['100,5', 100.5], ['100,50', 100.5],
@@ -38,3 +38,17 @@ test.each([0, 0.01, 0.10, 100.99, 9999999999999.99])(
     expect(JSON.stringify(received)).toBe(wire)
   },
 )
+
+// The catalogue card has room for three chips on one line only without the ",00" that
+// every whole rent carries — but dropping cents that are real would misquote a price.
+// Intl separates the symbol with a non-breaking space, which no source literal has.
+const plain = (value: string) => value.replace(/ /g, ' ')
+
+test('formatBrlCompact drops cents only when there are none', () => {
+  expect(plain(formatBrlCompact(3100))).toBe('R$ 3.100')
+  expect(plain(formatBrlCompact(0))).toBe('R$ 0')
+  expect(plain(formatBrlCompact(1950.5))).toBe('R$ 1.950,50')
+  expect(plain(formatBrlCompact(1950.55))).toBe('R$ 1.950,55')
+  // The full form still carries cents, for the detail page and the admin list.
+  expect(plain(formatBrl(3100))).toBe('R$ 3.100,00')
+})

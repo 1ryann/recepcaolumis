@@ -61,8 +61,8 @@ test('groups rooms into Now (first) and Soon (sorted by availableFrom then name)
   // Now section must appear before Soon section in document order.
   expect(nowHeading.compareDocumentPosition(soonHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
-  expect(screen.getByText('Próxima disponibilidade: em 16/11/2026')).toBeInTheDocument()
-  expect(screen.getByText('Próxima disponibilidade: em 20/11/2026')).toBeInTheDocument()
+  expect(screen.getByText('Livre em 16/11/2026')).toBeInTheDocument()
+  expect(screen.getByText('Livre em 20/11/2026')).toBeInTheDocument()
 
   const soonNames = screen.getAllByText(/Sala (Beta|Gama)/).map((el) => el.textContent)
   expect(soonNames).toEqual(['Sala Beta', 'Sala Gama'])
@@ -85,7 +85,8 @@ test('a priced room advertises its monthly price and an unpriced one shows none'
 
   // roomNow carries monthlyRate 3100; roomSoonEarly carries nothing at all.
   expect(screen.getAllByText(/\/mês/)).toHaveLength(1)
-  expect(screen.getByText(/3\.100,00\/mês/)).toBeInTheDocument()
+  // A round rent drops its cents on a card, so three chips fit on one line.
+  expect(screen.getByText('R$ 3.100/mês')).toBeInTheDocument()
   // Anchored on the currency symbol: a loose /0,00/ also matches "3.100,00".
   expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
 

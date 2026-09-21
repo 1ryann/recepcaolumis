@@ -15,3 +15,16 @@ const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' 
 export function formatBrl(value: number) {
   return brl.format(value)
 }
+
+const brlWhole = new Intl.NumberFormat('pt-BR', {
+  style: 'currency', currency: 'BRL', maximumFractionDigits: 0,
+})
+
+/**
+ * The catalogue-card form: "R$ 3.100" for a round rent, "R$ 3.100,50" when the cents are
+ * real. A card has room for three chips on one line only without the ",00" that every
+ * whole rent carries, and dropping cents that are actually there would misquote a price.
+ */
+export function formatBrlCompact(value: number) {
+  return Number.isInteger(value) ? brlWhole.format(value) : brl.format(value)
+}

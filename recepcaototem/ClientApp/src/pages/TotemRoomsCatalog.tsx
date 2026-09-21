@@ -71,7 +71,7 @@ function RoomCard({ room, onSelect }: { room: PublicRoomCardDto, onSelect: () =>
         <RoomChips room={room} />
         {room.availability === 'AVAILABLE_SOON' && room.availableFrom && (
           <p className="totem-rooms-card-availability">
-            {`Próxima disponibilidade: ${availabilityLabel(room.availableFrom)}`}
+            {`Livre ${availabilityLabel(room.availableFrom)}`}
           </p>
         )}
       </div>

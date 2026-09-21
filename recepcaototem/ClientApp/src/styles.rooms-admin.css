@@ -1,0 +1,54 @@
+/* The admin room list. Refines the defaults in styles.css (which loads first — see the
+   note at the top of main.tsx). */
+
+/* Auto-fit rather than the fixed two columns, so the hourly and daily rates share a row
+   at this card width and still behave on a narrower one. */
+.room-rates {
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+}
+
+/* The monthly rate takes the whole width and leads, the way it does on the public card.
+   As a third cell in a two-column grid it sat alone in a half-empty row, which read as a
+   layout accident rather than the headline figure it is. */
+.room-rate-monthly {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+/* The catalogue attributes, as a list of words rather than a second table: on this card
+   they answer "is this room described yet?", and the detail belongs to the form. */
+.room-admin-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-admin-summary li {
+  padding: 3px 8px;
+  border: 1px solid var(--lumis-border-soft);
+  border-radius: 999px;
+  color: var(--lumis-muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Stated rather than left blank: an empty space reads as "nothing to do here", and the
+   whole point of this line is to show which rooms still need a visit with a tape measure. */
+.room-admin-undescribed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: var(--lumis-status-busy);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+/* The actions sit at the foot of the card, so a room with a long summary and one with
+   none still line their buttons up across the row. */
+.room-admin-card { display: flex; flex-direction: column; }
+.room-admin-actions { margin-top: auto; }
