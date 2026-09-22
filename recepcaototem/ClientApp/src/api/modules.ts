@@ -1117,3 +1117,26 @@ export const rescheduleApi = {
     return apiClient.postPublic<RescheduleConfirmationDto>('/api/reschedule/confirm', input)
   },
 }
+
+export interface CustomerAdministrationDto {
+  id: string
+  name: string
+  phone: string
+  isActive: boolean
+  hasAccount: boolean
+  whatsAppOptIn: WhatsAppOptInDto
+  createdAt: string
+  concurrencyToken: string
+}
+
+// Customers are created by bookings and self-registration; reception can only turn one off, never delete it, because
+// appointments and audit entries point at the record.
+export const customersAdministrationApi = {
+  list(query: ModuleListQuery, signal?: AbortSignal) {
+    return apiClient.get<PagedResponse<CustomerAdministrationDto>>('/api/admin/customers', { query: { ...query }, signal })
+  },
+  changeStatus(id: string, active: boolean, concurrencyToken: string) {
+    return apiClient.post<CustomerAdministrationDto>(
+      `/api/admin/customers/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { concurrencyToken })
+  },
+}

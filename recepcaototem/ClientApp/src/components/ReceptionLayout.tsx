@@ -7,6 +7,7 @@ const pageNames: Record<string, string> = {
   '/recepcao': 'Recepção',
   '/recepcao/solicitacoes-profissionais': 'Solicitações de profissionais',
   '/recepcao/profissionais': 'Profissionais',
+  '/recepcao/clientes': 'Clientes',
   '/recepcao/configuracoes': 'Horários e salas',
   '/recepcao/whatsapp': 'WhatsApp dos clientes',
 }

@@ -1,4 +1,4 @@
-import { Activity, CalendarCheck2, CalendarRange, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, Users, UserRoundSearch, X } from 'lucide-react'
+import { Activity, CalendarCheck2, CalendarRange, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, UserRound, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/admin', label: 'Visão geral', icon: LayoutDashboard, end: true },
   { to: '/admin/salas', label: 'Salas', icon: DoorOpen },
   { to: '/admin/profissionais', label: 'Profissionais', icon: Users },
+  { to: '/admin/clientes', label: 'Clientes', icon: UserRound },
   { to: '/admin/locacoes', label: 'Locações', icon: CalendarRange },
   { to: '/admin/reservas', label: 'Reservas', icon: CalendarCheck2 },
   { to: '/admin/visitas', label: 'Visitas', icon: UserRoundSearch },
@@ -20,7 +21,7 @@ const navItems = [
 ]
 
 const pageNames: Record<string, string> = {
-  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/solicitacoes-profissionais': 'Solicitações de profissionais', '/admin/interesses-locacao': 'Interesses de locação', '/admin/configuracoes': 'Configurações', '/admin/whatsapp': 'WhatsApp dos clientes',
+  '/admin': 'Visão geral', '/admin/salas': 'Salas', '/admin/profissionais': 'Profissionais', '/admin/clientes': 'Clientes', '/admin/locacoes': 'Locações', '/admin/reservas': 'Reservas', '/admin/visitas': 'Visitas', '/admin/recepcao': 'Recepção', '/admin/solicitacoes-profissionais': 'Solicitações de profissionais', '/admin/interesses-locacao': 'Interesses de locação', '/admin/configuracoes': 'Configurações', '/admin/whatsapp': 'WhatsApp dos clientes',
 }
 
 export function AdminLayout() {

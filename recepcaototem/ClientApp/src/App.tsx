@@ -7,6 +7,7 @@ import { ChangePassword } from './pages/ChangePassword'
 import { Home } from './pages/Home'
 import { Login } from './pages/Login'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
+import { Customers } from './pages/admin/Customers'
 import { Professionals } from './pages/admin/Professionals'
 import { Settings } from './pages/admin/Settings'
 import { Rooms } from './pages/admin/Rooms'
@@ -91,6 +92,7 @@ function ProductionApp() {
       <Route path="/recepcao" element={<ReceptionMonitor />} />
       <Route path="/recepcao/solicitacoes-profissionais" element={<ProfessionalApplications />} />
       <Route path="/recepcao/profissionais" element={<Professionals />} />
+      <Route path="/recepcao/clientes" element={<Customers />} />
       <Route path="/recepcao/configuracoes" element={<Settings />} />
       <Route path="/recepcao/whatsapp" element={<ReceptionWhatsApp />} />
     </Route>
@@ -100,6 +102,7 @@ function ProductionApp() {
           <Route index element={<AdminDashboard />} />
           <Route path="salas" element={<Rooms />} />
           <Route path="profissionais" element={<Professionals />} />
+          <Route path="clientes" element={<Customers />} />
           <Route path="locacoes" element={<Leases />} />
           <Route path="reservas" element={<Reservations />} />
           <Route path="visitas" element={<Visits />} />
