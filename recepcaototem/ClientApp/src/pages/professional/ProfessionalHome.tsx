@@ -6,6 +6,7 @@ import { useSession } from '../../auth/SessionProvider'
 import { professionalAvailabilityApi, professionalReservationsApi, professionalVisitsApi, type AvailabilityIntervalDto, type ProfessionalAvailabilityDto, type ReservationDto, type VisitDto } from '../../api/modules'
 import { LumisPageShell } from '../../features/lumis/LumisPageShell'
 import { LumisLogo } from '../../theme/LumisLogo'
+import { ReportIncident } from '../../features/professionals/ReportIncident'
 
 type ProfessionalContext = { reservations: ReservationDto[], visits: VisitDto[], loading: boolean, error: string }
 const nav = [
@@ -145,6 +146,7 @@ export function ProfessionalDashboard() {
   const [upcomingSoon, setUpcomingSoon] = useState<ReservationDto[]>([])
   const [dashLoading, setDashLoading] = useState(true)
   const [dashError, setDashError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -171,7 +173,7 @@ export function ProfessionalDashboard() {
     }).catch(() => { if (active) setDashError('Não foi possível carregar os indicadores de hoje.') })
       .finally(() => { if (active) setDashLoading(false) })
     return () => { active = false }
-  }, [])
+  }, [reloadKey])
 
   const next = upcomingSoon[0]
   const todaysIntervals = useMemo(() => intervalsForToday(availability), [availability])
@@ -210,7 +212,7 @@ export function ProfessionalDashboard() {
       </div>
       <div className="professional-dashboard-columns">
         <section className="professional-agenda-today-panel">
-          <div className="panel-header"><div><h2>Agenda de hoje</h2><p>Seus compromissos de hoje, com o status mais recente.</p></div><CalendarDays size={20} /></div>
+          <div className="panel-header"><div><h2>Agenda de hoje</h2><p>Seus compromissos de hoje, com o status mais recente.</p></div><ReportIncident onReported={() => setReloadKey(value => value + 1)} /></div>
           {dashLoading ? <div className="professional-loading">Carregando agenda de hoje…</div>
             : sortedAgenda.length === 0 ? <div className="professional-empty"><CalendarDays size={25} /><span>Nenhum compromisso hoje.</span></div>
             : <div className="professional-agenda-today" data-testid="professional-agenda-today">

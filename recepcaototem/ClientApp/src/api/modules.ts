@@ -879,6 +879,17 @@ export const professionalAvailabilityApi = {
   },
 }
 
+export type ProfessionalIncidentType = 'NEXT_APPOINTMENT' | 'UNTIL_TIME' | 'REST_OF_DAY'
+export type ProfessionalIncidentInput = { type: ProfessionalIncidentType; untilTime?: string | null; reason?: string | null }
+export type ProfessionalIncidentResult = { exceptionId: string | null; affectedReservationIds: string[]; presence: string }
+
+// Cancels today's affected appointments; each customer gets a WhatsApp notice with a reschedule link.
+export const professionalIncidentsApi = {
+  report(input: ProfessionalIncidentInput) {
+    return apiClient.post<ProfessionalIncidentResult>('/api/professional/incidents', input)
+  },
+}
+
 export const adminProfessionalAvailabilityApi = {
   get(professionalId: string, signal?: AbortSignal) {
     return apiClient.get<ProfessionalAvailabilityDto>(adminProfessionalAvailabilityPath(professionalId), { signal })
