@@ -431,6 +431,20 @@
 .landing-cta .landing-cta-primary { animation: landing-cta-left 620ms cubic-bezier(0.22, 0.61, 0.36, 1) 1840ms both; }
 .landing-cta .landing-cta-secondary { animation: landing-cta-right 620ms cubic-bezier(0.22, 0.61, 0.36, 1) 1920ms both; }
 
+/* Everything past the hero waits for the opening too. On a tall screen the first sections
+   are already in view at load, and their scroll-linked reveal is driven by position, not
+   time — so without this gate they would show through the parting panels before the hero
+   copy. Fading the parent holds them back (opacity multiplies) while the children keep
+   their own scroll reveal. */
+.landing-head-link,
+.landing-section,
+.landing-footer { animation: landing-page-in 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 2000ms both; }
+
+@keyframes landing-page-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes landing-copy-in {
   from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
   to { opacity: 1; transform: none; filter: none; }
@@ -449,6 +463,9 @@
 @media (prefers-reduced-motion: reduce) {
   .landing-intro { display: none; }
   .landing-logo,
+  .landing-head-link,
+  .landing-section,
+  .landing-footer,
   .landing-hero .landing-eyebrow,
   .landing-hero h1,
   .landing-hero p,
