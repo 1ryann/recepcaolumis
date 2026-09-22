@@ -43,6 +43,12 @@ public sealed class WhatsAppNotificationOptions
     /// <summary>Appointments that started longer ago than this are no longer scanned for delays.</summary>
     public int DelayLookbackMinutes { get; set; } = 180;
 
+    /// <summary>
+    /// How far ahead of an appointment its APPOINTMENT_REMINDER is queued. 0 turns reminders off, which is what an
+    /// environment without the approved template should use so nothing piles up as TEMPLATE_NOT_CONFIGURED.
+    /// </summary>
+    public int ReminderLeadHours { get; set; } = 24;
+
     /// <summary>Check-in and delay notices are pointless once this old; they are skipped as EXPIRED.</summary>
     public int OperationalMaxAgeMinutes { get; set; } = 30;
     /// <summary>Confirmation, reschedule and cancellation notices expire after this many hours.</summary>
@@ -104,6 +110,7 @@ public sealed partial class WhatsAppNotificationOptionsValidator : IValidateOpti
         if (options.DelayRepeatMinutes is < 1 or > 240) errors.Add("Whatsapp:Notifications:DelayRepeatMinutes deve estar entre 1 e 240.");
         if (options.DelayMaxNotices is < 0 or > 10) errors.Add("Whatsapp:Notifications:DelayMaxNotices deve estar entre 0 e 10.");
         if (options.DelayLookbackMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:DelayLookbackMinutes deve estar entre 1 e 1440.");
+        if (options.ReminderLeadHours is < 0 or > 168) errors.Add("Whatsapp:Notifications:ReminderLeadHours deve estar entre 0 e 168.");
         if (options.OperationalMaxAgeMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:OperationalMaxAgeMinutes deve estar entre 1 e 1440.");
         if (options.SchedulingMaxAgeHours is < 1 or > 168) errors.Add("Whatsapp:Notifications:SchedulingMaxAgeHours deve estar entre 1 e 168.");
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);

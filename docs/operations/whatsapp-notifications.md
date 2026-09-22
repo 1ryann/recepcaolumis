@@ -40,7 +40,7 @@ webhook existente (sent/delivered/read/failed) → WhatsAppMessage E a notifica�
 | `APPOINTMENT_RESCHEDULED` | cliente | Admin reagenda (`/reschedule`) ou aprova o pedido de reagendamento do profissional; chave pela reserva **substituta** | `RESCHEDULE:{ReservaNovaId}` |
 | `APPOINTMENT_CONFIRMED` | cliente | agendamento do próprio cliente (inclui o fluxo QR do Totem) e agendamento assistido pela recepção; aprovação de reserva nova que tenha cliente | `CONFIRM:{ReservationId}` |
 | `PROFESSIONAL_DELAYED` | cliente | calculado pelo dispatcher (ver política abaixo) | `DELAY:{ReservationId}:{passo}` |
-| `APPOINTMENT_REMINDER` | cliente | **preparado, não implementado** (sem scheduler de lembrete nesta fase) | — |
+| `APPOINTMENT_REMINDER` | cliente | varredura do dispatcher: atendimento aprovado que começa dentro de `ReminderLeadHours` (24h) | `REMINDER:{reserva}` |
 
 Não há aviso ao cliente quando **ele mesmo** cancela ou reagenda. Reservas sem cliente (criadas por Admin/profissional
 sem `CustomerId`) não geram aviso ao cliente.
@@ -133,7 +133,7 @@ classificação final). Os nomes abaixo são sugestões — o que vale é o conf
 | `AppointmentCancelled` | `client_appointment_cancelled` | Olá, {{1}}. Seu atendimento com {{2}}, previsto para {{3}} às {{4}}, foi cancelado. Entre em contato com a recepção para reagendar. | 1 cliente · 2 profissional · 3 data · 4 hora |
 | `AppointmentRescheduled` | `client_appointment_rescheduled` | Olá, {{1}}. Seu atendimento com {{2}} foi reagendado para {{3}} às {{4}}. | 1 cliente · 2 profissional · 3 nova data · 4 nova hora |
 | `AppointmentConfirmed` | `client_appointment_confirmed` | Olá, {{1}}. Seu atendimento com {{2}} está confirmado para {{3}} às {{4}}. | 1 cliente · 2 profissional · 3 data · 4 hora |
-| `AppointmentReminder` | `client_appointment_reminder` | Olá, {{1}}. Lembrete: você tem atendimento com {{2}} amanhã às {{3}}. | preparado para fase futura |
+| `AppointmentReminder` | `client_appointment_reminder` | Olá, {{1}}. Lembrete: seu atendimento com {{2}} é em {{3}} às {{4}}. | 1 cliente · 2 profissional · 3 data · 4 hora |
 
 Link de reagendamento: o token de uso único é gerado **no momento do envio** (o hash é gravado em
 `RescheduleTokens`, como antes) e vai só no sufixo do botão; o valor bruto nunca é persistido nem logado. A base da
@@ -197,6 +197,7 @@ mensagem invalidava o link da primeira).
 | `Whatsapp__Notifications__DelayRepeatMinutes` | 15 | Intervalo mínimo entre avisos de atraso (Y). |
 | `Whatsapp__Notifications__DelayMaxNotices` | 2 | Máximo de avisos de atraso por atendimento (0 desliga). |
 | `Whatsapp__Notifications__DelayLookbackMinutes` | 180 | Janela de busca de atendimentos atrasados. |
+| `Whatsapp__Notifications__ReminderLeadHours` | 24 | Antecedência do lembrete (0 desliga). Só enfileira com `Whatsapp__Templates__AppointmentReminder` configurado. |
 | `Whatsapp__Notifications__OperationalMaxAgeMinutes` | 30 | Validade de check-in/atraso. |
 | `Whatsapp__Notifications__SchedulingMaxAgeHours` | 24 | Validade dos demais. |
 | `Whatsapp__Templates__ClientCheckedIn` … `__AppointmentReminder` | vazio | Nome do template aprovado por tipo. Vazio = tipo não enviado. |

@@ -561,7 +561,7 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         using var host = factory.WithWhatsApp(meta);
 
         var first = await ModulesApiFactory.DispatchAsync(host);
-        Assert.Equal(1, first.DelayNoticesQueued);
+        Assert.Equal(1, first.NoticesQueued);
         var (phone, template) = Assert.Single(meta.Sent);
         Assert.Equal(CustomerPhone, phone);
         Assert.Equal("client_professional_delayed", template.Name);
@@ -606,9 +606,78 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
 
         var summary = await ModulesApiFactory.DispatchAsync(host);
 
-        Assert.Equal(0, summary.DelayNoticesQueued);
+        Assert.Equal(0, summary.NoticesQueued);
         Assert.Empty(meta.Sent);
         Assert.Empty(await factory.NotificationsAsync());
+    }
+
+    // ---- APPOINTMENT_REMINDER ---------------------------------------------------------------------------------
+
+    private static readonly (string Key, string Value)[] Reminders =
+        [("Whatsapp:Templates:AppointmentReminder", "client_appointment_reminder"),
+         ("Whatsapp:Notifications:ReminderLeadHours", "24")];
+
+    [Fact]
+    public async Task An_appointment_inside_the_lead_window_is_reminded_once_however_often_the_scheduler_runs()
+    {
+        await factory.ResetAsync();
+        var far = await SeedAsync(startIn: TimeSpan.FromHours(30));          // still beyond the 24h window
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(20));
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta, Reminders);
+
+        var first = await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Equal(1, first.NoticesQueued);
+        var (phone, template) = Assert.Single(meta.Sent);
+        Assert.Equal(CustomerPhone, phone);
+        Assert.Equal("client_appointment_reminder", template.Name);
+        Assert.Equal("Maria", template.BodyParameters[0]);
+        Assert.Equal("Dra. Helena Prado", template.BodyParameters[1]);
+
+        for (var cycle = 0; cycle < 4; cycle++) await ModulesApiFactory.DispatchAsync(host);
+        Assert.Single(meta.Sent);
+
+        factory.AdvanceTime(TimeSpan.FromHours(7));                          // the far one is now 23h away
+        await ModulesApiFactory.DispatchAsync(host);
+        Assert.Equal(2, meta.Sent.Count);
+        Assert.Equal([WhatsAppNotification.ReminderKey(seed.ReservationId), WhatsAppNotification.ReminderKey(far.ReservationId)],
+            (await factory.NotificationsAsync()).Select(x => x.IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task No_reminder_without_the_template_and_none_for_an_appointment_cancelled_after_it_was_queued()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync(startIn: TimeSpan.FromHours(3));
+        var meta = new FakeWhatsAppService();
+
+        using (var bare = factory.WithWhatsApp(meta))                        // no AppointmentReminder template
+        {
+            Assert.Equal(0, (await ModulesApiFactory.DispatchAsync(bare)).NoticesQueued);
+            Assert.Empty(await factory.NotificationsAsync());
+        }
+
+        using var host = factory.WithWhatsApp(meta, Reminders);
+        // Queued without dispatching, so the cancellation lands in the window every real reminder has: between the
+        // scan that queued it and the send.
+        await using (var scope = host.Services.CreateAsyncScope())
+            Assert.Equal(1, await scope.ServiceProvider
+                .GetRequiredService<GestaoPredio.Infrastructure.Notifications.WhatsAppNotificationDispatcher>()
+                .QueueRemindersAsync(CancellationToken.None));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            (await db.Reservations.SingleAsync(x => x.Id == seed.ReservationId)).Cancel("recepção", factory.UtcNow);
+            await db.SaveChangesAsync();
+        }
+
+        await ModulesApiFactory.DispatchAsync(host);
+
+        Assert.Empty(meta.Sent);
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotificationStatus.Skipped, notice.Status);
+        Assert.Equal("OBSOLETE", notice.LastErrorCode);
     }
 
     // ---- cancellation / reschedule through the real admin endpoints -------------------------------------------

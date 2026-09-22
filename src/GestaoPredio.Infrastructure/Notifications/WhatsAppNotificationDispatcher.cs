@@ -12,7 +12,7 @@ using Npgsql;
 
 namespace GestaoPredio.Infrastructure.Notifications;
 
-public sealed record WhatsAppDispatchSummary(int DelayNoticesQueued, int Claimed, int Accepted, int Retried, int Failed, int Skipped,
+public sealed record WhatsAppDispatchSummary(int NoticesQueued, int Claimed, int Accepted, int Retried, int Failed, int Skipped,
     int Unconfirmed = 0);
 
 /// <summary>
@@ -35,6 +35,7 @@ public sealed class WhatsAppNotificationDispatcher(
     WhatsAppNotificationComposer composer,
     IWhatsAppService whatsApp,
     IOptionsMonitor<WhatsAppNotificationOptions> options,
+    IOptionsMonitor<WhatsAppTemplateOptions> templates,
     TimeProvider timeProvider,
     ILogger<WhatsAppNotificationDispatcher> logger)
 {
@@ -56,7 +57,7 @@ public sealed class WhatsAppNotificationDispatcher(
 
     public async Task<WhatsAppDispatchSummary> RunOnceAsync(CancellationToken cancellationToken)
     {
-        var queued = await QueueDelayNoticesAsync(cancellationToken);
+        var queued = await QueueDelayNoticesAsync(cancellationToken) + await QueueRemindersAsync(cancellationToken);
         var (interrupted, undecided) = await SettleInterruptedSendsAsync(cancellationToken);
         int claimed = 0, accepted = 0, retried = 0, failed = undecided, skipped = 0, unconfirmed = interrupted;
         while (claimed < options.CurrentValue.BatchSize)
@@ -133,6 +134,50 @@ public sealed class WhatsAppNotificationDispatcher(
             catch (DbUpdateException exception) when (IsDuplicateKey(exception))
             {
                 // Another dispatcher queued the same step first: that is the idempotency guarantee working.
+                db.ChangeTracker.Clear();
+            }
+        }
+        return queued;
+    }
+
+    /// <summary>
+    /// APPOINTMENT_REMINDER policy: an approved appointment with a customer whose start is still ahead and no more
+    /// than <c>ReminderLeadHours</c> away. The REMINDER:{reservation} key makes it one per appointment, so a scan
+    /// running every poll queues nothing new, and a reservation created inside the window is reminded at once. A
+    /// cancellation after the row is queued is caught by the composer, which skips a no-longer-blocking reservation.
+    /// </summary>
+    public async Task<int> QueueRemindersAsync(CancellationToken cancellationToken)
+    {
+        var settings = options.CurrentValue;
+        // No approved template means nothing could be sent: queueing would only pile up TEMPLATE_NOT_CONFIGURED rows,
+        // so an environment turns reminders on simply by configuring Whatsapp:Templates:AppointmentReminder.
+        if (settings.ReminderLeadHours == 0 ||
+            templates.CurrentValue.NameFor(WhatsAppNotificationType.AppointmentReminder).Length == 0) return 0;
+        var now = timeProvider.GetUtcNow();
+        var horizon = now + TimeSpan.FromHours(settings.ReminderLeadHours);
+
+        var due = await db.Reservations.AsNoTracking()
+            .Where(r => r.Status == ReservationStatus.Approved && r.Kind != ReservationKind.Cancellation &&
+                        r.CustomerId != null && r.StartAt > now && r.StartAt <= horizon)
+            .OrderBy(r => r.StartAt).Take(settings.BatchSize).ToListAsync(cancellationToken);
+
+        var queued = 0;
+        foreach (var reservation in due)
+        {
+            var key = WhatsAppNotification.ReminderKey(reservation.Id);
+            if (await db.WhatsAppNotifications.AnyAsync(x => x.IdempotencyKey == key, cancellationToken)) continue;
+            if (WhatsAppNotification.AppointmentReminder(reservation, now) is not { } notice) continue;
+            db.WhatsAppNotifications.Add(notice);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                queued++;
+                logger.LogInformation("WhatsApp notification queued. Type: {Type}; ReservationId: {ReservationId}",
+                    WhatsAppNotificationType.AppointmentReminder, reservation.Id);
+            }
+            catch (DbUpdateException exception) when (IsDuplicateKey(exception))
+            {
+                // Another dispatcher queued the same reminder first: that is the idempotency guarantee working.
                 db.ChangeTracker.Clear();
             }
         }

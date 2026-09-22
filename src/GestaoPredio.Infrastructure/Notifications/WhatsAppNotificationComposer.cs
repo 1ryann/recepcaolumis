@@ -61,8 +61,6 @@ public sealed class WhatsAppNotificationComposer(
     public async Task<WhatsAppComposition> ComposeAsync(WhatsAppNotification notification, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (notification.Type == WhatsAppNotificationType.AppointmentReminder)
-            return WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented);
         var templateName = templates.CurrentValue.NameFor(notification.Type);
         if (templateName.Length == 0)
             return WhatsAppComposition.Skip(WhatsAppNotificationCodes.TemplateNotConfigured);
@@ -73,7 +71,8 @@ public sealed class WhatsAppNotificationComposer(
             WhatsAppNotificationType.ProfessionalDelayed => await ProfessionalDelayedAsync(notification, templateName, now, cancellationToken),
             WhatsAppNotificationType.ProfessionalCancelled or WhatsAppNotificationType.AppointmentCancelled =>
                 await CancelledAsync(notification, templateName, now, cancellationToken),
-            WhatsAppNotificationType.AppointmentRescheduled or WhatsAppNotificationType.AppointmentConfirmed =>
+            WhatsAppNotificationType.AppointmentRescheduled or WhatsAppNotificationType.AppointmentConfirmed
+                or WhatsAppNotificationType.AppointmentReminder =>
                 await ScheduledAsync(notification, templateName, now, cancellationToken),
             _ => WhatsAppComposition.Skip(WhatsAppNotificationCodes.NotImplemented)
         };
@@ -147,7 +146,9 @@ public sealed class WhatsAppNotificationComposer(
     }
 
     // "Olá, {{1}}. Seu atendimento com {{2}} foi reagendado para {{3}} às {{4}}." /
-    // "Olá, {{1}}. Seu atendimento com {{2}} está confirmado para {{3}} às {{4}}."
+    // "Olá, {{1}}. Seu atendimento com {{2}} está confirmado para {{3}} às {{4}}." /
+    // APPOINTMENT_REMINDER: same four parameters, as a reminder of the appointment ahead. An appointment cancelled
+    // or already started between queueing and sending is skipped here as OBSOLETE.
     private async Task<WhatsAppComposition> ScheduledAsync(WhatsAppNotification notification, string templateName,
         DateTimeOffset now, CancellationToken cancellationToken)
     {

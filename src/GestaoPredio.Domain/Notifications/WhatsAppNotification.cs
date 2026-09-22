@@ -141,6 +141,20 @@ public sealed class WhatsAppNotification
             : ForCustomer(WhatsAppNotificationType.AppointmentConfirmed, $"CONFIRM:{reservation.Id}", reservation, occurredAt);
     }
 
+    /// <summary>
+    /// One reminder per appointment — the key holds no time, so moving the clock or rerunning the scan can never
+    /// remind the same customer twice. Null when there is no customer to remind.
+    /// </summary>
+    public static WhatsAppNotification? AppointmentReminder(Reservation reservation, DateTimeOffset occurredAt)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        return reservation.CustomerId is null
+            ? null
+            : ForCustomer(WhatsAppNotificationType.AppointmentReminder, ReminderKey(reservation.Id), reservation, occurredAt);
+    }
+
+    public static string ReminderKey(Guid reservationId) => $"REMINDER:{reservationId}";
+
     /// <summary>One row per repeat step (0 = first threshold), so a scheduler cycle can never send the same step twice.</summary>
     public static WhatsAppNotification ProfessionalDelayed(Reservation reservation, int step, DateTimeOffset occurredAt)
     {
