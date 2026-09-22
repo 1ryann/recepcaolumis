@@ -43,7 +43,7 @@ export function AdminProfessionalAvailability({ professionalId, professionalName
     try {
       const updated = await adminProfessionalAvailabilityApi.update(professionalId, { mode: next.mode, days: next.mode === 'CUSTOM' ? next.days : undefined, concurrencyToken: availability.concurrencyToken })
       setAvailability(updated); setDraft({ mode: updated.mode, days: updated.days.map((day) => ({ dayOfWeek: day.dayOfWeek, intervals: day.intervals.map((interval) => ({ startTime: interval.startTime.slice(0, 5), endTime: interval.endTime.slice(0, 5) })) })) })
-      setNotice(updated.existingReservationsOutsideAvailabilityCount > 0 ? `Você possui ${updated.existingReservationsOutsideAvailabilityCount} agendamento(s) já existente(s) fora da nova disponibilidade. Esses agendamentos foram mantidos.` : 'Disponibilidade atualizada.')
+      setNotice(updated.existingReservationsOutsideAvailabilityCount > 0 ? `Há ${updated.existingReservationsOutsideAvailabilityCount} agendamento(s) já existente(s) fora da nova disponibilidade. Esses agendamentos foram mantidos.` : 'Disponibilidade atualizada.')
     } catch (reason) { if (reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED') { await load(); setError('Esta disponibilidade foi alterada em outra sessão. Atualizamos os dados para você.') } else setError(messageFor(reason)) }
     finally { setPending(false) }
   }
@@ -68,5 +68,5 @@ export function AdminProfessionalAvailability({ professionalId, professionalName
 
   if (loading) return <div className="professional-loading" role="status">Carregando disponibilidade…</div>
   if (!availability || !draft) return <div className="form-error" role="alert">{error || 'Disponibilidade indisponível.'}</div>
-  return <div className="admin-availability-section"><div><span className="page-eyebrow">Agenda profissional</span><h3>Disponibilidade de {professionalName}</h3><p className="admin-availability-copy">A alteração entra em vigor para novos agendamentos e preserva reservas existentes.</p></div>{error && <div className="form-error" role="alert">{error}</div>}{notice && <div className="availability-success" role="status">{notice}</div>}<AvailabilityEditor value={availability} draft={draft} pending={pending} onChange={setDraft} onSave={save} /><ExceptionsEditor exceptions={exceptions} pending={pending} onCreate={createException} onUpdate={updateException} onDelete={deleteException} /></div>
+  return <div className="admin-availability-section"><div className="admin-availability-heading"><h3>Disponibilidade de {professionalName}</h3><p className="admin-availability-copy">A alteração entra em vigor para novos agendamentos e preserva reservas existentes.</p></div>{error && <div className="form-error" role="alert">{error}</div>}{notice && <div className="availability-success" role="status">{notice}</div>}<AvailabilityEditor audience="admin" value={availability} draft={draft} pending={pending} onChange={setDraft} onSave={save} /><ExceptionsEditor audience="admin" exceptions={exceptions} pending={pending} onCreate={createException} onUpdate={updateException} onDelete={deleteException} /></div>
 }

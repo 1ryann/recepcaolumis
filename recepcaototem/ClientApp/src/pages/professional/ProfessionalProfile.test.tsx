@@ -21,7 +21,7 @@ test('renders read-only name/profession and editable WhatsApp/description', asyn
   render(<ProfessionalProfile />)
   expect(await screen.findByText('Maria Clara')).toBeInTheDocument()
   expect(screen.getByText('Psicóloga')).toBeInTheDocument()
-  expect(screen.getByDisplayValue('+5511999998888')).toBeInTheDocument()
+  expect(screen.getByDisplayValue('(11) 99999-8888')).toBeInTheDocument()
   expect(screen.getByDisplayValue('Atendimento humanizado.')).toBeInTheDocument()
 })
 
@@ -31,13 +31,13 @@ test('saves WhatsApp/description via PUT and reflects the returned profile', asy
     whatsApp: '+5511988887777', hasPhoto: false, photoUrl: null, concurrencyToken: 'tok-2',
   })
   render(<ProfessionalProfile />)
-  await screen.findByDisplayValue('+5511999998888')
+  await screen.findByDisplayValue('(11) 99999-8888')
   fireEvent.change(screen.getByLabelText('WhatsApp'), { target: { value: '11988887777' } })
   fireEvent.click(screen.getByRole('button', { name: /salvar/i }))
   await waitFor(() => expect(professionalProfileApi.update).toHaveBeenCalledWith({
     whatsApp: '11988887777', description: 'Atendimento humanizado.', concurrencyToken: 'tok-1',
   }))
-  expect(await screen.findByDisplayValue('+5511988887777')).toBeInTheDocument()
+  expect(await screen.findByDisplayValue('(11) 98888-7777')).toBeInTheDocument()
 })
 
 test('the photo <img> is cache-busted with the current concurrencyToken so a replacement photo is not stale', async () => {

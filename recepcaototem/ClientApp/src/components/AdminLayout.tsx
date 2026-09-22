@@ -1,7 +1,8 @@
-import { Activity, CalendarCheck2, CalendarRange, ChevronDown, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, Users, UserRoundSearch, X } from 'lucide-react'
+import { Activity, CalendarCheck2, CalendarRange, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
+import { AccountMenu } from './AccountMenu'
 import { LumisPageShell } from '../features/lumis/LumisPageShell'
 import { useTheme } from '../theme/ThemeProvider'
 
@@ -30,7 +31,6 @@ export function AdminLayout() {
   const { theme } = useTheme()
   const name = session.user?.displayName || session.user?.email || 'Usuário'
   const initials = name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
-  const role = session.user?.roles[0] ?? ''
   const logout = async () => { await session.logout(); navigate('/login') }
 
   return (
@@ -62,7 +62,7 @@ export function AdminLayout() {
         <div className="admin-main">
           <header className="admin-topbar">
             <div className="topbar-title"><button className="menu-trigger icon-button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><span>{pageNames[location.pathname] ?? 'Administração'}</span></div>
-            <button className="profile-chip" type="button"><span>{initials}</span><div><strong>{name}</strong><small>{role}</small></div><ChevronDown size={15} /></button>
+            <AccountMenu />
           </header>
           <div className="admin-content"><Outlet /></div>
         </div>

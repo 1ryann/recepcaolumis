@@ -102,6 +102,10 @@
   letter-spacing: -.02em;
 }
 
+/* In a rate cell the unit is the amount's sibling, not its child, so the `.42em` above
+   resolved against the list item's 16px and rendered "/hora" at under 7px. */
+.room-price-rate .room-price-unit { font-size: 13px; }
+
 /* Auto-fit rather than a fixed column count: the strip has between one and nine entries
    depending on how much of the room has been described, and a fixed grid would leave
    holes in a half-described room. */

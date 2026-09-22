@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { leasesApi, professionalsApi, roomRentalInquiriesApi, roomsApi, tenantsApi } from '../../api/modules'
@@ -53,7 +53,8 @@ test('with a real router, a CONVERTED inquiry still opens the linked lease detai
   expect(await screen.findByText('Este interesse já foi convertido em uma locação.')).toBeInTheDocument()
   expect(await screen.findByRole('heading', { name: 'Detalhes da locação' })).toBeInTheDocument()
   expect(leasesApi.detail).toHaveBeenCalledWith('lease-1')
-  expect(screen.getByTestId('location-search').textContent).not.toContain('inquiryId')
+  // The router applies setSearchParams in a transition, which can land one render after the detail.
+  await waitFor(() => expect(screen.getByTestId('location-search').textContent).not.toContain('inquiryId'))
   expect(screen.queryByRole('heading', { name: 'Nova locação' })).not.toBeInTheDocument()
   expect(leasesApi.create).not.toHaveBeenCalled()
 })

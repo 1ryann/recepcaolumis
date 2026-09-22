@@ -1,3 +1,4 @@
+import { FallbackImage } from '../../components/FallbackImage'
 import { apiClient, ApiError } from '../../api/client'
 import { Activity, AlertTriangle, CalendarClock, CalendarDays, Clock3, DoorOpen, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -55,7 +56,7 @@ export function ProfessionalShell() {
             <strong>{name}</strong>
             {profile?.profession && <small>{profile.profession}</small>}
             {profile?.description && <p>{profile.description}</p>}
-            {profile?.photoUrl && <img className="professional-intro-photo" src={profile.photoUrl} alt="Sua foto" width="56" height="56" />}
+            {profile?.photoUrl && <FallbackImage className="professional-intro-photo" src={profile.photoUrl} alt="Sua foto" width="56" height="56" fallback={null} />}
           </div>
           <nav className="professional-nav" aria-label="Navegação do profissional">
             {nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>)}

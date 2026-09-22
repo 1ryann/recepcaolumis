@@ -1,4 +1,4 @@
-import { CalendarDays, Plus } from 'lucide-react'
+import { Ban, CalendarClock, CalendarDays, Check, Eye, Plus, X } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import {
@@ -6,7 +6,7 @@ import {
   type PagedResponse, type ProfessionalDto, type ReservationDto, type ReservationStatus, type RoomDto,
 } from '../../api/modules'
 import { useSession } from '../../auth/SessionProvider'
-import { EmptyState, PageHeader } from '../../components/PageElements'
+import { EmptyState, PageHeader, countLabel } from '../../components/PageElements'
 import { Modal } from '../../components/Modal'
 
 const pageSize = 20
@@ -27,6 +27,13 @@ const toInputDate = (value?: string | null) => value
 const formatDate = (value: string) => new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Porto_Velho',
 }).format(new Date(value))
+const formatTime = (value: string) => new Intl.DateTimeFormat('pt-BR', {
+  timeStyle: 'short', timeZone: 'America/Porto_Velho',
+}).format(new Date(value))
+// A same-day slot reads "09/09/2026, 14:00 – 15:00" instead of repeating the date.
+const formatPeriod = (start: string, end: string) => formatDate(start).slice(0, 10) === formatDate(end).slice(0, 10)
+  ? `${formatDate(start)} – ${formatTime(end)}`
+  : `${formatDate(start)} — ${formatDate(end)}`
 
 export function Reservations() {
   const session = useSession()
@@ -200,27 +207,27 @@ export function Reservations() {
             {rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </>}
-        <span>{result.totalCount} reservas</span>
+        <span>{countLabel(result.totalCount, 'reserva', 'reservas')}</span>
       </div>
       {loading ? <div className="empty-state" role="status">Carregando reservas…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void load()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhuma reserva encontrada.</EmptyState>
             : <div className="table-scroll"><table className="data-table"><thead><tr>
-              <th>Profissional</th><th>Sala</th><th>Período</th><th>Tipo</th><th>Status</th><th>Ações</th>
+              <th>Profissional</th><th>Sala</th><th>Período</th><th>Tipo</th><th>Status</th><th className="actions-column">Ações</th>
             </tr></thead><tbody>{result.items.map(reservation => <tr key={reservation.id}>
               <td><strong>{reservation.professionalName}</strong></td><td>{reservation.roomName}</td>
-              <td><span className="date-cell"><CalendarDays size={16} />{formatDate(reservation.startAt)} — {formatDate(reservation.endAt)}</span></td>
+              <td><span className="date-cell"><CalendarDays size={16} />{formatPeriod(reservation.startAt, reservation.endAt)}</span></td>
               <td>{kindLabels[reservation.kind]}</td>
-              <td><span className={`status-badge status-${reservation.status.toLowerCase()}`}>{statusLabels[reservation.status]}</span></td>
-              <td><div className="room-admin-actions">
-                <button className="secondary-button" onClick={() => void showDetail(reservation)}>Detalhes</button>
+              <td><span className={`status-badge status-${reservation.status.toLowerCase()}`}><i />{statusLabels[reservation.status]}</span></td>
+              <td><div className="row-actions">
+                <button type="button" title="Detalhes" aria-label={`Detalhes da reserva de ${reservation.professionalName}`} onClick={() => void showDetail(reservation)}><Eye size={17} /></button>
                 {!professionalMode && reservation.status === 'PENDING' && <>
-                  <button className="secondary-button" aria-label={`Aprovar reserva de ${reservation.professionalName}`} onClick={() => void approve(reservation)}>Aprovar</button>
-                  <button className="ghost-button" aria-label={`Recusar reserva de ${reservation.professionalName}`} onClick={() => { setRejecting(reservation); setRejectionReason('') }}>Recusar</button>
+                  <button type="button" title="Aprovar" aria-label={`Aprovar reserva de ${reservation.professionalName}`} onClick={() => void approve(reservation)}><Check size={17} /></button>
+                  <button type="button" title="Recusar" aria-label={`Recusar reserva de ${reservation.professionalName}`} onClick={() => { setRejecting(reservation); setRejectionReason('') }}><X size={17} /></button>
                 </>}
                 {reservation.status === 'APPROVED' && reservation.kind !== 'CANCELLATION' && <>
-                  <button className="secondary-button" aria-label={`${professionalMode ? 'Solicitar remarcação de' : 'Remarcar reserva de'} ${reservation.roomName}`} onClick={() => openForm(reservation)}>{professionalMode ? 'Solicitar remarcação' : 'Remarcar'}</button>
-                  <button className="ghost-button" aria-label={`${professionalMode ? 'Solicitar cancelamento de' : 'Cancelar reserva de'} ${reservation.roomName}`} onClick={() => void cancel(reservation)}>{professionalMode ? 'Solicitar cancelamento' : 'Cancelar'}</button>
+                  <button type="button" title={professionalMode ? 'Solicitar remarcação' : 'Remarcar'} aria-label={`${professionalMode ? 'Solicitar remarcação de' : 'Remarcar reserva de'} ${reservation.roomName}`} onClick={() => openForm(reservation)}><CalendarClock size={17} /></button>
+                  <button type="button" title={professionalMode ? 'Solicitar cancelamento' : 'Cancelar reserva'} aria-label={`${professionalMode ? 'Solicitar cancelamento de' : 'Cancelar reserva de'} ${reservation.roomName}`} onClick={() => void cancel(reservation)}><Ban size={17} /></button>
                 </>}
               </div></td>
             </tr>)}</tbody></table></div>}
@@ -231,7 +238,7 @@ export function Reservations() {
 
     <Modal open={formReservation !== undefined} onClose={() => setFormReservation(undefined)}
       title={formReservation ? (professionalMode ? 'Solicitar remarcação' : 'Remarcar reserva') : (professionalMode ? 'Solicitar reserva' : 'Nova reserva')}
-      subtitle="Informe a sala e o período de uso.">
+      subtitle={formReservation ? 'Informe o novo período. A sala continua a mesma.' : 'Informe a sala e o período de uso.'}>
       <form className="simple-form" onSubmit={submit}>
         {!formReservation && <label className="field-label">Sala<select className="field-input" required value={form.roomId} onChange={event => setForm(current => ({ ...current, roomId: event.target.value }))}><option value="">Selecione</option>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         {!professionalMode && !formReservation && <label className="field-label">Profissional<select className="field-input" required value={form.professionalId} onChange={event => setForm(current => ({ ...current, professionalId: event.target.value }))}><option value="">Selecione</option>{professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
@@ -243,6 +250,6 @@ export function Reservations() {
     <Modal open={rejecting !== null} onClose={() => setRejecting(null)} title="Recusar reserva">
       <form className="simple-form" onSubmit={reject}><label className="field-label">Motivo da recusa<textarea className="field-input" required maxLength={500} value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setRejecting(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar recusa</button></div></form>
     </Modal>
-    <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes da reserva">{detail && <dl className="room-rates"><div><dt>Profissional</dt><dd>{detail.professionalName}</dd></div><div><dt>Sala</dt><dd>{detail.roomName}</dd></div><div><dt>Período</dt><dd>{formatDate(detail.startAt)} — {formatDate(detail.endAt)}</dd></div><div><dt>Status</dt><dd>{statusLabels[detail.status]}</dd></div>{detail.rejectionReason && <div><dt>Motivo da recusa</dt><dd>{detail.rejectionReason}</dd></div>}</dl>}</Modal>
+    <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes da reserva">{detail && <dl className="room-rates"><div><dt>Profissional</dt><dd>{detail.professionalName}</dd></div><div><dt>Sala</dt><dd>{detail.roomName}</dd></div><div><dt>Período</dt><dd>{formatPeriod(detail.startAt, detail.endAt)}</dd></div><div><dt>Status</dt><dd>{statusLabels[detail.status]}</dd></div>{detail.rejectionReason && <div><dt>Motivo da recusa</dt><dd>{detail.rejectionReason}</dd></div>}</dl>}</Modal>
   </div>
 }

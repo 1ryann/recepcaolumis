@@ -43,3 +43,9 @@ export function caretAfterFormat(digitsBeforeCaret: number, formatted: string): 
   }
   return pos
 }
+
+/** Display a stored E.164 Brazilian number (`+5569999999999`) as `(69) 99999-9999`. */
+export function displayWhatsApp(value: string): string {
+  const brazil = value.match(/^\+55(\d{2})(\d{4,5})(\d{4})$/)
+  return brazil ? `(${brazil[1]}) ${brazil[2]}-${brazil[3]}` : value
+}

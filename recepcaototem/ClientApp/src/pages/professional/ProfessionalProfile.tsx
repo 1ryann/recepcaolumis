@@ -1,3 +1,5 @@
+import { formatBrazilWhatsApp, whatsAppDigits } from '../../utils/whatsappMask'
+import { FallbackImage } from '../../components/FallbackImage'
 import { Camera, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
@@ -26,6 +28,8 @@ const errorMessage = (error: unknown) => {
   return 'Não foi possível carregar seu perfil agora.'
 }
 
+const toNational = (value: string) => formatBrazilWhatsApp(value.trim().replace(/^\+55/, ''))
+
 export function ProfessionalProfile() {
   const [profile, setProfile] = useState<ProfessionalProfileDto | null>(null)
   const [whatsApp, setWhatsApp] = useState('')
@@ -38,7 +42,7 @@ export function ProfessionalProfile() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const applyProfile = (next: ProfessionalProfileDto) => {
-    setProfile(next); setWhatsApp(next.whatsApp); setDescription(next.description ?? '')
+    setProfile(next); setWhatsApp(toNational(next.whatsApp)); setDescription(next.description ?? '')
   }
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -58,13 +62,16 @@ export function ProfessionalProfile() {
     catch (reason) { setError(errorMessage(reason)) }
   }
 
-  const dirty = profile ? whatsApp !== profile.whatsApp || description !== (profile.description ?? '') : false
+  // The number is stored as E.164; the field shows and edits the national mask, so a change
+  // is judged on the digits rather than on the formatting.
+  const whatsAppChanged = profile ? whatsAppDigits(whatsApp) !== whatsAppDigits(toNational(profile.whatsApp)) : false
+  const dirty = profile ? whatsAppChanged || description !== (profile.description ?? '') : false
 
   const save = async () => {
     if (!profile) return
     setSaving(true); setError('')
     try {
-      applyProfile(await professionalProfileApi.update({ whatsApp, description: description.trim() || null, concurrencyToken: profile.concurrencyToken }))
+      applyProfile(await professionalProfileApi.update({ whatsApp: whatsAppDigits(whatsApp), description: description.trim() || null, concurrencyToken: profile.concurrencyToken }))
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED') await reloadAfterConflict()
       else setError(errorMessage(reason))
@@ -111,7 +118,7 @@ export function ProfessionalProfile() {
           <div className="professional-profile-photo">
             <div className="professional-profile-photo-frame">
               {profile.hasPhoto && profile.photoUrl
-                ? <img src={`${profile.photoUrl}?v=${profile.concurrencyToken}`} alt={`Foto de ${profile.name}`} />
+                ? <FallbackImage src={`${profile.photoUrl}?v=${profile.concurrencyToken}`} alt={`Foto de ${profile.name}`} fallback={<span aria-hidden="true">{initials(profile.name)}</span>} />
                 : <span aria-hidden="true">{initials(profile.name)}</span>}
             </div>
             <label className="secondary-button">
@@ -131,8 +138,8 @@ export function ProfessionalProfile() {
           </div>
           <form className="professional-profile-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
             <label className="field-label">WhatsApp
-              <input className="field-input" aria-label="WhatsApp" value={whatsApp} onChange={(event) => setWhatsApp(event.target.value)} />
-              {whatsApp !== profile.whatsApp && <small className="field-hint">Ao trocar o número, os avisos por WhatsApp precisam ser autorizados de novo para o número novo.</small>}
+              <input className="field-input" aria-label="WhatsApp" inputMode="tel" autoComplete="tel-national" maxLength={16} placeholder="(69) 99999-9999" value={whatsApp} onChange={(event) => setWhatsApp(toNational(event.target.value))} />
+              {whatsAppChanged && <small className="field-hint">Ao trocar o número, os avisos por WhatsApp precisam ser autorizados de novo para o número novo.</small>}
             </label>
             <label className="field-label">Descrição
               <textarea className="field-input field-textarea" aria-label="Descrição" value={description} onChange={(event) => setDescription(event.target.value)} />
@@ -146,7 +153,7 @@ export function ProfessionalProfile() {
         </div>
       )}
       {!loading && profile && (
-        <div className="panel">
+        <div className="panel professional-optin-panel">
           <div className="panel-header"><div><h2>Avisos por WhatsApp</h2><p>Por exemplo, quando um cliente chega para o atendimento.</p></div></div>
           {/* Keyed by the number: a new number starts without an opt-in, so the panel reloads after it changes. */}
           <WhatsAppOptInPanel key={profile.whatsApp} text={PROFESSIONAL_OPT_IN_TEXT}

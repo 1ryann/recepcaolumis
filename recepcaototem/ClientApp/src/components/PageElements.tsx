@@ -30,3 +30,8 @@ export function StatusBadge(props: StatusBadgeProps) {
 export function EmptyState({ children }: { children: ReactNode }) {
   return <div className="empty-state">{children}</div>
 }
+
+// "1 visita" / "3 visitas" for the table toolbars' counters.
+export function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`
+}

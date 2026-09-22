@@ -1,9 +1,10 @@
+import { displayWhatsApp } from '../../utils/whatsappMask'
 import { CheckCircle2, MessageSquareText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type PagedResponse, type RoomRentalInquiryAdminDto, roomRentalInquiriesApi } from '../../api/modules'
 import { Modal } from '../../components/Modal'
-import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { EmptyState, PageHeader, StatusBadge, countLabel } from '../../components/PageElements'
 
 const pageSize = 20
 const empty: PagedResponse<RoomRentalInquiryAdminDto> = { items: [], page: 1, pageSize, totalCount: 0 }
@@ -65,7 +66,7 @@ export function RoomRentalInquiries() {
     <PageHeader eyebrow="Interesses recebidos pelo totem" title="Interesses de locação"
       description="Consulte quem demonstrou interesse em alugar uma sala e inicie a locação quando fizer sentido." />
     <section className="panel table-panel">
-      <div className="table-toolbar"><span>{result.totalCount} interesses</span></div>
+      <div className="table-toolbar"><span>{countLabel(result.totalCount, 'interesse', 'interesses')}</span></div>
       {loading ? <div className="empty-state" role="status">Carregando interesses…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhum interesse encontrado.</EmptyState>
@@ -95,7 +96,7 @@ export function RoomRentalInquiries() {
     <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes do interesse" subtitle={detailLoading ? 'Carregando…' : undefined}>
       {detail && <dl className="room-rates">
         <div><dt>Nome</dt><dd>{detail.fullName}</dd></div>
-        <div><dt>WhatsApp</dt><dd>{detail.whatsApp}</dd></div>
+        <div><dt>WhatsApp</dt><dd>{displayWhatsApp(detail.whatsApp)}</dd></div>
         <div><dt>Profissão/Empresa</dt><dd>{detail.professionOrCompany}</dd></div>
         <div><dt>Sala</dt><dd><a className="text-link" href="/admin/salas">{detail.roomName}</a></dd></div>
         <div><dt>Disponibilidade</dt><dd>{detail.presentedAvailabilityLabel}</dd></div>

@@ -5,7 +5,7 @@ import { professionalVisitsApi, professionalsApi, reservationsApi, roomsApi, vis
   type PagedResponse, type ProfessionalDto, type ReservationDto, type RoomDto,
   type VisitDto, type VisitStatus } from '../../api/modules'
 import { useSession } from '../../auth/SessionProvider'
-import { EmptyState, PageHeader } from '../../components/PageElements'
+import { EmptyState, PageHeader, countLabel } from '../../components/PageElements'
 import { Modal } from '../../components/Modal'
 
 const pageSize = 20
@@ -153,7 +153,7 @@ export function Visits() {
         </>}
         <input className="field-input compact-select" type="date" aria-label="Visitas desde" value={from} onChange={event => { setFrom(event.target.value); setPage(1) }} />
         <input className="field-input compact-select" type="date" aria-label="Visitas até" value={to} onChange={event => { setTo(event.target.value); setPage(1) }} />
-        <span>{result.totalCount} visitas</span>
+        <span>{countLabel(result.totalCount, 'visita', 'visitas')}</span>
       </div>
       {loading ? <div className="empty-state" role="status">Carregando visitas…</div>
         : error && !result.items.length ? <EmptyState>{error}</EmptyState>

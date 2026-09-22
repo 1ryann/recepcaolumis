@@ -96,8 +96,8 @@ export function ProfessionalAgenda() {
           <p>Seus compromissos, com o nome real de quem está agendado.</p>
         </div>
         <div className="professional-agenda-view-toggle" role="group" aria-label="Alternar período da agenda">
-          <button type="button" className={view === 'today' ? 'is-active' : ''} onClick={() => setView('today')}>Hoje</button>
-          <button type="button" className={view === 'week' ? 'is-active' : ''} onClick={() => setView('week')}>Semana</button>
+          <button type="button" aria-pressed={view === 'today'} className={view === 'today' ? 'is-active' : ''} onClick={() => setView('today')}>Hoje</button>
+          <button type="button" aria-pressed={view === 'week'} className={view === 'week' ? 'is-active' : ''} onClick={() => setView('week')}>Semana</button>
         </div>
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}

@@ -1,4 +1,4 @@
-import { CalendarDays, Pencil, Plus, Search } from 'lucide-react'
+import { Ban, CalendarClock, CalendarDays, CircleStop, Eye, Pencil, Plus, Search } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
@@ -7,20 +7,23 @@ import {
   leasesApi, professionalsApi, roomRentalInquiriesApi, roomsApi, tenantsApi,
   type ProfessionalDto, type RoomDto, type RoomRentalInquiryAdminDto, type TenantDto,
 } from '../../api/modules'
-import { EmptyState, PageHeader } from '../../components/PageElements'
+import { EmptyState, PageHeader, countLabel } from '../../components/PageElements'
 import { Modal } from '../../components/Modal'
 import { parseRoomRate } from '../../features/rooms/money'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 
 const pageSize = 20
 const empty: PagedResponse<LeaseDto> = { items: [], page: 1, pageSize, totalCount: 0 }
+// Lease statuses reuse the badge tones every other table has; `status-agendada` & co. were
+// never styled, so the status rendered as bare text.
+const statusTones: Record<LeaseStatus, string> = { AGENDADA: 'pending', ATIVA: 'active', ENCERRAMENTO_PENDENTE: 'waiting', ENCERRADA: 'inactive', CANCELADA: 'cancelled' }
 const statusLabels: Record<LeaseStatus, string> = {
   AGENDADA: 'Agendada', ATIVA: 'Ativa', ENCERRAMENTO_PENDENTE: 'Encerramento pendente',
   ENCERRADA: 'Encerrada', CANCELADA: 'Cancelada',
 }
 const modeLabels: Record<LeaseMode, string> = { MONTHLY: 'Mensal', DAILY: 'Diária', HOURLY: 'Por hora' }
 const formatBrl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('pt-BR') : 'Sem término definido'
+const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sem término definido'
 // Inquiry desired dates are civil dates (yyyy-MM-dd), never instants: format them without going through Date/timezones.
 const civilDateLabel = (value: string) => { const [year, month, day] = value.split('-'); return `${day}/${month}/${year}` }
 export const toInputDate = (value: string | null) => {
@@ -244,15 +247,15 @@ export function Leases() {
         </select>
         <select className="field-input compact-select" value={professionalFilter} aria-label="Filtrar por profissional" onChange={event => { setProfessionalFilter(event.target.value); setPage(1) }}><option value="">Todos os profissionais</option>{professionals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <select className="field-input compact-select" value={roomFilter} aria-label="Filtrar por sala" onChange={event => { setRoomFilter(event.target.value); setPage(1) }}><option value="">Todas as salas</option>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <span>{result.totalCount} locações</span></div>
+        <span>{countLabel(result.totalCount, 'locação', 'locações')}</span></div>
       {loading ? <div className="empty-state" role="status">Carregando locações…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhuma locação encontrada.</EmptyState>
-            : <div className="table-scroll"><table className="data-table"><thead><tr><th>Locatário</th><th>Profissional</th><th>Sala</th><th>Modalidade</th><th>Período</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-              {result.items.map(lease => <tr key={lease.id}><td><strong>{lease.tenantName}</strong></td><td>{lease.professionalName}</td><td>{lease.roomName}</td><td>{modeLabels[lease.mode]}</td><td><span className="date-cell"><CalendarDays size={16} />{formatDate(lease.occupancyStartAt)} — {formatDate(lease.occupancyEndAt)}</span></td><td className="money-cell">{formatBrl(lease.contractedRate)}</td><td><span className={`status-badge status-${lease.status.toLowerCase()}`}>{statusLabels[lease.status]}</span></td><td><div className="room-admin-actions">
-                <button className="secondary-button" onClick={() => void showDetail(lease)}>Detalhes</button>
-                {lease.status === 'AGENDADA' && <><button className="secondary-button" aria-label={`Editar locação ${lease.tenantName}`} onClick={() => void openForm(lease)}><Pencil size={15} /> Editar</button><button className="ghost-button" onClick={() => { setPostpone(lease); setPostponeAt(toInputDate(lease.occupancyStartAt)) }}>Postergar</button><button className="ghost-button" aria-label={`Cancelar locação ${lease.tenantName}`} onClick={() => void cancel(lease)}>Cancelar</button></>}
-                {lease.status === 'ATIVA' && <button className="ghost-button" aria-label={`Encerrar locação ${lease.tenantName}`} onClick={() => { setEndLease(lease); setEndAt('') }}>Encerrar</button>}
+            : <div className="table-scroll"><table className="data-table leases-table"><thead><tr><th>Locatário</th><th>Profissional</th><th>Sala</th><th>Modalidade</th><th>Período</th><th>Valor</th><th>Status</th><th className="actions-column">Ações</th></tr></thead><tbody>
+              {result.items.map(lease => <tr key={lease.id}><td><strong>{lease.tenantName}</strong></td><td>{lease.professionalName}</td><td>{lease.roomName}</td><td>{modeLabels[lease.mode]}</td><td><span className="date-cell"><CalendarDays size={16} />{formatDate(lease.occupancyStartAt)} — {formatDate(lease.occupancyEndAt)}</span></td><td className="money-cell">{formatBrl(lease.contractedRate)}</td><td><span className={`status-badge status-${statusTones[lease.status]}`}><i />{statusLabels[lease.status]}</span></td><td><div className="row-actions">
+                <button type="button" title="Detalhes" aria-label={`Detalhes da locação ${lease.tenantName}`} onClick={() => void showDetail(lease)}><Eye size={17} /></button>
+                {lease.status === 'AGENDADA' && <><button type="button" title="Editar" aria-label={`Editar locação ${lease.tenantName}`} onClick={() => void openForm(lease)}><Pencil size={17} /></button><button type="button" title="Postergar ocupação" aria-label={`Postergar locação ${lease.tenantName}`} onClick={() => { setPostpone(lease); setPostponeAt(toInputDate(lease.occupancyStartAt)) }}><CalendarClock size={17} /></button><button type="button" title="Cancelar locação" aria-label={`Cancelar locação ${lease.tenantName}`} onClick={() => void cancel(lease)}><Ban size={17} /></button></>}
+                {lease.status === 'ATIVA' && <button type="button" title="Encerrar locação" aria-label={`Encerrar locação ${lease.tenantName}`} onClick={() => { setEndLease(lease); setEndAt('') }}><CircleStop size={17} /></button>}
               </div></td></tr>)}
             </tbody></table></div>}
       {notice && <p className="form-hint" role="status">{notice}</p>}

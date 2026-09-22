@@ -109,8 +109,9 @@ export function RoomPhotoManager({ room, onClose: _onClose }: { room: RoomDto; o
                     aria-label={`Mover foto ${index + 1} para depois`} onClick={() => move(index, 1)}>
                     <ChevronDown size={16} />
                   </button>
-                  {!item.isCover && <button type="button" className="secondary-button" disabled={busy}
-                    onClick={() => setCover(item.id)}>{`Definir foto ${index + 1} como capa`}</button>}
+                  {!item.isCover && <button type="button" className="secondary-button room-photo-cover" disabled={busy}
+                    aria-label={`Definir foto ${index + 1} como capa`}
+                    onClick={() => setCover(item.id)}><Star size={14} /> Definir como capa</button>}
                   {confirmId === item.id
                     ? <span className="room-photo-confirm">
                       <button type="button" className="ghost-button" disabled={busy}

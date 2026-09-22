@@ -2,7 +2,7 @@ import { CalendarDays } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { professionalReservationsApi, type PagedResponse, type ReservationDto, type ReservationStatus } from '../../api/modules'
-import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { EmptyState, PageHeader, StatusBadge, countLabel } from '../../components/PageElements'
 import { ProfessionalFilterBar } from '../../components/ProfessionalFilterBar'
 import { Modal } from '../../components/Modal'
 import { zoneLocalToIso } from './dateHelpers'
@@ -122,7 +122,7 @@ export function ProfessionalReservations() {
             <option value="all">Todos os status</option>
             {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <span>{result.totalCount} reservas</span>
+          <span>{countLabel(result.totalCount, 'reserva', 'reservas')}</span>
         </ProfessionalFilterBar>
       </div>
       {loading ? <div className="empty-state" role="status">Carregando reservas…</div>

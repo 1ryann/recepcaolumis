@@ -1,5 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import type { ProfessionalDto, ProfessionalInput } from '../../api/modules'
+import { formatBrazilWhatsApp } from '../../utils/whatsappMask'
+
+// Stored numbers are E.164 (+55…); the field edits the national number with the same mask
+// the table and the registration forms show. The API accepts the formatted national value.
+const toNational = (value: string) => formatBrazilWhatsApp(value.replace(/^\+55/, ''))
 
 type FormValues = ProfessionalInput
 const emptyValues: FormValues = { name: '', profession: '', whatsApp: '' }
@@ -20,7 +25,7 @@ export function ProfessionalForm({
 
   useEffect(() => {
     setValues(professional
-      ? { name: professional.name, profession: professional.profession, whatsApp: professional.whatsApp }
+      ? { name: professional.name, profession: professional.profession, whatsApp: toNational(professional.whatsApp) }
       : emptyValues)
     setError(null)
   }, [professional])
@@ -47,8 +52,9 @@ export function ProfessionalForm({
       </label>
       <label className="field-label">WhatsApp
         <input className="field-input" required value={values.whatsApp}
-          onChange={event => setValues(current => ({ ...current, whatsApp: event.target.value }))}
-          placeholder="(65) 99999-9999" />
+          inputMode="tel" autoComplete="tel-national" maxLength={16}
+          onChange={event => setValues(current => ({ ...current, whatsApp: formatBrazilWhatsApp(event.target.value) }))}
+          placeholder="(69) 99999-9999" />
       </label>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}

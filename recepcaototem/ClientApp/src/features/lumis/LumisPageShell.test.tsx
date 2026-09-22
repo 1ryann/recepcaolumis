@@ -5,12 +5,17 @@ import { resolve } from 'node:path'
 import { ThemeProvider } from '../../theme/ThemeProvider'
 import { LumisPageShell } from './LumisPageShell'
 
-test('renders the backdrop behind a z-raised content layer', () => {
+// The content layer paints above the z-index:0 backdrop by being positioned and later in the
+// DOM. It must not carry a z-index of its own: that made it a stacking context and trapped
+// the modal backdrop and the mobile nav underneath the fixed theme toggle.
+test('renders the backdrop behind the content layer without trapping overlays', () => {
   render(<ThemeProvider><LumisPageShell><h1>Olá</h1></LumisPageShell></ThemeProvider>)
   expect(screen.getByRole('heading', { name: 'Olá' })).toBeInTheDocument()
   const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
   expect(css).toMatch(/\.lumis-shell\s*\{[^}]*position:\s*relative/)
-  expect(css).toMatch(/\.lumis-shell-content\s*\{[^}]*z-index:\s*1/)
+  expect(css).toMatch(/\.lumis-shell-content\s*\{[^}]*position:\s*relative/)
+  expect(css).not.toMatch(/\.lumis-shell-content\s*\{[^}]*z-index/)
+  expect(css).toMatch(/\.lumis-bg\s*\{[^}]*z-index:\s*0/)
   expect(css).not.toMatch(/\.lumis-shell(-content)?\s*\{[^}]*filter:/)
 })
 

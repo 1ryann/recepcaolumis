@@ -107,13 +107,14 @@ export function RoomInterestModal({
   }
 
   return (
-    <Modal open={open} title="Tenho interesse" subtitle={roomName} onClose={onClose} size="large">
+    <Modal open={open} title="Tenho interesse" subtitle={roomName} onClose={onClose}>
       <form className="totem-room-detail-form" onSubmit={submit} noValidate>
         <label className="field-label" htmlFor="room-interest-name">
           Nome
           <input
             id="room-interest-name"
             className="field-input"
+            autoComplete="name"
             value={form.fullName}
             required
             onChange={(e) => change('fullName', e.target.value)}
@@ -124,6 +125,9 @@ export function RoomInterestModal({
           <input
             id="room-interest-whatsapp"
             className="field-input"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="(69) 99999-9999"
             value={form.whatsApp}
             required
             onChange={(e) => change('whatsApp', e.target.value)}

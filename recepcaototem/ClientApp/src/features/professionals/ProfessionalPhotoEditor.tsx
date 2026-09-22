@@ -1,3 +1,4 @@
+import { FallbackImage } from '../../components/FallbackImage'
 import { ImagePlus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ProfessionalDto } from '../../api/modules'
@@ -45,7 +46,7 @@ export function ProfessionalPhotoEditor({
   return <div className="photo-editor">
     <div className="photo-upload"><div>
       {preview ? <img src={preview} alt="Prévia da foto" />
-        : professional.hasPhoto && professional.photoUrl ? <img src={professional.photoUrl} alt={`Foto de ${professional.name}`} />
+        : professional.hasPhoto && professional.photoUrl ? <FallbackImage src={professional.photoUrl} alt={`Foto de ${professional.name}`} fallback={<span>{professional.name.slice(0, 1).toUpperCase()}</span>} />
           : <span>{professional.name.slice(0, 1).toUpperCase()}</span>}
     </div>
       <label className="secondary-button"><ImagePlus size={16} /> Escolher foto

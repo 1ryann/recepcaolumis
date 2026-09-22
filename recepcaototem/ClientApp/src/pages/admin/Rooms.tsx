@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type ModuleStatus, type PagedResponse, type RoomDto, type RoomInput, roomsApi } from '../../api/modules'
 import { Modal } from '../../components/Modal'
-import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { EmptyState, PageHeader, StatusBadge, countLabel } from '../../components/PageElements'
 import { RoomCatalogueSummary } from '../../features/rooms/RoomCatalogueSummary'
 import { RoomForm } from '../../features/rooms/RoomForm'
 import { RoomPhotoManager } from '../../features/rooms/RoomPhotoManager'
@@ -80,7 +80,7 @@ export function Rooms() {
     <section className="panel table-panel">
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome" aria-label="Buscar salas" /></div>
         <select className="field-input compact-select" value={status} aria-label="Status das salas" onChange={event => { setStatus(event.target.value as ModuleStatus); setPage(1) }}><option value="all">Todos os status</option><option value="active">Ativas</option><option value="inactive">Inativas</option></select>
-        <span>{start}–{end} de {result.totalCount} salas</span></div>
+        <span>{start}–{end} de {countLabel(result.totalCount, 'sala', 'salas')}</span></div>
       {loading ? <div className="empty-state" role="status">Carregando salas…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhuma sala encontrada.</EmptyState>
@@ -94,7 +94,7 @@ export function Rooms() {
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
-    <Modal open={formRoom !== undefined} onClose={() => setFormRoom(undefined)} title={formRoom ? 'Editar sala' : 'Nova sala'} subtitle="As tarifas são informadas em reais e enviadas como números." size="large"><RoomForm room={formRoom ?? null} pending={saving} onCancel={() => setFormRoom(undefined)} onSubmit={save} /></Modal>
+    <Modal open={formRoom !== undefined} onClose={() => setFormRoom(undefined)} title={formRoom ? 'Editar sala' : 'Nova sala'} subtitle="Informe os dados, as tarifas em reais e o que aparece no catálogo." size="large"><RoomForm room={formRoom ?? null} pending={saving} onCancel={() => setFormRoom(undefined)} onSubmit={save} /></Modal>
     <Modal open={photoRoom !== null} onClose={closePhotoManager} title={photoRoom ? `Fotos — ${photoRoom.name}` : 'Fotos da sala'} size="large">{photoRoom && <RoomPhotoManager room={photoRoom} onClose={closePhotoManager} />}</Modal>
   </div>
 }

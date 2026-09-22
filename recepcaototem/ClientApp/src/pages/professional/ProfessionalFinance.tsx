@@ -62,7 +62,7 @@ export function ProfessionalFinance() {
   ), null)
 
   return <div className="page-enter">
-    <PageHeader title="Financeiro" description="Consulte suas cobranças e vencimentos." />
+    <PageHeader eyebrow="Cobranças" title="Financeiro" description="Consulte suas cobranças e vencimentos." />
     <div className="professional-kpi-grid finance-summary-grid">
       <article className="professional-kpi-card">
         <span className="professional-kpi-icon"><Wallet size={20} /></span>

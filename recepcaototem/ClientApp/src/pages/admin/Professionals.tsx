@@ -1,10 +1,12 @@
+import { displayWhatsApp } from '../../utils/whatsappMask'
+import { FallbackImage } from '../../components/FallbackImage'
 import { CalendarClock, Camera, KeyRound, Pencil, Plus, Search, UserMinus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type EligibleUserDto, type ModuleStatus, type PagedResponse, type ProfessionalDto, professionalsApi } from '../../api/modules'
 import { useSession } from '../../auth/SessionProvider'
 import { Modal } from '../../components/Modal'
-import { EmptyState, PageHeader, StatusBadge } from '../../components/PageElements'
+import { EmptyState, PageHeader, StatusBadge, countLabel } from '../../components/PageElements'
 import { ProfessionalForm } from '../../features/professionals/ProfessionalForm'
 import { ProfessionalPhotoEditor } from '../../features/professionals/ProfessionalPhotoEditor'
 import { ProfessionalUserLink } from '../../features/professionals/ProfessionalUserLink'
@@ -13,11 +15,6 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 
 const pageSize = 20
 const empty: PagedResponse<ProfessionalDto> = { items: [], page: 1, pageSize, totalCount: 0 }
-
-function displayWhatsApp(value: string) {
-  const brazil = value.match(/^\+55(\d{2})(\d{4,5})(\d{4})$/)
-  return brazil ? `(${brazil[1]}) ${brazil[2]}-${brazil[3]}` : value
-}
 
 export function Professionals() {
   const { user } = useSession()
@@ -130,21 +127,21 @@ export function Professionals() {
     <section className="panel table-panel">
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome ou profissão" aria-label="Buscar profissionais" /></div>
         <select className="field-input compact-select" value={status} aria-label="Status dos profissionais" onChange={event => { setStatus(event.target.value as ModuleStatus); setPage(1) }}><option value="all">Todos os status</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select>
-        <span>{start}–{end} de {result.totalCount} profissionais</span></div>
+        <span>{start}–{end} de {countLabel(result.totalCount, 'profissional', 'profissionais')}</span></div>
       {loading ? <div className="empty-state" role="status">Carregando profissionais…</div>
         : error && result.items.length === 0 ? <EmptyState><p>{error}</p><button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button></EmptyState>
           : result.items.length === 0 ? <EmptyState>Nenhum profissional encontrado.</EmptyState>
             : <div className="table-scroll"><table className="data-table"><thead><tr><th>Profissional</th><th>Profissão</th><th>WhatsApp</th><th>Conta</th><th>Status</th><th className="actions-column">Ações</th></tr></thead><tbody>{result.items.map(professional => <tr key={professional.id}><td><div className="person-cell">
-              {professional.hasPhoto && professional.photoUrl ? <img src={professional.photoUrl} alt={`Foto de ${professional.name}`} /> : <span className="person-placeholder">{professional.name.slice(0, 1).toUpperCase()}</span>}
+              {professional.hasPhoto && professional.photoUrl ? <FallbackImage src={professional.photoUrl} alt={`Foto de ${professional.name}`} fallback={<span className="person-placeholder">{professional.name.slice(0, 1).toUpperCase()}</span>} /> : <span className="person-placeholder">{professional.name.slice(0, 1).toUpperCase()}</span>}
               <span><strong>{professional.name}</strong><small>{professional.hasPhoto ? 'Foto cadastrada' : 'Sem foto'}</small></span></div></td><td>{professional.profession}</td><td>{displayWhatsApp(professional.whatsApp)}</td><td>{professional.hasLinkedUser ? 'Conta vinculada' : 'Sem conta'}</td><td><StatusBadge status={professional.isActive ? 'active' : 'inactive'} /></td><td><div className="row-actions">
               <button onClick={() => setFormProfessional(professional)} aria-label={`Editar ${professional.name}`}><Pencil size={17} /></button><button onClick={() => setPhotoProfessional(professional)} aria-label={`Foto de ${professional.name}`}><Camera size={17} /></button><button onClick={() => setAvailabilityProfessional(professional)} aria-label={`Disponibilidade de ${professional.name}`}><CalendarClock size={17} /></button>{administrator && <button onClick={() => void openLink(professional)} aria-label={`Vincular conta ${professional.name}`}><KeyRound size={17} /></button>}<button disabled={saving} onClick={() => void toggleStatus(professional)} aria-label={`${professional.isActive ? 'Desativar' : 'Ativar'} ${professional.name}`}>{professional.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button>
             </div></td></tr>)}</tbody></table></div>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}{refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
-    <Modal open={formProfessional !== undefined} onClose={() => setFormProfessional(undefined)} title={formProfessional ? 'Editar profissional' : 'Novo profissional'} subtitle="Os dados são validados e normalizados pela API." size="large"><ProfessionalForm professional={formProfessional ?? null} pending={saving} onCancel={() => setFormProfessional(undefined)} onSubmit={saveForm} /></Modal>
-    <Modal open={photoProfessional !== null} onClose={() => setPhotoProfessional(null)} title="Foto do profissional" subtitle="A imagem fica em armazenamento privado." size="large">{photoProfessional && <ProfessionalPhotoEditor professional={photoProfessional} pending={saving} onClose={() => setPhotoProfessional(null)} onUpload={uploadPhoto} onRemove={removePhoto} />}</Modal>
+    <Modal open={formProfessional !== undefined} onClose={() => setFormProfessional(undefined)} title={formProfessional ? 'Editar profissional' : 'Novo profissional'} subtitle="Informe os dados de cadastro do profissional."><ProfessionalForm professional={formProfessional ?? null} pending={saving} onCancel={() => setFormProfessional(undefined)} onSubmit={saveForm} /></Modal>
+    <Modal open={photoProfessional !== null} onClose={() => setPhotoProfessional(null)} title="Foto do profissional" subtitle="A imagem fica em armazenamento privado.">{photoProfessional && <ProfessionalPhotoEditor professional={photoProfessional} pending={saving} onClose={() => setPhotoProfessional(null)} onUpload={uploadPhoto} onRemove={removePhoto} />}</Modal>
     <Modal open={availabilityProfessional !== null} onClose={() => setAvailabilityProfessional(null)} title="Disponibilidade" subtitle="Defina quando novos agendamentos podem ser oferecidos." size="large">{availabilityProfessional && <AdminProfessionalAvailability professionalId={availabilityProfessional.id} professionalName={availabilityProfessional.name} />}</Modal>
-    <Modal open={linkProfessional !== null} onClose={() => setLinkProfessional(null)} title="Vínculo com conta" subtitle="Somente administradores podem administrar este vínculo." size="large">{linkProfessional && <ProfessionalUserLink professionalName={linkProfessional.name} link={link} eligible={eligible} pending={saving} onSearch={searchEligible} onSave={saveLink} onRemove={removeLink} />}</Modal>
+    <Modal open={linkProfessional !== null} onClose={() => setLinkProfessional(null)} title="Vínculo com conta" subtitle="Somente administradores podem administrar este vínculo.">{linkProfessional && <ProfessionalUserLink professionalName={linkProfessional.name} link={link} eligible={eligible} pending={saving} onSearch={searchEligible} onSave={saveLink} onRemove={removeLink} />}</Modal>
   </div>
 }
