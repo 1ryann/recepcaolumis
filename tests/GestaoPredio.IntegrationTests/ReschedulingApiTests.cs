@@ -91,6 +91,30 @@ public sealed class ReschedulingApiTests(ModulesApiFactory factory)
             .SingleAsync(x => x.ReservationId == seed.Reservation.Id)).UsedAt);
     }
 
+    // The link page tells the customer "Você receberá a confirmação no WhatsApp", and every other booking path
+    // enqueues its notice with the booking. This one wrote the replacement and said nothing: caught on the VPS,
+    // where a reschedule made through the link produced no queue row at all.
+    [Fact]
+    public async Task Confirm_queues_the_reschedule_notice_the_link_page_promises()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedCancelledReservationAsync();
+        var startAt = Utc(Date, new TimeOnly(14, 0));
+
+        var response = await factory.Client.PostAsJsonAsync("/api/reschedule/confirm",
+            new { token = seed.Token, startAt, endAt = Utc(Date, new TimeOnly(15, 0)) });
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<ConfirmPayload>();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var notice = await db.WhatsAppNotifications.AsNoTracking()
+            .SingleAsync(x => x.Type == GestaoPredio.Domain.Notifications.WhatsAppNotificationType.AppointmentRescheduled);
+        Assert.Equal(payload!.ReservationId, notice.ReservationId);
+        Assert.Equal(seed.Customer.Id, notice.CustomerId);
+        Assert.Equal(GestaoPredio.Domain.Notifications.WhatsAppNotificationRecipient.Customer, notice.Recipient);
+    }
+
     [Fact]
     public async Task Second_confirm_with_the_same_token_is_rejected()
     {

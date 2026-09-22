@@ -3,6 +3,7 @@ using GestaoPredio.Application.Availability;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Reservations;
+using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -110,6 +111,9 @@ public static class ReschedulingEndpoints
         var replacement = Reservation.CreateApprovedReplacementForIncident(
             original, available.RoomId!.Value, request.StartAt, request.EndAt, "RESCHEDULE_LINK", now);
         db.Reservations.Add(replacement);
+        // Outbox: the customer picked the slot on the link page, which promises a WhatsApp confirmation.
+        if (WhatsAppNotification.AppointmentRescheduled(replacement, now) is { } notice)
+            db.WhatsAppNotifications.Add(notice);
         token.MarkUsed(now);
         db.AuditEntries.Add(new AuditEntry
         {
