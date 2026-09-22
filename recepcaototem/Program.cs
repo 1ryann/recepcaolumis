@@ -128,9 +128,16 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = SameSiteMode.Strict;
 });
+// Keys go to the database by default: containers are recreated on every deploy with an empty filesystem, and a lost
+// key ring signs everyone out (admin, reception, professionals and customers) and voids every issued cookie and token.
+// Security:DataProtectionPath is now only for a host without a database; where one exists the database wins, so a
+// deployment does not depend on someone remembering to mount a volume (docs/operations/authentication-deployment.md).
+// Switching a host from a folder to the database is one last sign-out: the old ring is not imported.
 var keys = builder.Services.AddDataProtection().SetApplicationName("LumisApi");
 var keyPath = builder.Configuration["Security:DataProtectionPath"];
-if (!string.IsNullOrWhiteSpace(keyPath))
+if (!string.IsNullOrWhiteSpace(connection))
+    keys.PersistKeysToDbContext<ApplicationDbContext>();
+else if (!string.IsNullOrWhiteSpace(keyPath))
 {
     keys.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
     if (OperatingSystem.IsWindows()) keys.ProtectKeysWithDpapi();

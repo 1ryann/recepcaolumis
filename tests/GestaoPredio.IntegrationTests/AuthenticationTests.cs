@@ -5,6 +5,7 @@ using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -27,6 +28,19 @@ public sealed class AuthenticationTests(AuthApiFactory factory) : IAsyncLifetime
         Assert.Equal(Microsoft.AspNetCore.Http.SameSiteMode.Lax, options.Cookie.SameSite);
         Assert.Equal("/", options.Cookie.Path);
         Assert.Null(options.Cookie.Domain);
+    }
+
+    // The key ring used to live in a folder inside the container, so every deploy started with an empty one and signed
+    // out admin, reception, professionals and customers at once. In the database it outlives the container.
+    [Fact]
+    public async Task The_key_ring_that_signs_session_cookies_is_stored_in_the_database()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()
+            .CreateProtector("lumis.test").Protect([1, 2, 3]);
+
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.NotEmpty(await db.DataProtectionKeys.AsNoTracking().ToListAsync());
     }
 
     [Fact]

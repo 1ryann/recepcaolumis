@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Availability;
 using GestaoPredio.Domain.Finance;
@@ -18,7 +19,10 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 namespace GestaoPredio.Infrastructure.Persistence;
-public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options) {
+public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options), IDataProtectionKeyContext {
+ // Keys live in the database so every instance shares them and a redeploy (a fresh container with an empty
+ // filesystem) does not invalidate every cookie and log everyone out.
+ public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
  public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
  public DbSet<Professional> Professionals => Set<Professional>();
  public DbSet<Room> Rooms => Set<Room>();
