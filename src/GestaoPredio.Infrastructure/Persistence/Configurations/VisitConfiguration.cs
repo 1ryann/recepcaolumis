@@ -44,6 +44,14 @@ public sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
             .HasDatabaseName("IX_Visits_Professional_Status_ArrivedAt");
         entity.HasIndex(x => new { x.RoomId, x.Status, x.ArrivedAt }).HasDatabaseName("IX_Visits_Room_Status_ArrivedAt");
         entity.HasIndex(x => x.ReservationId).HasDatabaseName("IX_Visits_ReservationId");
+        // One open visit per reservation, enforced by the database. Every check-in route reads before it
+        // writes, but only this index survives two of them racing — including a future physical door.
+        // Status is persisted as text (see StatusConverter), so the filter compares the stored labels.
+        // Named overload: configuring HasIndex(x => x.ReservationId) twice would reconfigure the lookup
+        // index above instead of adding a second one, and the migration would drop it.
+        entity.HasIndex([nameof(Visit.ReservationId)], "UX_Visits_OpenReservation")
+            .IsUnique()
+            .HasFilter("\"ReservationId\" IS NOT NULL AND \"Status\" IN ('WAITING', 'IN_SERVICE')");
         entity.HasIndex(x => x.CustomerId).HasDatabaseName("IX_Visits_CustomerId");
     }
 
