@@ -292,12 +292,15 @@ public static class TotemEndpoints
         return Results.Ok(new { reservationId = reservation.Id, startAt = reservation.StartAt, endAt = reservation.EndAt });
     }
 
-    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ResolveCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ICheckInCredentialResolver credentials, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
-        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: false, ct);
-        return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
+        var resolved = await credentials.ResolveAsync(request.Token ?? string.Empty, allowUsed: false, ct);
+        return resolved is null
+            ? InvalidCheckIn()
+            : Results.Ok(new TotemCheckInPreview(resolved.ProfessionalName, resolved.RoomName,
+                resolved.StartAt, resolved.EndAt, true));
     }
 
     /// <summary>
@@ -305,20 +308,19 @@ public static class TotemEndpoints
     /// same core the reception desk and the back office use. Everything past this point — the visit, its
     /// transition, the audit entry and the WhatsApp outbox row — is written there.
     /// </summary>
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, ICheckInService checkIn, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, ICheckInCredentialResolver credentials, ICheckInService checkIn, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
         // A spent credential still resolves, so presenting it again answers with the arrival it already
         // produced rather than a bare failure.
-        var resolved = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: true, ct);
+        var resolved = await credentials.ResolveAsync(request.Token ?? string.Empty, allowUsed: true, ct);
         if (resolved is null) return InvalidCheckIn();
-        var (token, reservation, _, _) = resolved.Value;
 
-        if (token.UsedAt is not null)
+        if (resolved.AlreadyUsed)
         {
             var existing = await db.Visits.AsNoTracking().SingleOrDefaultAsync(
-                x => x.ReservationId == reservation.Id &&
+                x => x.ReservationId == resolved.ReservationId &&
                      (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService), ct);
             return existing is null ? InvalidCheckIn() : Arrived(existing);
         }
@@ -328,7 +330,7 @@ public static class TotemEndpoints
             Origin = CheckInOrigin.Totem,
             ActorUserId = TotemActor,
             CorrelationId = context.TraceIdentifier,
-            ReservationId = reservation.Id,
+            ReservationId = resolved.ReservationId,
             EnforceArrivalWindow = true,
             IpAddress = context.Connection.RemoteIpAddress?.ToString()
         }, ct);
@@ -337,40 +339,6 @@ public static class TotemEndpoints
 
     private static IResult Arrived(Visit visit) =>
         Results.Ok(new { visitId = visit.Id, status = visit.Status.ToString().ToUpperInvariant() });
-
-    private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, IManualCheckInCodeHasher hasher, ApplicationDbContext db, TimeProvider time, bool allowUsed, CancellationToken ct)
-    {
-        // Dispatch by string shape (spec 7A.6): a 6-digit manual code is looked up by its keyed
-        // HMAC; anything else keeps the strong-token path (Base64Url -> 32 bytes -> SHA-256).
-        var value = (raw ?? string.Empty).Trim();
-        if (value.Length == 0) return null;
-        byte[] hash;
-        if (ManualCheckInCode.TryParse(value, out var code))
-        {
-            hash = hasher.Hash(code);
-        }
-        else
-        {
-            byte[] bytes;
-            try { bytes = WebEncoders.Base64UrlDecode(value); } catch (FormatException) { return null; }
-            if (bytes.Length != 32) return null;
-            hash = SHA256.HashData(bytes);
-        }
-        var row = await (from token in db.CheckInTokens
-                         join reservation in db.Reservations on token.ReservationId equals reservation.Id
-                         join customer in db.Customers on reservation.CustomerId equals customer.Id
-                         join professional in db.Professionals on reservation.ProfessionalId equals professional.Id
-                         join room in db.Rooms on reservation.RoomId equals room.Id
-                         where token.TokenHash == hash || token.ManualCodeHash == hash
-                         select new { token, reservation, customer, Name = professional.Name, RoomName = room.Name }).SingleOrDefaultAsync(ct);
-        if (row is null) return null;
-        var now = time.GetUtcNow();
-        if (row.token.RevokedAt is not null || row.token.ExpiresAt <= now
-            || (!allowUsed && row.token.UsedAt is not null)
-            || row.reservation.Status != ReservationStatus.Approved || !row.customer.IsActive
-            || !CheckInWindow.IsOpen(row.reservation.StartAt, row.reservation.EndAt, now)) return null;
-        return (row.token, row.reservation, row.customer, new TotemCheckInPreview(row.Name, row.RoomName, row.reservation.StartAt, row.reservation.EndAt, true));
-    }
 
     private static string MaskName(string name)
     {

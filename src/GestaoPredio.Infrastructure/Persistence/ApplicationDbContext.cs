@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using GestaoPredio.Domain.AccessControl;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Availability;
 using GestaoPredio.Domain.Finance;
@@ -41,6 +42,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
  public DbSet<FinancialCharge> FinancialCharges => Set<FinancialCharge>();
  public DbSet<Customer> Customers => Set<Customer>();
  public DbSet<CheckInToken> CheckInTokens => Set<CheckInToken>();
+ public DbSet<AccessDevice> AccessDevices => Set<AccessDevice>();
+ public DbSet<AccessEvent> AccessEvents => Set<AccessEvent>();
  public DbSet<ProfessionalRegistrationRequest> ProfessionalRegistrationRequests => Set<ProfessionalRegistrationRequest>();
  public DbSet<ProfessionalAvailabilityInterval> ProfessionalAvailabilityIntervals => Set<ProfessionalAvailabilityInterval>();
  public DbSet<ProfessionalAvailabilityException> ProfessionalAvailabilityExceptions => Set<ProfessionalAvailabilityException>();
@@ -56,6 +59,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
   builder.HasDbFunction(typeof(PostgreSqlText).GetMethod(nameof(PostgreSqlText.Unaccent))!)
    .HasName("unaccent")
    .HasSchema("extensions");
+  builder.ApplyConfiguration(new AccessDeviceConfiguration());
+  builder.ApplyConfiguration(new AccessEventConfiguration());
   builder.ApplyConfiguration(new ProfessionalConfiguration());
   builder.ApplyConfiguration(new RoomConfiguration());
   builder.ApplyConfiguration(new RoomPhotoConfiguration());

@@ -120,6 +120,7 @@ builder.Services.AddScoped<IFinancialChargeMaterializer, PostgreSqlFinancialChar
 builder.Services.AddScoped<IFinancialSummaryReader, PostgreSqlFinancialSummaryReader>();
 builder.Services.AddScoped<IDashboardReader, PostgreSqlDashboardReader>();
 builder.Services.AddScoped<ICheckInService, CheckInService>();
+builder.Services.AddScoped<ICheckInCredentialResolver, CheckInCredentialResolver>();
 builder.Services.AddLumisNotifications(builder.Configuration, builder.Environment);
 builder.Services.AddLumisAccessControl(builder.Configuration, builder.Environment);
 builder.Services.AddLumisWhatsApp(builder.Configuration, builder.Environment);
@@ -235,6 +236,7 @@ app.MapTotemRoomEndpoints();
 app.MapRoomRentalInquiryEndpoints();
 app.MapReceptionEndpoints();
 app.MapAccessControlEndpoints();
+app.MapIntelbrasAccessEndpoints();
 app.MapWhatsappEndpoints();
 app.MapWhatsappNotificationEndpoints();
 app.MapWhatsappOptInEndpoints();

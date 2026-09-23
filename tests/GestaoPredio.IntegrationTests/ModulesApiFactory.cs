@@ -327,6 +327,8 @@ public sealed class ModulesApiFactory : WebApplicationFactory<recepcaototem.Page
 
     private static async Task ResetDatabaseAsync(ApplicationDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AccessEvents\"");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AccessDevices\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"WhatsAppNotifications\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"WhatsAppMessages\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"RoomRentalInquiries\"");
