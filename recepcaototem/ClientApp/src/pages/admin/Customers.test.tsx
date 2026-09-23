@@ -5,7 +5,7 @@ import { customersAdministrationApi } from '../../api/modules'
 import { Customers } from './Customers'
 
 vi.mock('../../api/modules', () => ({
-  customersAdministrationApi: { list: vi.fn(), changeStatus: vi.fn() },
+  customersAdministrationApi: { list: vi.fn(), changeStatus: vi.fn(), remove: vi.fn() },
 }))
 
 const customer = {
@@ -60,4 +60,27 @@ test('the search is debounced into the server query and the empty result is the 
   await waitFor(() => expect(customersAdministrationApi.list).toHaveBeenCalledWith(
     { search: '69999538007', status: 'all', page: 1, pageSize: 20 }, expect.any(AbortSignal)))
   expect(await screen.findByText('Nenhum cliente encontrado.')).toBeInTheDocument()
+})
+
+test('deleting asks for confirmation first and reports that the record was removed', async () => {
+  vi.mocked(customersAdministrationApi.remove).mockResolvedValue({ outcome: 'DELETED' })
+  render(<Customers />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Excluir Maria Clara Souza' }))
+  // Nothing leaves the screen before the confirmation is accepted.
+  expect(customersAdministrationApi.remove).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Excluir definitivamente' }))
+  await waitFor(() => expect(customersAdministrationApi.remove).toHaveBeenCalledWith('customer-1', 'token-1'))
+  expect(await screen.findByText(/foi excluído/)).toBeInTheDocument()
+})
+
+test('a customer with history is reported as anonymised, not as deleted', async () => {
+  vi.mocked(customersAdministrationApi.remove).mockResolvedValue({ outcome: 'ANONYMIZED' })
+  render(<Customers />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Excluir Maria Clara Souza' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Excluir definitivamente' }))
+
+  expect(await screen.findByText(/histórico foi mantido sem identificação/)).toBeInTheDocument()
 })

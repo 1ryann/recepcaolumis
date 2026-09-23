@@ -4,7 +4,11 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { operatingHoursApi, roomBlocksApi, roomsApi } from '../../api/modules'
 import { Settings } from './Settings'
 
-vi.mock('../../api/modules', async (original) => ({ ...await original<typeof import('../../api/modules')>(), operatingHoursApi: { get: vi.fn(), update: vi.fn() }, roomBlocksApi: { list: vi.fn(), create: vi.fn(), cancel: vi.fn() }, roomsApi: { list: vi.fn() } }))
+vi.mock('../../auth/SessionProvider', () => ({
+  useSession: vi.fn(() => ({ user: { roles: ['ADMINISTRADOR'] } })),
+}))
+
+vi.mock('../../api/modules', async (original) => ({ ...await original<typeof import('../../api/modules')>(), adminUsersApi: { create: vi.fn() }, operatingHoursApi: { get: vi.fn(), update: vi.fn() }, roomBlocksApi: { list: vi.fn(), create: vi.fn(), cancel: vi.fn() }, roomsApi: { list: vi.fn() } }))
 
 const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'].map((dayOfWeek) => ({ dayOfWeek, intervals: dayOfWeek === 'MONDAY' ? [{ opensAt: '08:00', closesAt: '18:00' }] : [] }))
 
@@ -42,4 +46,32 @@ test('shows the explicit unconfigured state and can create a room block', async 
   fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Manutenção' } })
   fireEvent.click(screen.getByRole('button', { name: /criar bloqueio/i }))
   await waitFor(() => expect(roomBlocksApi.create).toHaveBeenCalledWith(expect.objectContaining({ roomId: 'room-1', reason: 'Manutenção' })))
+})
+
+// Creating accounts is administrator-only on the API, and this page is also the manager's
+// (/recepcao/configuracoes) — a manager must not be offered a form that always fails.
+test('the account card creates a manager and shows the temporary password once', async () => {
+  const { adminUsersApi } = await import('../../api/modules')
+  vi.mocked(adminUsersApi.create).mockResolvedValue({
+    userId: 'user-1', displayName: 'Helena Martins', email: 'helena@lumis.test', role: 'GERENTE', temporaryPassword: 'Temp-123456',
+  })
+  render(<Settings />)
+
+  fireEvent.change(await screen.findByLabelText('Nome'), { target: { value: 'Helena Martins' } })
+  fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'helena@lumis.test' } })
+  fireEvent.change(screen.getByLabelText('Perfil'), { target: { value: 'GERENTE' } })
+  fireEvent.click(screen.getByRole('button', { name: /criar conta/i }))
+
+  await waitFor(() => expect(adminUsersApi.create).toHaveBeenCalledWith(
+    { displayName: 'Helena Martins', email: 'helena@lumis.test', role: 'GERENTE' }))
+  expect(await screen.findByText('Temp-123456')).toBeInTheDocument()
+})
+
+test('a manager does not get the account card', async () => {
+  const { useSession } = await import('../../auth/SessionProvider')
+  vi.mocked(useSession).mockReturnValue({ user: { roles: ['GERENTE'] } } as never)
+  render(<Settings />)
+
+  expect(await screen.findByText('Horário do estabelecimento')).toBeInTheDocument()
+  expect(screen.queryByText('Contas de acesso')).not.toBeInTheDocument()
 })

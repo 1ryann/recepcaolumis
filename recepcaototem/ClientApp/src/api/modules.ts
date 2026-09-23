@@ -1129,8 +1129,14 @@ export interface CustomerAdministrationDto {
   concurrencyToken: string
 }
 
-// Customers are created by bookings and self-registration; reception can only turn one off, never delete it, because
-// appointments and audit entries point at the record.
+export interface CustomerDeletionDto {
+  // DELETED when nothing pointed at the record; ANONYMIZED when reservations, visits or WhatsApp
+  // notices kept it alive and only the person was erased.
+  outcome: 'DELETED' | 'ANONYMIZED'
+}
+
+// Customers are created by bookings and self-registration. Reception can turn one off or remove it for good;
+// a record that appointments or notices point at survives the removal without the person in it.
 export const customersAdministrationApi = {
   list(query: ModuleListQuery, signal?: AbortSignal) {
     return apiClient.get<PagedResponse<CustomerAdministrationDto>>('/api/admin/customers', { query: { ...query }, signal })
@@ -1138,5 +1144,25 @@ export const customersAdministrationApi = {
   changeStatus(id: string, active: boolean, concurrencyToken: string) {
     return apiClient.post<CustomerAdministrationDto>(
       `/api/admin/customers/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { concurrencyToken })
+  },
+  remove(id: string, concurrencyToken: string) {
+    return apiClient.delete<CustomerDeletionDto>(`/api/admin/customers/${encodeURIComponent(id)}`, { concurrencyToken })
+  },
+}
+
+export type SystemRole = 'ADMINISTRADOR' | 'GERENTE' | 'PROFISSIONAL'
+export interface CreatedUserDto {
+  userId: string
+  displayName: string
+  email: string
+  role: SystemRole
+  // Identity returns the temporary password once; it is never readable again.
+  temporaryPassword: string
+}
+
+// Administrator-only: the API refuses these for any other role.
+export const adminUsersApi = {
+  create(input: { displayName: string, email: string, role: SystemRole }) {
+    return apiClient.post<CreatedUserDto>('/api/admin/users', input)
   },
 }

@@ -74,6 +74,21 @@ public sealed class Customer
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
+    /// <summary>
+    /// Erases the person while the record survives for the reservations, visits and WhatsApp notices that
+    /// point at it. The phone column is unique and capped at 16 characters, so the placeholder is derived
+    /// from the id rather than shared between deleted customers.
+    /// </summary>
+    public void Anonymize(DateTimeOffset occurredAt)
+    {
+        Name = "Cliente excluído";
+        Phone = $"DEL{Id.ToString("N")[..13]}";
+        NormalizedPhone = Phone;
+        ApplicationUserId = null;
+        IsActive = false;
+        RevokeWhatsAppOptIn(Notifications.WhatsAppOptInSource.Reception, occurredAt);
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
     public void Deactivate(DateTimeOffset occurredAt) => SetActive(false, occurredAt);
     public void Activate(DateTimeOffset occurredAt) => SetActive(true, occurredAt);
 

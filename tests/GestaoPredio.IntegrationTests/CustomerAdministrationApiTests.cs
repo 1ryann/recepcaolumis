@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Notifications;
+using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Domain.Reservations;
+using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
@@ -138,6 +141,139 @@ public sealed class CustomerAdministrationApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(customerEmail, Password)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await factory.Client.GetAsync("/api/customer/me")).StatusCode);
     }
+    // Reception asked to remove a customer for good. A record nothing points at goes away entirely;
+    // one with reservations, visits or WhatsApp notices keeps the rows and loses the person.
+    [Fact]
+    public async Task Deleting_a_customer_without_history_removes_the_record_and_its_login()
+    {
+        await factory.ResetAsync();
+        var email = $"customer-delete-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(email, Password, [SystemRoles.Customer], displayName: "Cliente Some");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-delete@lumis.test");
+        var customer = await SeedAsync("Cliente Some", "69999990106", account.Id);
+        var row = (await ListAsync()).Items.Single(x => x.Id == customer.Id);
+
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/customers/{customer.Id}", new { concurrencyToken = row.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("DELETED", (await response.Content.ReadFromJsonAsync<DeletePayload>())!.Outcome);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Null(await db.Customers.SingleOrDefaultAsync(x => x.Id == customer.Id));
+        Assert.Null(await ReadAccountAsync(account.Id));
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "CUSTOMER_DELETED" && x.TargetEntityType == "CUSTOMER"));
+    }
+
+    [Fact]
+    public async Task Deleting_a_customer_with_history_anonymizes_it_and_keeps_the_reservation()
+    {
+        await factory.ResetAsync();
+        var email = $"customer-anon-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(email, Password, [SystemRoles.Customer], displayName: "Cliente Histórico");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-anon@lumis.test");
+        var customer = await SeedAsync("Cliente Histórico", "69999990107", account.Id);
+        var reservationId = await SeedReservationAsync(customer.Id);
+        var row = (await ListAsync()).Items.Single(x => x.Id == customer.Id);
+
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/customers/{customer.Id}", new { concurrencyToken = row.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("ANONYMIZED", (await response.Content.ReadFromJsonAsync<DeletePayload>())!.Outcome);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stored = await db.Customers.SingleAsync(x => x.Id == customer.Id);
+        Assert.Equal("Cliente excluído", stored.Name);
+        Assert.DoesNotContain("99999", stored.Phone);
+        Assert.Null(stored.ApplicationUserId);
+        Assert.False(stored.IsActive);
+        Assert.Null(await ReadAccountAsync(account.Id));
+        // The appointment history survives, still pointing at the (now nameless) customer.
+        Assert.True(await db.Reservations.AnyAsync(x => x.Id == reservationId && x.CustomerId == customer.Id));
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "CUSTOMER_ANONYMIZED" && x.TargetEntityType == "CUSTOMER"));
+    }
+
+    [Fact]
+    public async Task Deleting_needs_a_fresh_token_an_existing_customer_operations_and_antiforgery()
+    {
+        await factory.ResetAsync();
+        var missing = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await factory.DeleteWithCsrfAsync($"/api/admin/customers/{missing}", new { concurrencyToken = "x" })).StatusCode);
+
+        await LoginAsAsync(SystemRoles.Profissional, "professional-customer-delete@lumis.test");
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await factory.DeleteWithCsrfAsync($"/api/admin/customers/{missing}", new { concurrencyToken = "x" })).StatusCode);
+
+        await factory.ResetAsync();
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-delete-token@lumis.test");
+        var customer = await SeedAsync("Cliente Token", "69999990108");
+        var row = (await ListAsync()).Items.Single(x => x.Id == customer.Id);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.DeleteWithCsrfAsync($"/api/admin/customers/{missing}", new { concurrencyToken = row.ConcurrencyToken })).StatusCode);
+
+        await PostAsync(customer.Id, "deactivate", row.ConcurrencyToken);
+        // The token the screen was holding is now stale, so the delete must lose instead of guessing.
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await factory.DeleteWithCsrfAsync($"/api/admin/customers/{customer.Id}", new { concurrencyToken = row.ConcurrencyToken })).StatusCode);
+
+        using var noCsrf = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/customers/{customer.Id}")
+        {
+            Content = JsonContent.Create(new { concurrencyToken = row.ConcurrencyToken })
+        };
+        Assert.Equal(HttpStatusCode.BadRequest, (await factory.Client.SendAsync(noCsrf)).StatusCode);
+    }
+
+    // The same login can belong to a professional as well (Professionals.ApplicationUserId has its own
+    // foreign key with no cascade). Deleting it would take their access away and break the constraint.
+    [Fact]
+    public async Task Deleting_a_customer_keeps_a_login_a_professional_still_uses()
+    {
+        await factory.ResetAsync();
+        var email = $"customer-shared-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(email, Password, [SystemRoles.Profissional], displayName: "Pessoa Dupla");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-shared@lumis.test");
+        var customer = await SeedAsync("Pessoa Dupla", "69999990109", account.Id);
+        await SeedProfessionalWithAccountAsync(account.Id);
+        var row = (await ListAsync()).Items.Single(x => x.Id == customer.Id);
+
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/customers/{customer.Id}", new { concurrencyToken = row.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Null(await db.Customers.SingleOrDefaultAsync(x => x.Id == customer.Id));
+        // The professional keeps working: their login survived the customer being removed.
+        Assert.NotNull(await ReadAccountAsync(account.Id));
+        Assert.True(await db.Professionals.AnyAsync(x => x.ApplicationUserId == account.Id));
+    }
+
+    private async Task SeedProfessionalWithAccountAsync(string accountId)
+    {
+        var now = factory.UtcNow;
+        var professional = Professional.Create("Pessoa Dupla", "Fisioterapia",
+            $"659{Random.Shared.Next(10000000, 99999999)}", now);
+        professional.LinkUser(accountId, now);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Professionals.Add(professional);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedReservationAsync(Guid customerId)
+    {
+        var now = factory.UtcNow;
+        var room = Room.Create($"Sala {Guid.NewGuid():N}"[..20], null, 10, 50, now);
+        var professional = Professional.Create("Profissional Histórico", "Fisioterapia",
+            $"659{Random.Shared.Next(10000000, 99999999)}", now);
+        var reservation = Reservation.CreateApproved(room.Id, professional.Id,
+            now.AddDays(-2), now.AddDays(-2).AddHours(1), "seed-user", now, customerId);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.AddRange(room, professional, reservation);
+        await db.SaveChangesAsync();
+        return reservation.Id;
+    }
+
     private async Task<ApplicationUser> ReadAccountAsync(string id)
     {
         await using var scope = factory.Services.CreateAsyncScope();
@@ -174,6 +310,7 @@ public sealed class CustomerAdministrationApiTests(ModulesApiFactory factory)
         Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
     }
 
+    private sealed record DeletePayload(string Outcome);
     private sealed record CustomerPayload(Guid Id, string Name, string Phone, bool IsActive, bool HasAccount, string ConcurrencyToken);
     private sealed record PagePayload(IReadOnlyList<CustomerPayload> Items, int Page, int PageSize, int TotalCount);
 }

@@ -44,8 +44,13 @@ export function caretAfterFormat(digitsBeforeCaret: number, formatted: string): 
   return pos
 }
 
+// A deleted customer whose history had to be kept carries a placeholder in the phone column, because
+// that column is required and unique (see Customer.Anonymize). It must never read as a number.
+const deletedPhone = /^DEL[0-9a-f]{13}$/i
+
 /** Display a stored E.164 Brazilian number (`+5569999999999`) as `(69) 99999-9999`. */
 export function displayWhatsApp(value: string): string {
+  if (deletedPhone.test(value)) return '—'
   const brazil = value.match(/^\+55(\d{2})(\d{4,5})(\d{4})$/)
   return brazil ? `(${brazil[1]}) ${brazil[2]}-${brazil[3]}` : value
 }

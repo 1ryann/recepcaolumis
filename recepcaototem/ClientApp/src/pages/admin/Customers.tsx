@@ -1,8 +1,9 @@
-import { Search, UserMinus, UserPlus } from 'lucide-react'
+import { Search, Trash2, UserMinus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type CustomerAdministrationDto, customersAdministrationApi, type ModuleStatus, type PagedResponse } from '../../api/modules'
 import { EmptyState, PageHeader, StatusBadge, countLabel } from '../../components/PageElements'
+import { Modal } from '../../components/Modal'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { displayWhatsApp } from '../../utils/whatsappMask'
 
@@ -23,6 +24,8 @@ export function Customers() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [removing, setRemoving] = useState<CustomerAdministrationDto | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -53,6 +56,27 @@ export function Customers() {
     } finally { setSaving(false) }
   }
 
+  // The API decides between erasing the row and erasing only the person, because reservations, visits
+  // and WhatsApp notices point at the customer. The screen reports which one happened.
+  const remove = async () => {
+    if (!removing) return
+    setSaving(true)
+    try {
+      const outcome = await customersAdministrationApi.remove(removing.id, removing.concurrencyToken)
+      setNotice(outcome.outcome === 'DELETED'
+        ? `${removing.name} foi excluído.`
+        : `${removing.name} tinha atendimentos registrados: os dados pessoais foram apagados e o histórico foi mantido sem identificação.`)
+      setRemoving(null)
+      await load()
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'RESOURCE_MODIFIED') {
+        await load()
+        setError('Este cadastro foi alterado por outra operação. Recarregamos os dados para você tentar novamente.')
+      } else setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o cadastro.')
+      setRemoving(null)
+    } finally { setSaving(false) }
+  }
+
   const start = result.totalCount ? ((result.page - 1) * result.pageSize) + 1 : 0
   const end = Math.min(result.page * result.pageSize, result.totalCount)
   const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
@@ -76,12 +100,24 @@ export function Customers() {
                   <td>{optInLabel(customer)}</td>
                   <td>{customer.hasAccount ? 'Conta vinculada' : 'Sem conta'}</td>
                   <td><StatusBadge status={customer.isActive ? 'active' : 'inactive'} /></td>
-                  <td><div className="row-actions"><button disabled={saving} onClick={() => void toggleStatus(customer)} aria-label={`${customer.isActive ? 'Desativar' : 'Ativar'} ${customer.name}`}>{customer.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button></div></td>
+                  <td><div className="row-actions"><button type="button" disabled={saving} title={customer.isActive ? 'Desativar' : 'Ativar'} onClick={() => void toggleStatus(customer)} aria-label={`${customer.isActive ? 'Desativar' : 'Ativar'} ${customer.name}`}>{customer.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button><button type="button" disabled={saving} title="Excluir" aria-label={`Excluir ${customer.name}`} onClick={() => { setNotice(null); setRemoving(customer) }}><Trash2 size={17} /></button></div></td>
                 </tr>)}</tbody>
               </table></div>}
+      {notice && <p className="form-hint" role="status">{notice}</p>}
       {error && result.items.length > 0 && <p className="form-error" role="alert">{error}</p>}
       {refreshing && <p className="list-refreshing" role="status">Atualizando lista…</p>}
       {result.totalCount > pageSize && <div className="pagination"><button className="secondary-button" disabled={page <= 1 || refreshing} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="secondary-button" disabled={page >= pages || refreshing} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
     </section>
+    <Modal open={removing !== null} onClose={() => setRemoving(null)} title="Excluir cliente"
+      subtitle={removing ? `${removing.name} · ${displayWhatsApp(removing.phone)}` : undefined}>
+      <div className="simple-form">
+        <p className="form-hint">Sem volta. O acesso do cliente é apagado junto com o cadastro.</p>
+        <p className="form-hint">Se houver atendimentos, avisos ou visitas registrados, eles continuam no histórico do prédio, sem o nome e o telefone.</p>
+        <div className="modal-actions">
+          <button className="ghost-button" type="button" disabled={saving} onClick={() => setRemoving(null)}>Cancelar</button>
+          <button className="danger-button" type="button" disabled={saving} onClick={() => void remove()}>{saving ? 'Excluindo…' : 'Excluir definitivamente'}</button>
+        </div>
+      </div>
+    </Modal>
   </div>
 }

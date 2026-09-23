@@ -14,6 +14,7 @@ import { Settings } from '../pages/admin/Settings'
 import { Visits } from '../pages/admin/Visits'
 import { ReceptionMonitor } from '../pages/admin/ReceptionMonitor'
 import { ReceptionWhatsApp } from '../pages/admin/ReceptionWhatsApp'
+import { Customers } from '../pages/admin/Customers'
 import { CustomerHome, CustomerReservations, CustomerShell } from '../pages/customer/CustomerHome'
 import { CustomerRegister } from '../pages/customer/CustomerRegister'
 import { CustomerBooking } from '../pages/customer/CustomerBooking'
@@ -89,6 +90,7 @@ export default function DevelopmentApp() {
             <Route path="/recepcao/profissionais" element={<Professionals />} />
             <Route path="/recepcao/configuracoes" element={<Settings />} />
             <Route path="/recepcao/whatsapp" element={<ReceptionWhatsApp />} />
+            <Route path="/recepcao/clientes" element={<Customers />} />
           </Route>
         </Route>
 <Route element={<ProtectedRoute allowedRoles={['ADMINISTRADOR']} />}>
@@ -102,6 +104,7 @@ export default function DevelopmentApp() {
             <Route path="visitas" element={<Visits />} />
             <Route path="recepcao" element={<ReceptionMonitor />} />
             <Route path="whatsapp" element={<ReceptionWhatsApp />} />
+            <Route path="clientes" element={<Customers />} />
             <Route path="solicitacoes-profissionais" element={<ProfessionalApplications />} />
             <Route path="configuracoes" element={<Settings />} />
           </Route>

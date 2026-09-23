@@ -2,6 +2,7 @@ using GestaoPredio.Domain.Customers;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
@@ -9,6 +10,8 @@ using recepcaototem.Features.Professionals;
 using recepcaototem.Features.Whatsapp;
 
 namespace recepcaototem.Features.Customers;
+
+public sealed record CustomerDeletionResponse(string Outcome);
 
 public sealed record CustomerAdministrationResponse(Guid Id, string Name, string Phone, bool IsActive,
     bool HasAccount, WhatsappOptInResponse WhatsAppOptIn, DateTimeOffset CreatedAt, string ConcurrencyToken);
@@ -26,6 +29,7 @@ public static class CustomerAdministrationEndpoints
         group.MapGet("", List);
         group.MapPost("/{id:guid}/activate", Activate).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/{id:guid}/deactivate", Deactivate).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapDelete("/{id:guid}", Delete).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -120,6 +124,68 @@ public static class CustomerAdministrationEndpoints
             return ProfessionalEndpoints.Modified();
         }
         return Results.Ok(ToResponse(customer));
+    }
+
+    /// <summary>
+    /// Removes a customer for good. Reservations, visits and WhatsApp notices carry the customer id with
+    /// no cascade, so a record something points at cannot simply be deleted: the person is erased and the
+    /// rows stay readable ("ANONYMIZED"). A record nothing points at goes away entirely ("DELETED"). The
+    /// linked login goes with it — an account that could sign in to nothing — unless a professional or a
+    /// registration request still uses that same account, in which case it is only unlinked.
+    /// </summary>
+    private static async Task<IResult> Delete(Guid id, [FromBody] ConcurrencyRequest request, HttpContext context,
+        ApplicationDbContext db, UserManager<ApplicationUser> users, TimeProvider time, CancellationToken cancellationToken)
+    {
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var expectedVersion))
+            return ProfessionalEndpoints.InvalidToken();
+
+        var customer = await db.Customers.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (customer is null) return Results.NotFound();
+        if (customer.Version != expectedVersion) return ProfessionalEndpoints.Modified();
+
+        var hasHistory = await db.Reservations.AnyAsync(x => x.CustomerId == id, cancellationToken)
+            || await db.Visits.AnyAsync(x => x.CustomerId == id, cancellationToken)
+            || await db.WhatsAppNotifications.AnyAsync(x => x.CustomerId == id, cancellationToken);
+        var accountId = customer.ApplicationUserId;
+        var now = time.GetUtcNow();
+
+        db.Entry(customer).Property(x => x.Version).OriginalValue = expectedVersion;
+        if (hasHistory) customer.Anonymize(now); else db.Customers.Remove(customer);
+        var audit = ProfessionalEndpoints.CreateAudit(context, customer.Id,
+            hasHistory ? "CUSTOMER_ANONYMIZED" : "CUSTOMER_DELETED", now);
+        audit.TargetEntityType = "CUSTOMER";
+        db.AuditEntries.Add(audit);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            // Professionals and registration requests point at an account too, with no cascade. Deleting a
+            // login one of them still uses would take away their access and fail on the foreign key, so a
+            // shared account is only unlinked from the customer, never removed.
+            var accountShared = accountId is not null && (
+                await db.Professionals.AnyAsync(x => x.ApplicationUserId == accountId, cancellationToken)
+                || await db.ProfessionalRegistrationRequests.AnyAsync(
+                    x => x.ApplicationUserId == accountId || x.ReviewedByUserId == accountId, cancellationToken));
+            if (accountId is not null && !accountShared)
+            {
+                var account = await users.FindByIdAsync(accountId);
+                if (account is not null)
+                {
+                    var deleted = await users.DeleteAsync(account);
+                    if (!deleted.Succeeded)
+                        throw new InvalidOperationException(
+                            $"Could not delete the login of customer {id}: {string.Join("; ", deleted.Errors.Select(x => x.Code))}.");
+                }
+            }
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return ProfessionalEndpoints.Modified();
+        }
+        return Results.Ok(new CustomerDeletionResponse(hasHistory ? "ANONYMIZED" : "DELETED"));
     }
 
     private static CustomerAdministrationResponse ToResponse(Customer customer) => new(

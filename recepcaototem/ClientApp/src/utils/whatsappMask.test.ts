@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { formatBrazilWhatsApp, isCompleteWhatsApp, whatsAppDigits } from './whatsappMask'
+import { displayWhatsApp, formatBrazilWhatsApp, isCompleteWhatsApp, whatsAppDigits } from './whatsappMask'
 
 test('formats 11 typed digits as (DD) NNNNN-NNNN', () => {
   expect(formatBrazilWhatsApp('69993182032')).toBe('(69) 99318-2032')
@@ -40,4 +40,9 @@ test('isCompleteWhatsApp is true only for 10 or 11 digits', () => {
   expect(isCompleteWhatsApp('69993182032')).toBe(true)
   expect(isCompleteWhatsApp('(69) 99318-2032')).toBe(true)
   expect(isCompleteWhatsApp('')).toBe(false)
+})
+
+test('the placeholder of a deleted customer is not shown as a phone number', () => {
+  expect(displayWhatsApp('DEL9f3e1a2b4c5d6')).toBe('—')
+  expect(displayWhatsApp('+5569999538007')).toBe('(69) 99953-8007')
 })
