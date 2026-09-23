@@ -1,5 +1,17 @@
 # LUMIS Staging — Railway single origin — runbook
 
+> **DESATIVADO em 2026-09-22. Não siga este runbook.**
+> O projeto Supabase `lumis-staging` (ref `xpblbvrmljtvyltvvnpd`, `us-east-1`) foi **apagado**, e o deploy
+> migrou do Railway para o VPS em 2026-09-21. Nada em `deploy.yml` ou no código aponta para staging.
+> Este arquivo fica como registro histórico do que foi feito em 2026-09-09.
+>
+> **Motivo da desativação:** manter dois projetos Supabase quase idênticos — distinguíveis só pela região e
+> por 20 caracteres de ref — causou três quase-acidentes no mesmo dia, incluindo um `DROP INDEX` destinado ao
+> staging executado em produção. Ensaios de migration agora são feitos no Postgres local
+> (`localhost:5432/LumisDev`), que é onde a suíte de integração já roda.
+>
+> Produção hoje: `lumis-production`, ref `nnkcpzbsrudxyrkgdvkz`, `sa-east-1`.
+
 > Operator record. Contains **no secrets** — no passwords, no full connection strings.
 > The staging DB credentials live only in the operator's local `dotnet user-secrets`
 > (project `recepcaototem`) and, from TASK 7, in Railway service variables.

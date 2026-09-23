@@ -1,5 +1,8 @@
 # Room Rental — preparação de staging (2026-09-13)
 
+> **Ambiente desativado em 2026-09-22.** O projeto Supabase `lumis-staging` foi apagado e o deploy migrou
+> para o VPS. Registro histórico — ver `staging-railway-runbook.md` para o contexto da desativação.
+
 > Registro do operador. Não contém segredos — nenhuma senha, connection string completa ou número real de
 > telefone. Toda variável remota mencionada aqui (WhatsApp, storage) é citada só pelo nome; nenhum valor é
 > registrado.
