@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, Clock3, Copy, DoorOpen, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
+import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, CircleOff, Clock3, Copy, DoorOpen, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
@@ -56,7 +56,16 @@ function CustomerShell() {
             </div>
           </header>
           {error && <div className="customer-inline-error" role="alert">{error}</div>}
-          <main className="customer-content"><Outlet context={{ profile, firstName }} /></main>
+          {/* A deactivated customer keeps a live cookie until the session is revalidated, and every
+              scheduling route answers 404 meanwhile — which read as "não foi possível carregar".
+              Name the real reason instead of letting each page report a loading failure. */}
+          {profile?.isActive === false
+            ? <main className="customer-content"><div className="customer-empty panel" role="status">
+                <CircleOff size={22} />
+                <strong>Sua conta está inativa</strong>
+                <span>Procure a recepção do LUMIS para reativá-la e voltar a agendar.</span>
+              </div></main>
+            : <main className="customer-content"><Outlet context={{ profile, firstName }} /></main>}
         </div>
       </div>
     </LumisPageShell>

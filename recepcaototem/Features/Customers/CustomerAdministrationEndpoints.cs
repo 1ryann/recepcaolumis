@@ -1,5 +1,7 @@
 using GestaoPredio.Domain.Customers;
+using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
@@ -60,15 +62,15 @@ public static class CustomerAdministrationEndpoints
     }
 
     private static Task<IResult> Activate(Guid id, ConcurrencyRequest request, HttpContext context,
-        ApplicationDbContext db, TimeProvider time, CancellationToken cancellationToken) =>
-        ChangeStatus(id, request, true, context, db, time, cancellationToken);
+        ApplicationDbContext db, UserManager<ApplicationUser> users, TimeProvider time, CancellationToken cancellationToken) =>
+        ChangeStatus(id, request, true, context, db, users, time, cancellationToken);
 
     private static Task<IResult> Deactivate(Guid id, ConcurrencyRequest request, HttpContext context,
-        ApplicationDbContext db, TimeProvider time, CancellationToken cancellationToken) =>
-        ChangeStatus(id, request, false, context, db, time, cancellationToken);
+        ApplicationDbContext db, UserManager<ApplicationUser> users, TimeProvider time, CancellationToken cancellationToken) =>
+        ChangeStatus(id, request, false, context, db, users, time, cancellationToken);
 
     private static async Task<IResult> ChangeStatus(Guid id, ConcurrencyRequest request, bool isActive,
-        HttpContext context, ApplicationDbContext db, TimeProvider time, CancellationToken cancellationToken)
+        HttpContext context, ApplicationDbContext db, UserManager<ApplicationUser> users, TimeProvider time, CancellationToken cancellationToken)
     {
         if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var expectedVersion))
             return ProfessionalEndpoints.InvalidToken();
@@ -90,6 +92,26 @@ public static class CustomerAdministrationEndpoints
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+            // Customer.IsActive governs the scheduling routes; ApplicationUser.IsActive governs the login.
+            // Flipping only the first let a deactivated customer keep signing in to an area where every
+            // route answered 404 (production, 2026-09-23). The login account follows the customer record.
+            if (customer.ApplicationUserId is not null)
+            {
+                var account = await users.FindByIdAsync(customer.ApplicationUserId);
+                if (account is not null && account.IsActive != isActive)
+                {
+                    account.IsActive = isActive;
+                    // Loudly: a silently ignored failure here would commit the customer half of the change
+                    // and leave the login open, which is the very bug this closes.
+                    var update = await users.UpdateAsync(account);
+                    if (!update.Succeeded)
+                        throw new InvalidOperationException(
+                            $"Could not follow customer {customer.Id} on its login account: {string.Join("; ", update.Errors.Select(x => x.Code))}.");
+                    // Retires the cookie already in the browser: the security stamp validator drops the
+                    // session at its next check instead of leaving it live until it expires.
+                    await users.UpdateSecurityStampAsync(account);
+                }
+            }
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)

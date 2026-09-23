@@ -86,6 +86,10 @@ export function Login({ audience = 'admin' }: { audience?: Audience }) {
               </span>
             </label>
             {error && <div className="form-error" role="alert">{error}</div>}
+            {/* The API answers the same for a wrong password and for a deactivated account, on purpose
+                (AuthenticationTests: credentials must stay indistinguishable). This hint is shown on any
+                failed attempt, so it tells nobody whether an account exists. */}
+            {error === 'E-mail ou senha inválidos.' && <small className="field-hint">Se a senha estiver certa, a conta pode estar inativa. Procure a recepção do LUMIS.</small>}
             <button className="primary-button lumis-login-submit" type="submit" disabled={loading}>
               {loading ? <span className="spinner" /> : 'Entrar'}
             </button>

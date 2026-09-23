@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Domain.Security;
+using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -97,11 +99,58 @@ public sealed class CustomerAdministrationApiTests(ModulesApiFactory factory)
             (await factory.Client.PostAsJsonAsync($"/api/admin/customers/{id}/deactivate", new { concurrencyToken = "x" })).StatusCode);
     }
 
-    private async Task<Customer> SeedAsync(string name, string phone)
+    // Production (2026-09-23): a deactivated customer still signed in — Customer.IsActive and
+    // ApplicationUser.IsActive are separate flags and the reception screen only flipped the first —
+    // so the area loaded (GET /me does not filter) while every scheduling route answered a bare 404.
+    [Fact]
+    public async Task Deactivating_a_customer_closes_the_login_of_the_linked_account()
+    {
+        await factory.ResetAsync();
+        var customerEmail = $"customer-access-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(customerEmail, Password, [SystemRoles.Customer], displayName: "Cliente Teste");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-access@lumis.test");
+        var customer = await SeedAsync("Cliente Teste", "69999990105", account.Id);
+        var row = (await ListAsync()).Items.Single(x => x.Id == customer.Id);
+
+        var stampBefore = await ReadAccountAsync(account.Id);
+        var deactivated = await PostAsync(customer.Id, "deactivate", row.ConcurrencyToken);
+        Assert.False(deactivated.IsActive);
+
+        var stored = await ReadAccountAsync(account.Id);
+        Assert.False(stored.IsActive);
+        // A cookie already in the browser is retired by the security stamp validator, which the
+        // application cookie is wired to — both halves are asserted, not assumed.
+        Assert.NotEqual(stampBefore.SecurityStamp, stored.SecurityStamp);
+        Assert.NotNull(factory.Services.GetService<ISecurityStampValidator>());
+
+        // Sign the manager out first: otherwise the cookie under test is still theirs.
+        await factory.PostWithCsrfAsync("/api/auth/logout", new { });
+        var blocked = await factory.LoginAsync(customerEmail, Password);
+        // Generic on purpose: AuthenticationTests keeps unknown, wrong, inactive and locked
+        // credentials indistinguishable, so the login must not name the reason here.
+        Assert.Equal(HttpStatusCode.Unauthorized, blocked.StatusCode);
+        Assert.Contains("INVALID_CREDENTIALS", await blocked.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.Client.GetAsync("/api/customer/me")).StatusCode);
+
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-access-2@lumis.test");
+        await PostAsync(customer.Id, "activate", deactivated.ConcurrencyToken);
+        await factory.PostWithCsrfAsync("/api/auth/logout", new { });
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(customerEmail, Password)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await factory.Client.GetAsync("/api/customer/me")).StatusCode);
+    }
+    private async Task<ApplicationUser> ReadAccountAsync(string id)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        return (await users.FindByIdAsync(id))!;
+    }
+
+    private async Task<Customer> SeedAsync(string name, string phone, string? applicationUserId = null)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var customer = Customer.Create(name, phone, factory.UtcNow);
+        if (applicationUserId is not null) customer.LinkUser(applicationUserId, factory.UtcNow);
         customer.GrantWhatsAppOptIn(WhatsAppOptInSource.CustomerRegistration, factory.UtcNow);
         db.Customers.Add(customer);
         await db.SaveChangesAsync();
