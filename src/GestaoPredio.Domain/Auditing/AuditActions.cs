@@ -63,6 +63,13 @@ public static class AuditActions
     public const string ReservationCancellationRequested = "RESERVATION_CANCELLATION_REQUESTED";
     public const string ReservationRescheduled = "RESERVATION_RESCHEDULED";
     public const string VisitArrived = "VISIT_ARRIVED";
+
+    /// <summary>Arrival confirmed at the kiosk with a check-in credential.</summary>
+    public const string VisitCheckedIn = "VISIT_CHECKED_IN";
+
+    /// <summary>Arrival confirmed at the reception desk by a member of staff.</summary>
+    public const string VisitCheckedInManual = "VISIT_CHECKED_IN_MANUAL";
+
     public const string VisitServiceStarted = "VISIT_SERVICE_STARTED";
     public const string VisitEnded = "VISIT_ENDED";
     public const string VisitCancelled = "VISIT_CANCELLED";

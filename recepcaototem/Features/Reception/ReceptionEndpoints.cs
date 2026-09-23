@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
 using GestaoPredio.Application.OperationalAlerts;
-using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
 using GestaoPredio.Application.Availability;
@@ -10,6 +9,7 @@ using GestaoPredio.Domain.Common;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Professionals;
+using GestaoPredio.Application.Visits;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -168,35 +168,43 @@ public static class ReceptionEndpoints
         IAppointmentAvailabilityService availability, TimeProvider time, CancellationToken ct) =>
         TotemEndpoints.CreateAssistedReservation(request, context, db, resourceLock, availability, time, ct);
 
+    /// <summary>
+    /// The desk confirms an arrival with the person in front of it, so no credential and no arrival window
+    /// are involved — the reservation and the operator's authority are what authorise it. The arrival itself
+    /// goes through <see cref="ICheckInService"/>, the same core the kiosk and the back office use.
+    /// </summary>
     private static async Task<IResult> ManualCheckIn(Guid id, ReceptionCheckInRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider time, CancellationToken ct)
+        ApplicationDbContext db, ICheckInService checkIn, CancellationToken ct)
     {
         if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return Bad("INVALID_CONCURRENCY_TOKEN");
-        var locator = await db.Reservations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
-        if (locator is null) return Results.NotFound();
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], [locator.RoomId], [locator.ProfessionalId]), ct);
-        var reservation = await db.Reservations.SingleOrDefaultAsync(x => x.Id == id, ct);
-        if (reservation is null) return Results.NotFound();
-        if (reservation.Version != version) return Modified();
-        if (reservation.Status != ReservationStatus.Approved || reservation.Kind == ReservationKind.Cancellation) return InvalidTransition();
-        var customer = reservation.CustomerId is null ? null : await db.Customers.SingleOrDefaultAsync(x => x.Id == reservation.CustomerId, ct);
-        if (reservation.CustomerId is not null && (customer is null || !customer.IsActive)) return Bad("INVALID_VISIT");
-        var customerName = customer?.Name;
-        var existing = await db.Visits.SingleOrDefaultAsync(x => x.ReservationId == id && (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService), ct);
-        if (existing is not null) return Results.Ok(new ReceptionVisitResponse(existing.Id, existing.ProfessionalId, existing.RoomId, existing.ReservationId, existing.CustomerId, existing.VisitorName, Contract(existing.Status), existing.ArrivedAt, existing.ServiceStartedAt, existing.EndedAt, ConcurrencyToken.Encode(existing.Version)));
-        var visitorName = customerName ?? request.VisitorName?.Trim();
-        if (string.IsNullOrWhiteSpace(visitorName)) return Bad("INVALID_VISIT");
-        var now = time.GetUtcNow();
-        var visit = Visit.Arrive(reservation.ProfessionalId, reservation.RoomId, reservation.Id, visitorName, Actor(context)!, now, reservation.CustomerId);
-        db.Visits.Add(visit);
-        db.VisitTransitions.Add(VisitTransition.Record(visit.Id, null, VisitStatus.Waiting, Actor(context)!, now));
-        db.AuditEntries.Add(new AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN_MANUAL", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, TargetUserId = Actor(context), OccurredAt = now, CorrelationId = context.TraceIdentifier });
-        // Outbox: committed with the check-in, sent later by the dispatcher — the check-in never waits on Meta.
-        db.WhatsAppNotifications.Add(WhatsAppNotification.ClientCheckedIn(visit, now));
-        try { await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
-        catch (DbUpdateConcurrencyException) { await transaction.RollbackAsync(ct); return Modified(); }
-        return Results.Created($"/api/reception/visits/{visit.Id}", new ReceptionVisitResponse(visit.Id, visit.ProfessionalId, visit.RoomId, visit.ReservationId, visit.CustomerId, visit.VisitorName, "WAITING", visit.ArrivedAt, null, null, ConcurrencyToken.Encode(visit.Version)));
+        var result = await checkIn.ConfirmArrivalAsync(new CheckInRequest
+        {
+            Origin = CheckInOrigin.Reception,
+            ActorUserId = Actor(context)!,
+            CorrelationId = context.TraceIdentifier,
+            ReservationId = id,
+            VisitorName = request.VisitorName,
+            ExpectedReservationVersion = version,
+            IpAddress = context.Connection.RemoteIpAddress?.ToString()
+        }, ct);
+
+        switch (result.Outcome)
+        {
+            case CheckInOutcome.ReservationNotFound: return Results.NotFound();
+            case CheckInOutcome.ReservationModified: return Modified();
+            case CheckInOutcome.ReservationNotEligible: return InvalidTransition();
+            case CheckInOutcome.CustomerNotEligible:
+            case CheckInOutcome.VisitorNameRequired:
+            case CheckInOutcome.InvalidResource: return Bad("INVALID_VISIT");
+        }
+
+        var visit = result.Visit!;
+        var body = new ReceptionVisitResponse(visit.Id, visit.ProfessionalId, visit.RoomId, visit.ReservationId,
+            visit.CustomerId, visit.VisitorName, Contract(visit.Status), visit.ArrivedAt, visit.ServiceStartedAt,
+            visit.EndedAt, ConcurrencyToken.Encode(visit.Version));
+        return result.Outcome == CheckInOutcome.Confirmed
+            ? Results.Created($"/api/reception/visits/{visit.Id}", body)
+            : Results.Ok(body);
     }
 
     private static async Task<IResult> SetPresence(ReceptionPresenceRequest request, HttpContext context,

@@ -6,7 +6,8 @@ public static class VisitAudit
 {
     private static readonly HashSet<string> Actions =
     [
-        AuditActions.VisitArrived, AuditActions.VisitServiceStarted, AuditActions.VisitEnded,
+        AuditActions.VisitArrived, AuditActions.VisitCheckedIn, AuditActions.VisitCheckedInManual,
+        AuditActions.VisitServiceStarted, AuditActions.VisitEnded,
         AuditActions.VisitCancelled, AuditActions.VisitCorrected
     ];
 

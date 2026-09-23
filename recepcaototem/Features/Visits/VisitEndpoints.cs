@@ -1,9 +1,7 @@
 using System.Security.Claims;
 using GestaoPredio.Application.Leases;
-using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Visits;
 using GestaoPredio.Domain.Auditing;
-using GestaoPredio.Domain.Reservations;
 using GestaoPredio.Domain.Visits;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -112,55 +110,42 @@ public static class VisitEndpoints
         return response is null ? Results.NotFound() : Results.Ok(response);
     }
 
+    /// <summary>
+    /// The back office registers an arrival either against a reservation or as a walk-in. Both go through
+    /// <see cref="ICheckInService"/>, the same core the kiosk and the reception desk use.
+    /// </summary>
     private static async Task<IResult> Create(CreateVisitRequest request, HttpContext context,
-        ApplicationDbContext db, ILeaseResourceLock resourceLock, TimeProvider timeProvider,
-        CancellationToken cancellationToken)
+        ApplicationDbContext db, ICheckInService checkIn, CancellationToken cancellationToken)
     {
         if (request.ProfessionalId == Guid.Empty || string.IsNullOrWhiteSpace(request.VisitorName)) return Invalid();
-        Guid? effectiveRoomId = request.RoomId;
-        if (request.ReservationId is not null)
+
+        var result = await checkIn.ConfirmArrivalAsync(new CheckInRequest
         {
-            var reservationLocator = await db.Reservations.AsNoTracking()
-                .SingleOrDefaultAsync(value => value.Id == request.ReservationId, cancellationToken);
-            if (reservationLocator is null || reservationLocator.ProfessionalId != request.ProfessionalId ||
-                request.RoomId is not null && request.RoomId != reservationLocator.RoomId)
-                return InvalidResource();
-            effectiveRoomId = reservationLocator.RoomId;
+            Origin = CheckInOrigin.Admin,
+            ActorUserId = Actor(context)!,
+            CorrelationId = context.TraceIdentifier,
+            ReservationId = request.ReservationId,
+            ProfessionalId = request.ProfessionalId,
+            RoomId = request.RoomId,
+            VisitorName = request.VisitorName,
+            IpAddress = context.Connection.RemoteIpAddress?.ToString()
+        }, cancellationToken);
+
+        switch (result.Outcome)
+        {
+            case CheckInOutcome.ReservationNotFound:
+            case CheckInOutcome.ReservationNotEligible:
+            case CheckInOutcome.CustomerNotEligible:
+            case CheckInOutcome.InvalidResource: return InvalidResource();
+            case CheckInOutcome.VisitorNameRequired: return Invalid();
+            case CheckInOutcome.ReservationModified: return Modified();
         }
 
-        var now = timeProvider.GetUtcNow();
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], effectiveRoomId is null ? [] : [effectiveRoomId.Value],
-            [request.ProfessionalId]), cancellationToken);
-        if (!await db.Professionals.AnyAsync(value => value.Id == request.ProfessionalId && value.IsActive,
-                cancellationToken) ||
-            effectiveRoomId is not null && !await db.Rooms.AnyAsync(
-                value => value.Id == effectiveRoomId && value.IsActive, cancellationToken))
-            return InvalidResource();
-        if (request.ReservationId is not null && !await db.Reservations.AnyAsync(value =>
-                value.Id == request.ReservationId && value.ProfessionalId == request.ProfessionalId &&
-                value.RoomId == effectiveRoomId && value.Status == ReservationStatus.Approved &&
-                value.Kind != ReservationKind.Cancellation, cancellationToken))
-            return InvalidResource();
-
-        Visit visit;
-        try
-        {
-            visit = Visit.Arrive(request.ProfessionalId, effectiveRoomId, request.ReservationId,
-                request.VisitorName!, Actor(context)!, now);
-        }
-        catch (ArgumentException) { return Invalid(); }
-        db.Visits.Add(visit);
-        db.VisitTransitions.Add(VisitTransition.Record(visit.Id, null, VisitStatus.Waiting,
-            Actor(context)!, now));
-        db.AuditEntries.Add(VisitAudit.CreateSucceeded(visit.Id, AuditActions.VisitArrived, now,
-            context.TraceIdentifier, Actor(context), context.Connection.RemoteIpAddress?.ToString()));
-        // Outbox: committed with the arrival, sent later by the dispatcher — registering a visit never waits on Meta.
-        db.WhatsAppNotifications.Add(WhatsAppNotification.ClientCheckedIn(visit, now));
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return Results.Created($"/api/admin/visits/{visit.Id}",
-            await LoadResponse(db, visit.Id, null, cancellationToken));
+        var visit = result.Visit!;
+        var body = await LoadResponse(db, visit.Id, null, cancellationToken);
+        return result.Outcome == CheckInOutcome.Confirmed
+            ? Results.Created($"/api/admin/visits/{visit.Id}", body)
+            : Results.Ok(body);
     }
 
     internal static Task<IResult> StartForReception(Guid id, VisitConcurrencyRequest request, HttpContext context,

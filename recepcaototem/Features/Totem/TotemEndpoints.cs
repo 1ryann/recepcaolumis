@@ -6,6 +6,7 @@ using GestaoPredio.Application.Leases;
 using GestaoPredio.Domain.Notifications;
 using GestaoPredio.Application.Reservations;
 using GestaoPredio.Application.Scheduling;
+using GestaoPredio.Application.Visits;
 using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Customers;
 using GestaoPredio.Domain.Professionals;
@@ -33,6 +34,9 @@ public sealed record TotemCheckInPreview(string Professional, string Room, DateT
 
 public static class TotemEndpoints
 {
+    /// <summary>The kiosk is unattended, so the arrival is attributed to the route rather than to a user.</summary>
+    private const string TotemActor = "TOTEM";
+
     public static IEndpointRouteBuilder MapTotemEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/totem/professionals", Professionals).AllowAnonymous();
@@ -296,27 +300,43 @@ public static class TotemEndpoints
         return result is null ? InvalidCheckIn() : Results.Ok(result.Value.Preview);
     }
 
-    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// The kiosk resolves the credential and then hands the arrival to <see cref="ICheckInService"/>, the
+    /// same core the reception desk and the back office use. Everything past this point — the visit, its
+    /// transition, the audit entry and the WhatsApp outbox row — is written there.
+    /// </summary>
+    private static async Task<IResult> ConfirmCheckIn(TotemCheckInRequest request, HttpContext context, CustomerPublicRateLimiter limiter, ApplicationDbContext db, IManualCheckInCodeHasher hasher, ICheckInService checkIn, TimeProvider time, CancellationToken ct)
     {
         using var lease = await limiter.AcquireAsync(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", request.Token ?? string.Empty, ct);
         if (!lease.IsAcquired) return Results.Json(new ApiError("TOO_MANY_REQUESTS", "Tente novamente mais tarde."), statusCode: 429);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var result = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: true, ct);
-        if (result is null) return InvalidCheckIn();
-        var (token, reservation, customer, preview) = result.Value;
-        var existing = await db.Visits.SingleOrDefaultAsync(
-            x => x.ReservationId == reservation.Id &&
-                 (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService), ct);
-        if (existing is not null) return Results.Ok(new { visitId = existing.Id, status = existing.Status.ToString().ToUpperInvariant() });
-        if (token.UsedAt is not null) return InvalidCheckIn();
-        var visit = Visit.Arrive(reservation.ProfessionalId, reservation.RoomId, reservation.Id, customer.Name, "TOTEM", time.GetUtcNow(), customer.Id);
-        db.Visits.Add(visit); token.MarkUsed(time.GetUtcNow());
-        db.AuditEntries.Add(new GestaoPredio.Domain.Auditing.AuditEntry { Id = Guid.NewGuid(), Action = "VISIT_CHECKED_IN", Result = "SUCCEEDED", TargetEntityType = "VISIT", TargetEntityId = visit.Id, OccurredAt = time.GetUtcNow(), CorrelationId = Guid.NewGuid().ToString("N") });
-        // Outbox: committed with the check-in, sent later by the dispatcher — the check-in never waits on Meta.
-        db.WhatsAppNotifications.Add(WhatsAppNotification.ClientCheckedIn(visit, time.GetUtcNow()));
-        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
-        return Results.Ok(new { visitId = visit.Id, status = "WAITING" });
+        // A spent credential still resolves, so presenting it again answers with the arrival it already
+        // produced rather than a bare failure.
+        var resolved = await FindCheckIn(request.Token ?? string.Empty, hasher, db, time, allowUsed: true, ct);
+        if (resolved is null) return InvalidCheckIn();
+        var (token, reservation, _, _) = resolved.Value;
+
+        if (token.UsedAt is not null)
+        {
+            var existing = await db.Visits.AsNoTracking().SingleOrDefaultAsync(
+                x => x.ReservationId == reservation.Id &&
+                     (x.Status == VisitStatus.Waiting || x.Status == VisitStatus.InService), ct);
+            return existing is null ? InvalidCheckIn() : Arrived(existing);
+        }
+
+        var result = await checkIn.ConfirmArrivalAsync(new CheckInRequest
+        {
+            Origin = CheckInOrigin.Totem,
+            ActorUserId = TotemActor,
+            CorrelationId = context.TraceIdentifier,
+            ReservationId = reservation.Id,
+            EnforceArrivalWindow = true,
+            IpAddress = context.Connection.RemoteIpAddress?.ToString()
+        }, ct);
+        return result.Visit is null ? InvalidCheckIn() : Arrived(result.Visit);
     }
+
+    private static IResult Arrived(Visit visit) =>
+        Results.Ok(new { visitId = visit.Id, status = visit.Status.ToString().ToUpperInvariant() });
 
     private static async Task<(CheckInToken Token, Reservation Reservation, Customer Customer, TotemCheckInPreview Preview)?> FindCheckIn(string raw, IManualCheckInCodeHasher hasher, ApplicationDbContext db, TimeProvider time, bool allowUsed, CancellationToken ct)
     {
@@ -348,7 +368,7 @@ public static class TotemEndpoints
         if (row.token.RevokedAt is not null || row.token.ExpiresAt <= now
             || (!allowUsed && row.token.UsedAt is not null)
             || row.reservation.Status != ReservationStatus.Approved || !row.customer.IsActive
-            || now < row.reservation.StartAt.Subtract(TimeSpan.FromHours(1)) || now >= row.reservation.EndAt) return null;
+            || !CheckInWindow.IsOpen(row.reservation.StartAt, row.reservation.EndAt, now)) return null;
         return (row.token, row.reservation, row.customer, new TotemCheckInPreview(row.Name, row.RoomName, row.reservation.StartAt, row.reservation.EndAt, true));
     }
 
