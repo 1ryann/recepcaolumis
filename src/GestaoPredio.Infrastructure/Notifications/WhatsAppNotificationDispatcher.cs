@@ -37,8 +37,16 @@ public sealed class WhatsAppNotificationDispatcher(
     IOptionsMonitor<WhatsAppNotificationOptions> options,
     IOptionsMonitor<WhatsAppTemplateOptions> templates,
     TimeProvider timeProvider,
+    TimeZoneInfo timeZone,
     ILogger<WhatsAppNotificationDispatcher> logger)
 {
+    /// <summary>
+    /// How far before the reminder window a booking has to be made for the reminder to be worth sending. Not
+    /// configurable: it is not a policy knob, only the guard that keeps a booking made right at the edge of the
+    /// window from getting its confirmation and its reminder moments apart.
+    /// </summary>
+    private static readonly TimeSpan ReminderBookingMargin = TimeSpan.FromHours(1);
+
     /// <summary>Nothing reached the client: Meta answered with an error, or the connection was never made.</summary>
     private static readonly HashSet<string> RetryableFailures =
     [
@@ -141,10 +149,20 @@ public sealed class WhatsAppNotificationDispatcher(
     }
 
     /// <summary>
-    /// APPOINTMENT_REMINDER policy: an approved appointment with a customer whose start is still ahead and no more
-    /// than <c>ReminderLeadHours</c> away. The REMINDER:{reservation} key makes it one per appointment, so a scan
-    /// running every poll queues nothing new, and a reservation created inside the window is reminded at once. A
-    /// cancellation after the row is queued is caught by the composer, which skips a no-longer-blocking reservation.
+    /// APPOINTMENT_REMINDER policy: an approved appointment with a customer, whose start is still ahead, no more than
+    /// <c>ReminderLeadHours</c> away, and which was booked before that window opened. The REMINDER:{reservation} key
+    /// makes it one per appointment, so a scan running every poll queues nothing new. A cancellation after the row is
+    /// queued is caught by the composer, which skips a no-longer-blocking reservation.
+    /// <para>
+    /// The booking condition is the point: someone who books inside the window was told the date and time by the
+    /// confirmation seconds earlier, and reminding them there and then sent two near-identical messages in the same
+    /// minute (production, 2026-09-24: booked 19:13 for 08:00 the next morning). The reminder is for someone who
+    /// booked a while ago; for everyone else the confirmation already is the reminder.
+    /// </para>
+    /// <para>
+    /// Quiet hours apply here and nowhere else: every other notice answers something that just happened, while this
+    /// one only has the moment the window opens — which for an afternoon appointment is the middle of the night.
+    /// </para>
     /// </summary>
     public async Task<int> QueueRemindersAsync(CancellationToken cancellationToken)
     {
@@ -154,11 +172,19 @@ public sealed class WhatsAppNotificationDispatcher(
         if (settings.ReminderLeadHours == 0 ||
             templates.CurrentValue.NameFor(WhatsAppNotificationType.AppointmentReminder).Length == 0) return 0;
         var now = timeProvider.GetUtcNow();
-        var horizon = now + TimeSpan.FromHours(settings.ReminderLeadHours);
+        // Quiet hours hold the scan, they do not cancel anything: the appointment is still inside the window in the
+        // morning, so the reminder is queued at the first allowed hour instead of waking the customer up.
+        if (settings.IsQuietHour(TimeZoneInfo.ConvertTime(now, timeZone).Hour)) return 0;
+        var lead = TimeSpan.FromHours(settings.ReminderLeadHours);
+        var horizon = now + lead;
+        // Booked strictly before the window would only push the two messages apart by however long the booking
+        // preceded it — a minute early still reads as a duplicate. The margin is what makes the rule hold at the edge.
+        var bookedBefore = lead + ReminderBookingMargin;
 
         var due = await db.Reservations.AsNoTracking()
             .Where(r => r.Status == ReservationStatus.Approved && r.Kind != ReservationKind.Cancellation &&
-                        r.CustomerId != null && r.StartAt > now && r.StartAt <= horizon)
+                        r.CustomerId != null && r.StartAt > now && r.StartAt <= horizon &&
+                        r.CreatedAt <= r.StartAt - bookedBefore)
             .OrderBy(r => r.StartAt).Take(settings.BatchSize).ToListAsync(cancellationToken);
 
         var queued = 0;

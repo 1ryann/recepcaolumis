@@ -680,6 +680,69 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         Assert.Equal("OBSOLETE", notice.LastErrorCode);
     }
 
+    // Production, 2026-09-24: an appointment booked at 19:13 for 08:00 the next morning was inside the reminder
+    // window the moment it existed, so the same scan sent the confirmation and the reminder — two near-identical
+    // messages in the same minute, both billed. The reminder is for someone who booked a while ago.
+    [Fact]
+    public async Task An_appointment_booked_inside_the_window_is_not_reminded_on_top_of_its_confirmation()
+    {
+        await factory.ResetAsync();
+        await SeedAsync(startIn: TimeSpan.FromHours(13), bookedAgo: TimeSpan.Zero);
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta, Reminders);              // 24h window
+
+        Assert.Equal(0, (await ModulesApiFactory.DispatchAsync(host)).NoticesQueued);
+        Assert.Empty(meta.Sent);
+        Assert.Empty(await factory.NotificationsAsync());
+
+        // And it stays that way as the appointment approaches: the rule reads when it was booked, not how close it is.
+        factory.AdvanceTime(TimeSpan.FromHours(10));
+        Assert.Equal(0, (await ModulesApiFactory.DispatchAsync(host)).NoticesQueued);
+        Assert.Empty(meta.Sent);
+        Assert.Empty(await factory.NotificationsAsync());
+    }
+
+    [Fact]
+    public async Task A_booking_made_right_at_the_edge_of_the_window_waits_for_the_margin()
+    {
+        await factory.ResetAsync();
+        var edge = await SeedAsync(startIn: TimeSpan.FromHours(24.5), bookedAgo: TimeSpan.Zero);
+        var early = await SeedAsync(startIn: TimeSpan.FromHours(25.5), bookedAgo: TimeSpan.Zero);
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta, Reminders);
+
+        factory.AdvanceTime(TimeSpan.FromHours(2));                          // both are inside the 24h window now
+
+        Assert.Equal(1, (await ModulesApiFactory.DispatchAsync(host)).NoticesQueued);
+        // 24h30 between booking and appointment is half an hour of reminder — the same message twice. 25h30 is one.
+        var notice = Assert.Single(await factory.NotificationsAsync());
+        Assert.Equal(WhatsAppNotification.ReminderKey(early.ReservationId), notice.IdempotencyKey);
+        Assert.NotEqual(WhatsAppNotification.ReminderKey(edge.ReservationId), notice.IdempotencyKey);
+    }
+
+    // A short lead is what makes quiet hours necessary: 12h before a 14:00 appointment is 02:00.
+    private static readonly (string Key, string Value)[] ShortLeadReminders =
+        [("Whatsapp:Templates:AppointmentReminder", "client_appointment_reminder"),
+         ("Whatsapp:Notifications:ReminderLeadHours", "12")];
+
+    [Fact]
+    public async Task A_reminder_whose_window_opens_at_night_waits_for_the_morning()
+    {
+        await factory.ResetAsync();                                          // 08:00 in Porto Velho
+        await SeedAsync(startIn: TimeSpan.FromHours(30));                    // 14:00 local, the next day
+        var meta = new FakeWhatsAppService();
+        using var host = factory.WithWhatsApp(meta, ShortLeadReminders);
+
+        factory.AdvanceTime(TimeSpan.FromHours(18));                         // 02:00 local: the window just opened
+        Assert.Equal(0, (await ModulesApiFactory.DispatchAsync(host)).NoticesQueued);
+        Assert.Empty(meta.Sent);
+
+        factory.AdvanceTime(TimeSpan.FromHours(6));                          // 08:00 local, still 6h before
+        Assert.Equal(1, (await ModulesApiFactory.DispatchAsync(host)).NoticesQueued);
+        var (_, template) = Assert.Single(meta.Sent);
+        Assert.Equal("client_appointment_reminder", template.Name);
+    }
+
     // ---- cancellation / reschedule through the real admin endpoints -------------------------------------------
 
     [Fact]
@@ -983,7 +1046,7 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
 
     private sealed record Seed(Guid ReservationId, Guid ProfessionalId, Guid RoomId, Guid CustomerId, DateTimeOffset StartAt);
 
-    private async Task<Seed> SeedAsync(TimeSpan startIn)
+    private async Task<Seed> SeedAsync(TimeSpan startIn, TimeSpan? bookedAgo = null)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -1000,7 +1063,9 @@ public sealed class WhatsAppNotificationDispatchTests(ModulesApiFactory factory)
         if (db.Entry(customer).State == EntityState.Detached) db.Customers.Add(customer);
         db.Rooms.Add(room);
         var start = now + startIn;
-        var reservation = Reservation.CreateApproved(room.Id, professional.Id, start, start.AddHours(1), "seed", now.AddDays(-1), customer.Id);
+        // Booked a day ago unless the test says otherwise: the reminder rule reads when the appointment was booked.
+        var reservation = Reservation.CreateApproved(room.Id, professional.Id, start, start.AddHours(1), "seed",
+            now - (bookedAgo ?? TimeSpan.FromDays(1)), customer.Id);
         db.Reservations.Add(reservation);
         await db.SaveChangesAsync();
         return new Seed(reservation.Id, professional.Id, room.Id, customer.Id, reservation.StartAt);

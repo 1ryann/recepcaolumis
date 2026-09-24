@@ -66,6 +66,32 @@ public sealed class WhatsAppNotificationOptionsTests
         Assert.Equal("", templates.NameFor(WhatsAppNotificationType.ProfessionalDelayed));
     }
 
+    // The default range wraps past midnight, which the naive "from <= hour < until" comparison gets backwards.
+    [Theory]
+    [InlineData(21, true)]
+    [InlineData(23, true)]
+    [InlineData(0, true)]
+    [InlineData(7, true)]
+    [InlineData(8, false)]    // the hour reminders resume
+    [InlineData(14, false)]
+    [InlineData(20, false)]
+    public void The_default_quiet_range_covers_the_night_and_nothing_else(int localHour, bool quiet)
+    {
+        Assert.Equal(quiet, new WhatsAppNotificationOptions().IsQuietHour(localHour));
+    }
+
+    [Theory]
+    [InlineData(13, true)]
+    [InlineData(12, false)]
+    [InlineData(15, false)]
+    public void A_range_inside_one_day_does_not_wrap(int localHour, bool quiet)
+    {
+        var options = new WhatsAppNotificationOptions { ReminderQuietFromHour = 13, ReminderQuietUntilHour = 15 };
+        Assert.Equal(quiet, options.IsQuietHour(localHour));
+        // Equal bounds turn quiet hours off entirely instead of silencing the whole day.
+        Assert.False(new WhatsAppNotificationOptions { ReminderQuietFromHour = 0, ReminderQuietUntilHour = 0 }.IsQuietHour(localHour));
+    }
+
     [Theory]
     [InlineData("Maria Clara Souza", "Maria")]
     [InlineData("  ", "cliente")]

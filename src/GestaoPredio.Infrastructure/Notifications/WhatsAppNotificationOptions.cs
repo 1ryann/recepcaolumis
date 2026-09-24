@@ -44,10 +44,29 @@ public sealed class WhatsAppNotificationOptions
     public int DelayLookbackMinutes { get; set; } = 180;
 
     /// <summary>
-    /// How far ahead of an appointment its APPOINTMENT_REMINDER is queued. 0 turns reminders off, which is what an
-    /// environment without the approved template should use so nothing piles up as TEMPLATE_NOT_CONFIGURED.
+    /// How far ahead of an appointment its APPOINTMENT_REMINDER is queued. An appointment booked less than this
+    /// ahead gets no reminder at all: the confirmation already named the date and time (see QueueRemindersAsync).
+    /// 0 turns reminders off, which is what an environment without the approved template should use so nothing
+    /// piles up as TEMPLATE_NOT_CONFIGURED.
     /// </summary>
-    public int ReminderLeadHours { get; set; } = 24;
+    public int ReminderLeadHours { get; set; } = 12;
+
+    /// <summary>
+    /// Local hours between which no reminder is queued, as [from, until). The reminder is the only notice whose
+    /// moment the system chooses — everything else answers something that just happened — and a lead of a few hours
+    /// puts an afternoon appointment's reminder in the middle of the night. Nothing is lost by waiting: the
+    /// appointment is still inside the window in the morning, so the reminder goes out at the first allowed hour.
+    /// Equal values turn quiet hours off.
+    /// </summary>
+    public int ReminderQuietFromHour { get; set; } = 21;
+    public int ReminderQuietUntilHour { get; set; } = 8;
+
+    /// <summary>True when this local hour falls inside the quiet range, which may wrap past midnight.</summary>
+    public bool IsQuietHour(int localHour) =>
+        ReminderQuietFromHour != ReminderQuietUntilHour &&
+        (ReminderQuietFromHour < ReminderQuietUntilHour
+            ? localHour >= ReminderQuietFromHour && localHour < ReminderQuietUntilHour
+            : localHour >= ReminderQuietFromHour || localHour < ReminderQuietUntilHour);
 
     /// <summary>Check-in and delay notices are pointless once this old; they are skipped as EXPIRED.</summary>
     public int OperationalMaxAgeMinutes { get; set; } = 30;
@@ -111,6 +130,8 @@ public sealed partial class WhatsAppNotificationOptionsValidator : IValidateOpti
         if (options.DelayMaxNotices is < 0 or > 10) errors.Add("Whatsapp:Notifications:DelayMaxNotices deve estar entre 0 e 10.");
         if (options.DelayLookbackMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:DelayLookbackMinutes deve estar entre 1 e 1440.");
         if (options.ReminderLeadHours is < 0 or > 168) errors.Add("Whatsapp:Notifications:ReminderLeadHours deve estar entre 0 e 168.");
+        if (options.ReminderQuietFromHour is < 0 or > 23) errors.Add("Whatsapp:Notifications:ReminderQuietFromHour deve estar entre 0 e 23.");
+        if (options.ReminderQuietUntilHour is < 0 or > 23) errors.Add("Whatsapp:Notifications:ReminderQuietUntilHour deve estar entre 0 e 23.");
         if (options.OperationalMaxAgeMinutes is < 1 or > 1440) errors.Add("Whatsapp:Notifications:OperationalMaxAgeMinutes deve estar entre 1 e 1440.");
         if (options.SchedulingMaxAgeHours is < 1 or > 168) errors.Add("Whatsapp:Notifications:SchedulingMaxAgeHours deve estar entre 1 e 168.");
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);

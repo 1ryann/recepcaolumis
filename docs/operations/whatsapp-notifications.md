@@ -40,7 +40,7 @@ webhook existente (sent/delivered/read/failed) → WhatsAppMessage E a notifica�
 | `APPOINTMENT_RESCHEDULED` | cliente | Admin reagenda (`/reschedule`) ou aprova o pedido de reagendamento do profissional; chave pela reserva **substituta** | `RESCHEDULE:{ReservaNovaId}` |
 | `APPOINTMENT_CONFIRMED` | cliente | agendamento do próprio cliente (inclui o fluxo QR do Totem) e agendamento assistido pela recepção; aprovação de reserva nova que tenha cliente | `CONFIRM:{ReservationId}` |
 | `PROFESSIONAL_DELAYED` | cliente | calculado pelo dispatcher (ver política abaixo) | `DELAY:{ReservationId}:{passo}` |
-| `APPOINTMENT_REMINDER` | cliente | varredura do dispatcher: atendimento aprovado que começa dentro de `ReminderLeadHours` (24h) | `REMINDER:{reserva}` |
+| `APPOINTMENT_REMINDER` | cliente | varredura do dispatcher: atendimento aprovado que começa dentro de `ReminderLeadHours` (12h) **e que foi marcado antes dessa janela abrir** | `REMINDER:{reserva}` |
 
 Não há aviso ao cliente quando **ele mesmo** cancela ou reagenda. Reservas sem cliente (criadas por Admin/profissional
 sem `CustomerId`) não geram aviso ao cliente.
@@ -197,7 +197,9 @@ mensagem invalidava o link da primeira).
 | `Whatsapp__Notifications__DelayRepeatMinutes` | 15 | Intervalo mínimo entre avisos de atraso (Y). |
 | `Whatsapp__Notifications__DelayMaxNotices` | 2 | Máximo de avisos de atraso por atendimento (0 desliga). |
 | `Whatsapp__Notifications__DelayLookbackMinutes` | 180 | Janela de busca de atendimentos atrasados. |
-| `Whatsapp__Notifications__ReminderLeadHours` | 24 | Antecedência do lembrete (0 desliga). Só enfileira com `Whatsapp__Templates__AppointmentReminder` configurado. |
+| `Whatsapp__Notifications__ReminderLeadHours` | 12 | Antecedência do lembrete (0 desliga). Quem marca com menos que isso recebe só a confirmação. Só enfileira com `Whatsapp__Templates__AppointmentReminder` configurado. |
+| `Whatsapp__Notifications__ReminderQuietFromHour` | 21 | Hora local em que o lembrete para de ser enviado. Vale só para o lembrete. |
+| `Whatsapp__Notifications__ReminderQuietUntilHour` | 8 | Hora local em que volta. Igual à anterior desliga o silêncio. |
 | `Whatsapp__Notifications__OperationalMaxAgeMinutes` | 30 | Validade de check-in/atraso. |
 | `Whatsapp__Notifications__SchedulingMaxAgeHours` | 24 | Validade dos demais. |
 | `Whatsapp__Templates__ClientCheckedIn` … `__AppointmentReminder` | vazio | Nome do template aprovado por tipo. Vazio = tipo não enviado. |
