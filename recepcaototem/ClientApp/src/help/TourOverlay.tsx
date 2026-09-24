@@ -42,7 +42,7 @@ export function TourOverlay() {
     return () => document.removeEventListener('keydown', teclado)
   }, [trilha, passo?.id])
 
-  useEffect(() => { cartao.current?.focus() }, [passo?.id])
+  useEffect(() => { if (retangulo) cartao.current?.focus() }, [passo?.id, Boolean(retangulo)])
 
   if (!trilha || !passo || !retangulo) return null
   const caixa = posicionar(retangulo)

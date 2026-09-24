@@ -71,6 +71,26 @@ test('Escape encerra o tour', async () => {
   expect(store.ler('admin')?.estado).toBe('pulado')
 })
 
+test('foca o cartão no primeiro passo', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  montar()
+  const dialogo = await waitFor(() => screen.getByRole('dialog'))
+  await waitFor(() => expect(document.activeElement).toBe(dialogo))
+})
+
+test('foca o cartão ao mudar para um passo com outro alvo', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  montar()
+  await waitFor(() => screen.getByRole('dialog'))
+  fireEvent.click(screen.getByRole('button', { name: 'Avançar' }))
+  const dialogo = await waitFor(() => {
+    const elemento = screen.getByRole('dialog')
+    expect(elemento).toHaveTextContent('Cadastrar uma sala')
+    return elemento
+  })
+  await waitFor(() => expect(document.activeElement).toBe(dialogo))
+})
+
 test('pula o passo cujo alvo não existe na tela', async () => {
   vi.stubGlobal('fetch', sessaoAdmin())
   render(
