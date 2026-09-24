@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, CircleOff, Clock3, Copy, DoorOpen, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
+import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, CircleOff, Clock3, Copy, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
@@ -43,6 +43,7 @@ function CustomerShell() {
             ))}
           </nav>
           <div className="customer-sidebar-footer">
+            <Link className="sidebar-account-link" to="/change-password" onClick={closeMenu}><KeyRound size={17} /> Alterar senha</Link>
             <button className="customer-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
           </div>
         </aside>

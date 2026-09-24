@@ -1,6 +1,6 @@
 import { FallbackImage } from '../../components/FallbackImage'
 import { apiClient, ApiError } from '../../api/client'
-import { Activity, AlertTriangle, CalendarClock, CalendarDays, Clock3, DoorOpen, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Activity, AlertTriangle, CalendarClock, CalendarDays, Clock3, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
@@ -62,6 +62,7 @@ export function ProfessionalShell() {
             {nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>)}
           </nav>
           <div className="professional-sidebar-footer">
+            <Link className="sidebar-account-link" to="/change-password" onClick={closeMenu}><KeyRound size={17} /> Alterar senha</Link>
             <button className="professional-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
           </div>
         </aside>

@@ -118,3 +118,13 @@ test('keeps rendering the routed page content through the outlet', async () => {
   renderShell('/cliente/agendamentos')
   expect(await screen.findByText('conteúdo de agendamentos')).toBeInTheDocument()
 })
+
+test('the sidebar footer offers changing the password, next to Sair', async () => {
+  renderShell()
+  await screen.findByText('conteúdo do painel')
+  expect(screen.getByRole('link', { name: /alterar senha/i })).toHaveAttribute('href', '/change-password')
+  // An account action beside Sair, deliberately outside the nav landmark: it is not a section
+  // of the customer area, and the nav test above counts exactly three links.
+  const nav = screen.getByRole('navigation', { name: /cliente/i })
+  expect(within(nav).queryByRole('link', { name: /alterar senha/i })).not.toBeInTheDocument()
+})

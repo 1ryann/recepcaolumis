@@ -116,3 +116,12 @@ test('keeps rendering the routed page content through the outlet', async () => {
   renderShell('/profissional/agenda')
   expect(await screen.findByText('conteúdo de agenda')).toBeInTheDocument()
 })
+
+test('the sidebar footer offers changing the password, next to Sair', async () => {
+  renderShell()
+  await screen.findByText('conteúdo do painel')
+  expect(screen.getByRole('link', { name: /alterar senha/i })).toHaveAttribute('href', '/change-password')
+  // An account action beside Sair, deliberately outside the nav landmark.
+  const nav = screen.getByRole('navigation', { name: /profissional/i })
+  expect(within(nav).queryByRole('link', { name: /alterar senha/i })).not.toBeInTheDocument()
+})

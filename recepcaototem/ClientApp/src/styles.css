@@ -3588,6 +3588,15 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
   font-size: 12px; font-weight: 700; cursor: pointer; transition: color .2s ease, background .2s ease;
 }
 .customer-logout:hover { color: var(--lumis-text); background: rgba(var(--lumis-ink-rgb), .055); }
+/* The footer of both shells now holds two actions. Same shape as the logout button above, so
+   "Alterar senha" reads as a sibling of "Sair" and not as a nav item that lost its section. */
+.customer-sidebar-footer, .professional-sidebar-footer { display: grid; gap: 2px; }
+.sidebar-account-link {
+  display: inline-flex; align-items: center; gap: 9px; width: 100%; min-height: 40px; padding: 0 12px;
+  color: var(--lumis-muted); border-radius: 10px; text-decoration: none;
+  font-size: 12px; font-weight: 700; transition: color .2s ease, background .2s ease;
+}
+.sidebar-account-link:hover { color: var(--lumis-text); background: rgba(var(--lumis-ink-rgb), .055); }
 /* Overlay scrim and drawer shadow are intentionally left as plain black: a modal/drawer backdrop
    darkens the page the same way regardless of theme, so this is not a "theme-ish" literal — see
    the report for the full justification. */
