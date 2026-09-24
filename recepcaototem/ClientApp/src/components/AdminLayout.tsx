@@ -34,7 +34,7 @@ export function AdminLayout() {
           <span className="sr-only">LUMIS Administração</span>
           <button className="mobile-close icon-button" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
         </div>
-        <nav className="admin-nav" aria-label="Navegação administrativa">
+        <nav className="admin-nav" data-tour="nav-lateral" aria-label="Navegação administrativa">
           <span className="nav-label">Gestão</span>
           {navItems.slice(0, 5).map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}><Icon size={19} />{label}</NavLink>

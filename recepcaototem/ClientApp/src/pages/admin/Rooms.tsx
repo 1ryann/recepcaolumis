@@ -70,9 +70,9 @@ export function Rooms() {
 
   return <div className="page-enter">
     <PageHeader eyebrow="Espaços do edifício" title="Salas" description="Cadastre os espaços e as tarifas disponíveis para uso."
-      action={<button className="primary-button" onClick={() => setFormRoom(null)}><Plus size={18} /> Nova sala</button>} />
+      action={<button className="primary-button" data-tour="nova-sala" onClick={() => setFormRoom(null)}><Plus size={18} /> Nova sala</button>} />
     <section className="panel table-panel">
-      <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome" aria-label="Buscar salas" /></div>
+      <div className="table-toolbar"><div className="search-field" data-tour="busca-salas"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome" aria-label="Buscar salas" /></div>
         <select className="field-input compact-select" value={status} aria-label="Status das salas" onChange={event => { setStatus(event.target.value as ModuleStatus); setPage(1) }}><option value="all">Todos os status</option><option value="active">Ativas</option><option value="inactive">Inativas</option></select>
         <span>{start}–{end} de {result.totalCount} salas</span></div>
       {loading ? <div className="empty-state" role="status">Carregando salas…</div>
