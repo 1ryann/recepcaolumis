@@ -58,7 +58,7 @@ export function ProfessionalLeases() {
   const displayCount = status === 'all' ? result.totalCount : filteredItems.length
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Contratos" title="Locações" description="Consulte suas locações e contratos." />
+    <PageHeader eyebrow="Contratos" tour="pagina-locacoes" title="Locações" description="Consulte suas locações e contratos." />
     <section className="panel table-panel">
       <div className="table-toolbar">
         <ProfessionalFilterBar>

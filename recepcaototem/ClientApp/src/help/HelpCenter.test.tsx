@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import { SessionProvider } from '../auth/SessionProvider'
@@ -56,10 +56,23 @@ test('o texto de cada passo da trilha do cliente aparece na página', async () =
   expect(screen.getByText('Foto e privacidade')).toBeInTheDocument()
 })
 
-test('trilha sem passos ancorados não oferece refazer o tour, mesmo autenticado', async () => {
-  vi.stubGlobal('fetch', sessaoDe(['PROFISSIONAL']))
+// As três trilhas são ancoradas agora, e duas delas são públicas: sem esta restrição o
+// cliente veria "Refazer o tour" na trilha do profissional, que percorre /profissional —
+// uma rota que o ProtectedRoute nega para ele.
+test('só a trilha do próprio perfil oferece refazer o tour', async () => {
+  vi.stubGlobal('fetch', sessaoDe(['CUSTOMER']))
   montar()
-  await waitFor(() => expect(screen.getByText('Para profissionais')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByText('Para quem vai ser atendido')).toBeInTheDocument())
+  expect(screen.getByText('Para profissionais')).toBeInTheDocument()
+  const doProfissional = screen.getByText('Para profissionais').closest('section')!
+  expect(within(doProfissional).queryByRole('button', { name: 'Refazer o tour' })).not.toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: 'Refazer o tour' })).toHaveLength(1)
+})
+
+test('sem sessão nenhuma trilha oferece refazer o tour', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 401 })))
+  montar()
+  await waitFor(() => expect(screen.getByText('Para quem vai ser atendido')).toBeInTheDocument())
   expect(screen.queryByRole('button', { name: 'Refazer o tour' })).not.toBeInTheDocument()
 })
 

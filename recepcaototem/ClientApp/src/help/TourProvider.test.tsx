@@ -113,9 +113,23 @@ test('todo passo ancorado aponta para um elemento que existe sem depender de dad
   expect(ancorados).not.toContain('paginacao-profissionais')
 })
 
-test('o profissional não recebe tour, porque a trilha dele não tem passos ancorados', async () => {
+test('inicia a trilha do profissional no primeiro passo ancorado', async () => {
   vi.stubGlobal('fetch', sessaoDe(['PROFISSIONAL']))
-  montar()
+  montar('/profissional')
+  await waitFor(() => expect(screen.getByText(/^profissional:prof-entrar:1\//)).toBeInTheDocument())
+})
+
+test('inicia a trilha do cliente no primeiro passo ancorado', async () => {
+  vi.stubGlobal('fetch', sessaoDe(['CUSTOMER']))
+  montar('/cliente')
+  await waitFor(() => expect(screen.getByText(/^cliente:cliente-conta:1\//)).toBeInTheDocument())
+})
+
+// O portal do profissional fica em /profissional/aguardando enquanto o cadastro não é
+// aprovado, e essa tela não pertence a nenhuma trilha.
+test('não inicia enquanto o cadastro do profissional aguarda aprovação', async () => {
+  vi.stubGlobal('fetch', sessaoDe(['PROFISSIONAL']))
+  montar('/profissional/aguardando')
   await waitFor(() => expect(screen.getByText('sem-tour')).toBeInTheDocument())
 })
 

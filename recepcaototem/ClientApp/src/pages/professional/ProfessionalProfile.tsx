@@ -111,7 +111,7 @@ export function ProfessionalProfile() {
 
   return (
     <section className="professional-section page-enter professional-profile-page">
-      <PageHeader eyebrow="Área do profissional" title="Meu perfil" description="Atualize sua foto, WhatsApp e descrição visíveis para os clientes." />
+      <PageHeader eyebrow="Área do profissional" tour="pagina-perfil" title="Meu perfil" description="Atualize sua foto, WhatsApp e descrição visíveis para os clientes." />
       {error && <div className="form-error" role="alert">{error}</div>}
       {loading ? <div className="professional-loading" role="status">Carregando perfil…</div> : profile && (
         <div className="panel professional-profile-panel">

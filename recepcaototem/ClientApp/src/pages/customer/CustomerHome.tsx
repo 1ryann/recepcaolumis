@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, CircleOff, Clock3, Copy, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
+import { ArrowRight, CalendarDays, CalendarPlus, CalendarRange, CircleHelp, CircleOff, Clock3, Copy, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, MessageCircle, QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
@@ -37,12 +37,13 @@ function CustomerShell() {
           <div className="customer-sidebar-brand">
             <Link to="/cliente" onClick={closeMenu}><LumisLogo className="customer-sidebar-logo" alt="LUMIS" /></Link>
           </div>
-          <nav className="customer-sidebar-nav" aria-label="Navegação do cliente">
+          <nav className="customer-sidebar-nav" aria-label="Navegação do cliente" data-tour="nav-cliente">
             {customerNavItems.map(({ to, label, icon: Icon, end }) => (
               <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>
             ))}
           </nav>
           <div className="customer-sidebar-footer">
+            <Link className="sidebar-account-link" to="/ajuda" onClick={closeMenu} data-tour="ajuda-cliente"><CircleHelp size={17} /> Ajuda</Link>
             <Link className="sidebar-account-link" to="/change-password" onClick={closeMenu}><KeyRound size={17} /> Alterar senha</Link>
             <button className="customer-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
           </div>
@@ -149,7 +150,7 @@ export function CustomerHome() {
           )}
         </section>
 
-        <section className="customer-home-card panel customer-qr-card-home">
+        <section className="customer-home-card panel customer-qr-card-home" data-tour="meu-qr">
           <div className="panel-header"><div><h2><QrCode size={18} /> Meu QR Code</h2><p>Apresente no Totem para o check-in.</p></div></div>
           {!nextAppointment && <div className="customer-qr-empty"><QrCode size={22} /><span>Você ainda não tem um atendimento agendado para gerar o QR Code.</span></div>}
           {nextAppointment && !qrDataUrl && (
@@ -169,7 +170,7 @@ export function CustomerHome() {
           )}
         </section>
 
-        <section className="customer-home-card panel">
+        <section className="customer-home-card panel" data-tour="cartao-agendar">
           <div className="panel-header"><div><h2><CalendarPlus size={18} /> Novo agendamento</h2><p>Agende seus atendimentos de forma rápida e prática.</p></div></div>
           <Link className="primary-button" to="/cliente/agendar">Novo agendamento <ArrowRight size={16} /></Link>
         </section>
@@ -197,7 +198,7 @@ export function CustomerReservations() {
   const [data, setData] = useState<PagedResponse<ReservationDto> | null>(null)
   const [error, setError] = useState('')
   useEffect(() => { customerApi.reservations({ page: 1, pageSize: 20 }).then(setData).catch(() => setError('Não foi possível carregar seus agendamentos.')) }, [])
-  return <section className="customer-section page-enter"><div className="customer-section-heading"><div><span className="eyebrow">Sua agenda</span><h1>Meus agendamentos</h1><p>Acompanhe seus horários no LUMIS, dos próximos aos mais recentes.</p></div><Link className="primary-button" to="/cliente/agendar"><CalendarPlus size={17} /> Novo agendamento</Link></div>{error && <div className="form-error" role="alert">{error}</div>}{!data && !error && <div className="customer-loading" role="status">Carregando seus horários…</div>}{data?.items.length === 0 && <div className="customer-empty panel"><CalendarRange size={25} /><strong>Nenhum agendamento ainda</strong><span>Escolha um profissional para começar.</span></div>}{data && data.items.length > 0 && <div className="customer-reservation-list">{data.items.map((reservation) => <Link className="customer-reservation-card panel" key={reservation.id} to={`/cliente/agendamentos/${reservation.id}`}><div><span>{new Date(reservation.startAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span><strong>{new Date(reservation.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong></div><section><strong>{reservation.professionalName}</strong><span>{reservation.roomName}</span></section><b className={`customer-status status-${reservation.status.toLowerCase()}`}>{reservation.status === 'APPROVED' ? 'Confirmado' : reservation.status}</b></Link>)}</div>}</section>
+  return <section className="customer-section page-enter"><div className="customer-section-heading" data-tour="pagina-agendamentos"><div><span className="eyebrow">Sua agenda</span><h1>Meus agendamentos</h1><p>Acompanhe seus horários no LUMIS, dos próximos aos mais recentes.</p></div><Link className="primary-button" to="/cliente/agendar"><CalendarPlus size={17} /> Novo agendamento</Link></div>{error && <div className="form-error" role="alert">{error}</div>}{!data && !error && <div className="customer-loading" role="status">Carregando seus horários…</div>}{data?.items.length === 0 && <div className="customer-empty panel"><CalendarRange size={25} /><strong>Nenhum agendamento ainda</strong><span>Escolha um profissional para começar.</span></div>}{data && data.items.length > 0 && <div className="customer-reservation-list">{data.items.map((reservation) => <Link className="customer-reservation-card panel" key={reservation.id} to={`/cliente/agendamentos/${reservation.id}`}><div><span>{new Date(reservation.startAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span><strong>{new Date(reservation.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong></div><section><strong>{reservation.professionalName}</strong><span>{reservation.roomName}</span></section><b className={`customer-status status-${reservation.status.toLowerCase()}`}>{reservation.status === 'APPROVED' ? 'Confirmado' : reservation.status}</b></Link>)}</div>}</section>
 }
 
 export function CustomerComingSoon({ title }: { title: string }) { return <section className="customer-section page-enter"><span className="eyebrow">Próxima etapa</span><h1>{title}</h1><div className="customer-empty panel"><CalendarRange size={25} /><strong>Estamos preparando essa experiência</strong><span>Em breve você poderá escolher o melhor horário por aqui.</span><Link className="secondary-button" to="/cliente">Voltar para o início</Link></div></section> }

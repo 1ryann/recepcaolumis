@@ -82,7 +82,7 @@ export function ProfessionalVisits() {
   }
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Fluxo operacional" title="Atendimentos" description="Acompanhe seus atendimentos do dia." />
+    <PageHeader eyebrow="Fluxo operacional" tour="pagina-atendimentos" title="Atendimentos" description="Acompanhe seus atendimentos do dia." />
     {loading ? <div className="empty-state" role="status">Carregando atendimentos…</div>
       : <>
         {error && <p className="form-error" role="alert">{error}</p>}

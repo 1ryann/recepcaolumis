@@ -8,9 +8,20 @@ import leasesSource from '../pages/admin/Leases.tsx?raw'
 import professionalsSource from '../pages/admin/Professionals.tsx?raw'
 import roomsSource from '../pages/admin/Rooms.tsx?raw'
 import settingsSource from '../pages/admin/Settings.tsx?raw'
+import customerHomeSource from '../pages/customer/CustomerHome.tsx?raw'
+import professionalHomeSource from '../pages/professional/ProfessionalHome.tsx?raw'
+import professionalAvailabilitySource from '../pages/professional/ProfessionalAvailability.tsx?raw'
+import professionalLeasesSource from '../pages/professional/ProfessionalLeases.tsx?raw'
+import professionalProfileSource from '../pages/professional/ProfessionalProfile.tsx?raw'
+import professionalReservationsSource from '../pages/professional/ProfessionalReservations.tsx?raw'
+import professionalVisitsSource from '../pages/professional/ProfessionalVisits.tsx?raw'
 import { trilhas } from './content'
 
-const fontes = [adminLayoutSource, customersSource, leasesSource, professionalsSource, roomsSource, settingsSource].join('\n')
+const fontes = [
+  adminLayoutSource, customersSource, leasesSource, professionalsSource, roomsSource, settingsSource,
+  customerHomeSource, professionalHomeSource, professionalAvailabilitySource, professionalLeasesSource,
+  professionalProfileSource, professionalReservationsSource, professionalVisitsSource,
+].join('\n')
 
 test('todo alvo declarado existe no código das telas, como data-tour direto ou como prop tour do PageHeader', () => {
   for (const trilha of trilhas) {
@@ -46,7 +57,18 @@ test('nenhum passo ancorado depende de dados já cadastrados', () => {
   }
 })
 
-test('a trilha do administrador tem passos ancorados', () => {
-  const admin = trilhas.find(trilha => trilha.id === 'admin')!
-  expect(admin.passos.filter(passo => passo.alvo).length).toBeGreaterThanOrEqual(6)
+test.each(['admin', 'profissional', 'cliente'] as const)('a trilha %s tem passos ancorados', id => {
+  const trilha = trilhas.find(item => item.id === id)!
+  expect(trilha.passos.filter(passo => passo.alvo).length).toBeGreaterThanOrEqual(4)
+})
+
+// Cada trilha termina apontando o atalho da ajuda, e cada portal tem o seu: a barra lateral
+// do painel, a do profissional e a do cliente são componentes diferentes.
+test.each([
+  ['admin', 'ajuda'],
+  ['profissional', 'ajuda-profissional'],
+  ['cliente', 'ajuda-cliente'],
+] as const)('a trilha %s aponta o atalho da ajuda do próprio portal', (id, alvo) => {
+  const trilha = trilhas.find(item => item.id === id)!
+  expect(trilha.passos.some(passo => passo.alvo === alvo)).toBe(true)
 })

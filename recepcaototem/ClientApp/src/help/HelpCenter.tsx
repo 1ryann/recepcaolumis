@@ -21,12 +21,14 @@ export function HelpCenter() {
       </header>
       {lista.map(trilha => {
         const passos = passosVisiveis(trilha, roles)
-        const ancorada = passos.some(passo => passo.alvo)
+        // Só a trilha do próprio perfil pode ser refeita: as outras percorrem rotas de outro
+        // portal, que o ProtectedRoute nega para quem está lendo aqui.
+        const refazivel = trilha.id === doPerfil?.id && passos.some(passo => passo.alvo)
         return (
           <section className="panel help-track" key={trilha.id}>
             <div className="help-track-header">
               <div><h2>{trilha.titulo}</h2><p>{trilha.resumo}</p></div>
-              {ancorada && session.status === 'authenticated' && <button className="secondary-button" type="button" onClick={() => reiniciar(trilha.id)}>Refazer o tour</button>}
+              {refazivel && session.status === 'authenticated' && <button className="secondary-button" type="button" onClick={() => reiniciar(trilha.id)}>Refazer o tour</button>}
             </div>
             <ol className="help-steps">
               {passos.map(passo => <li key={passo.id}><strong>{passo.titulo}</strong><p>{passo.texto}</p></li>)}
