@@ -238,7 +238,7 @@ export function Leases() {
   const pages = Math.max(1, Math.ceil(result.totalCount / pageSize))
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Ocupação contratual" title="Locações" description="Gerencie contratos e períodos de ocupação das salas."
+    <PageHeader eyebrow="Ocupação contratual" tour="pagina-locacoes" title="Locações" description="Gerencie contratos e períodos de ocupação das salas."
       action={<button className="primary-button" onClick={() => void openForm(null)}><Plus size={18} /> Nova locação</button>} />
     <section className="panel table-panel">
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por locatário, profissional ou sala" aria-label="Buscar locações" /></div>

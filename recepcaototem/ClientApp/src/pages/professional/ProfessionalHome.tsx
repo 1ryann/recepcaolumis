@@ -1,6 +1,6 @@
 import { FallbackImage } from '../../components/FallbackImage'
 import { apiClient, ApiError } from '../../api/client'
-import { Activity, AlertTriangle, CalendarClock, CalendarDays, Clock3, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Activity, AlertTriangle, CalendarClock, CalendarDays, CircleHelp, Clock3, DoorOpen, KeyRound, LayoutDashboard, LogOut, Menu, UserRound, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider'
@@ -58,10 +58,11 @@ export function ProfessionalShell() {
             {profile?.description && <p>{profile.description}</p>}
             {profile?.photoUrl && <FallbackImage className="professional-intro-photo" src={profile.photoUrl} alt="Sua foto" width="56" height="56" fallback={null} />}
           </div>
-          <nav className="professional-nav" aria-label="Navegação do profissional">
+          <nav className="professional-nav" aria-label="Navegação do profissional" data-tour="nav-profissional">
             {nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeMenu}><Icon size={18} />{label}</NavLink>)}
           </nav>
           <div className="professional-sidebar-footer">
+            <Link className="sidebar-account-link" to="/ajuda" onClick={closeMenu} data-tour="ajuda-profissional"><CircleHelp size={17} /> Ajuda</Link>
             <Link className="sidebar-account-link" to="/change-password" onClick={closeMenu}><KeyRound size={17} /> Alterar senha</Link>
             <button className="professional-logout" type="button" onClick={logout}><LogOut size={17} /> Sair</button>
           </div>
@@ -194,7 +195,7 @@ export function ProfessionalDashboard() {
         <div className="professional-dashboard-hero-mark"><Clock3 size={27} /><span>America/Porto Velho</span></div>
       </section>
       {(error || dashError) && <div className="form-error" role="alert">{error || dashError}</div>}
-      <div className="professional-kpi-grid">
+      <div className="professional-kpi-grid" data-tour="painel-profissional">
         <article className="professional-kpi-card">
           <span className="professional-kpi-icon"><UsersRound size={20} /></span>
           <div><small>Atendimentos hoje</small><strong>{dashLoading ? '—' : attendancesToday}</strong></div>

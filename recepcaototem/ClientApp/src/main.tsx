@@ -9,13 +9,14 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { SessionProvider } from './auth/SessionProvider'
+import { TourProvider } from './help/TourProvider'
 import { ThemeProvider } from './theme/ThemeProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
       <BrowserRouter>
-        <SessionProvider><App /></SessionProvider>
+        <SessionProvider><TourProvider><App /></TourProvider></SessionProvider>
       </BrowserRouter>
     </ThemeProvider>
   </StrictMode>,

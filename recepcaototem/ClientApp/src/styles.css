@@ -472,7 +472,7 @@ a { color: inherit; }
 .sidebar { position: fixed; z-index: 30; inset: 0 auto 0 0; width: 245px; display: flex; flex-direction: column; padding: 23px 17px 17px; color: #dce8ea; background: #0b3440; border-right: 1px solid rgba(255,255,255,.045); }
 .sidebar-brand { height: 54px; display: flex; align-items: center; gap: 11px; padding: 0 7px; }.sidebar-brand .brand-mark { width: 40px; height: 40px; color: var(--brand); background: #f5fafa; border-radius: 12px; box-shadow: none; }.sidebar-brand strong { display: block; color: white; font-size: 17px; }.sidebar-brand small { display: block; margin-top: 2px; color: #7fa0a9; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; }
 .admin-nav { display: flex; flex-direction: column; gap: 4px; margin-top: 32px; }.nav-label { padding: 0 12px 8px; color: #6d929d; font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; }.nav-label-second { margin-top: 19px; }.admin-nav a { display: flex; align-items: center; gap: 12px; min-height: 43px; padding: 0 12px; color: #a9c0c6; border-radius: 10px; text-decoration: none; font-size: 13px; font-weight: 580; transition: .2s ease; }.admin-nav a:hover { color: white; background: rgba(255,255,255,.055); }.admin-nav a.active { color: white; background: rgba(103, 188, 167, .14); box-shadow: inset 3px 0 #69b8a3; }.admin-nav a.active svg { color: #73c1ad; }
-.sidebar-footer { display: grid; grid-template-columns: 35px 1fr 34px; gap: 9px; align-items: center; margin-top: auto; padding: 13px 5px 0; border-top: 1px solid rgba(255,255,255,.08); }.sidebar-avatar, .profile-chip > span { width: 34px; height: 34px; display: grid; place-items: center; color: #d9f0ea; border-radius: 10px; background: #245360; font-size: 11.5px; font-weight: 800; }.sidebar-footer strong,.sidebar-footer small { display: block; }.sidebar-footer strong { color: white; font-size: 11px; }.sidebar-footer small { margin-top: 2px; color: #7898a1; font-size: 10.5px; }.sidebar-footer .icon-button { color: #87a4ac; }.mobile-close { display: none; margin-left: auto; }
+.sidebar-footer { display: grid; grid-template-columns: 35px 1fr 34px 34px; gap: 9px; align-items: center; margin-top: auto; padding: 13px 5px 0; border-top: 1px solid rgba(255,255,255,.08); }.sidebar-avatar, .profile-chip > span { width: 34px; height: 34px; display: grid; place-items: center; color: #d9f0ea; border-radius: 10px; background: #245360; font-size: 11.5px; font-weight: 800; }.sidebar-footer strong,.sidebar-footer small { display: block; }.sidebar-footer strong { color: white; font-size: 11px; }.sidebar-footer small { margin-top: 2px; color: #7898a1; font-size: 10.5px; }.sidebar-footer .icon-button { color: #87a4ac; }.mobile-close { display: none; margin-left: auto; }
 .admin-main { min-width: 0; flex: 1; }
 /* AdminLayout's sidebar is position:fixed (out of flow), so .admin-main needs a manual
    margin-left to avoid sitting under it. ReceptionLayout (Task 9) reuses .admin-shell/
@@ -1480,7 +1480,6 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .admin-content .timefield-opt:hover { border-color: var(--lumis-success); background: rgba(var(--lumis-success-rgb), .12); }
 .admin-content .availability-editor-heading,
 .admin-content .availability-editor-actions { border-bottom-color: var(--lumis-border-soft); border-top-color: var(--lumis-border-soft); }
-.admin-content .oh-save-bar { background: linear-gradient(rgba(24,24,24,0), var(--lumis-bg) 32%); }
 .admin-content .oh-save-bar > span,
 .admin-content .availability-editor-actions > span { color: var(--lumis-text-secondary); }
 .admin-content .availability-effective { background: rgba(var(--lumis-success-rgb), .08); border-color: rgba(var(--lumis-success-rgb), .25); }
@@ -1695,7 +1694,6 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-content .timefield-opt:hover { border-color: var(--lumis-success); background: rgba(var(--lumis-success-rgb),.12); }
 .professional-content .availability-editor-heading,
 .professional-content .availability-editor-actions { border-bottom-color: var(--lumis-border-soft); border-top-color: var(--lumis-border-soft); }
-.professional-content .oh-save-bar { background: linear-gradient(rgba(24,24,24,0), var(--lumis-bg) 32%); }
 .professional-content .oh-save-bar > span,
 .professional-content .availability-editor-actions > span { color: var(--lumis-text-secondary); }
 .professional-content .availability-effective { background: rgba(var(--lumis-success-rgb),.08); border-color: rgba(var(--lumis-success-rgb),.25); }
@@ -1818,7 +1816,11 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 /* --- shared weekly period editor / time inputs --- */
 .settings-page,.availability-page { padding-bottom: clamp(40px, 8vh, 90px); }
-.settings-real-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); align-items: start; }
+/* Duas colunas fixas: com auto-fit o painel de 992px abria três faixas, e a faixa vazia
+   deixada pelos dois cartões de baixo aparecia como um buraco à direita. */
+.settings-real-grid { grid-template-columns: 1fr; align-items: start; }
+.settings-real-grid > .operating-hours-page { grid-column: 1 / -1; }
+@media (min-width: 62rem) { .settings-real-grid { grid-template-columns: 1fr 1fr; } }
 .time-input { width: 100%; min-width: 8.5rem; max-width: 11rem; min-height: 38px; padding: 0 10px; color: var(--text); border: 1px solid #d7e3e1; border-radius: 9px; background: #fff; font: inherit; }
 .time-input:focus { outline: 0; border-color: #4c9b85; box-shadow: 0 0 0 3px rgba(76,155,133,.12); }
 .time-input:disabled { color: #8da0a0; background: #f4f7f6; }
@@ -1861,9 +1863,22 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .oh-bulk-copy strong { display: block; color: var(--brand); font-size: 12px; }
 .oh-bulk-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; }
 .oh-bulk-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.oh-save-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 0 2px; background: linear-gradient(rgba(255,255,255,0), #fff 32%); }
+.oh-save-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 0 2px; }
 .oh-save-bar > span { color: var(--muted); font-size: 11.5px; }
 .availability-days .wpe-days { margin-top: 12px; }
+/* O cartão do horário tem sete dias, cada um com um período que precisa de ~380px para
+   caber em uma linha. Em coluna estreita cada linha quebrava em três, e o cartão ficava
+   três vezes mais alto que os vizinhos. Ele ocupa a linha inteira e distribui os dias. */
+.operating-hours-editor .wpe-days { grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); align-items: start; }
+.operating-hours-editor .timefield-input { max-width: 7rem; }
+/* Quando a coluna do dia sobra (uma coluna só, em telas médias), o nome e os horários
+   dividem a mesma linha em vez de deixar metade da largura vazia; sem espaço, quebram. */
+.operating-hours-editor .wpe-day { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: 18px; row-gap: 10px; }
+.operating-hours-editor .wpe-day-head { flex: 1 1 11rem; justify-content: flex-start; }
+.operating-hours-editor .wpe-periods,.operating-hours-editor .wpe-closed { margin-top: 0; }
+/* Os dois campos da barra "aplicar a todos" esticavam até 11rem e empurravam o botão
+   para uma segunda linha; um campo de hora não precisa de mais que isso. */
+.oh-bulk-fields .time-input { flex: 0 0 7.5rem; min-width: 0; max-width: 7.5rem; }
 
 /* --- totem check-in --- */
 .totem-checkin-card { margin-block: clamp(24px, 6vh, 72px); }
@@ -4228,3 +4243,38 @@ textarea.field-input:not([rows]) { min-height: 88px; }
 .customer-reservation-list + .customer-section-heading,
 .customer-empty + .customer-section-heading,
 .panel + .customer-section-heading { margin-top: 30px; }
+
+/* Tutorial guiado e central de ajuda */
+.tour-overlay { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.tour-spotlight { position: fixed; border-radius: 14px; box-shadow: 0 0 0 9999px var(--lumis-overlay); transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease; }
+.tour-card { position: fixed; display: grid; gap: 9px; padding: 19px; border: 1px solid var(--lumis-border); border-radius: 17px; background: var(--lumis-surface); box-shadow: var(--lumis-shadow-panel); pointer-events: auto; }
+.tour-card:focus-visible { outline: 2px solid var(--lumis-text); outline-offset: 3px; }
+.tour-progresso { color: var(--lumis-muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.tour-card h2 { margin: 0; color: var(--lumis-text); font-size: 17px; }
+.tour-card p { margin: 0; color: var(--lumis-text-secondary); font-size: 13px; line-height: 1.5; }
+.tour-acoes { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 5px; }
+.tour-navegacao { display: flex; align-items: center; gap: 8px; }
+.tour-acoes .ghost-button,.tour-acoes .secondary-button,.tour-acoes .primary-button { min-height: 36px; font-size: 12px; }
+
+.help-page { display: grid; gap: 18px; max-width: 860px; margin: 0 auto; padding: 34px 20px 48px; }
+.help-header { display: flex; align-items: center; gap: 14px; }
+.help-header > div { flex: 1; }
+.help-header h1 { margin: 0; color: var(--lumis-text); font-size: 25px; }
+.help-header p { margin: 6px 0 0; color: var(--lumis-muted); font-size: 13px; }
+.help-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; color: var(--lumis-text); background: var(--lumis-surface-3); border-radius: 14px; }
+.help-track { padding: 22px; }
+.help-track-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.help-track-header h2 { margin: 0; color: var(--lumis-text); font-size: 18px; }
+.help-track-header p { margin: 5px 0 0; color: var(--lumis-muted); font-size: 13px; }
+.help-steps { display: grid; gap: 14px; margin: 18px 0 0; padding-inline-start: 22px; }
+.help-steps li strong { color: var(--lumis-text); font-size: 14px; font-weight: 650; }
+.help-steps li p { margin: 4px 0 0; color: var(--lumis-text-secondary); font-size: 13px; line-height: 1.5; }
+
+/* O rodapé da barra lateral ganhou um quarto item (o atalho de ajuda). A coluna flexível
+   precisa de minmax(0, 1fr): com `1fr` puro ela não encolhe abaixo do conteúdo mínimo do
+   nome e do e-mail, e empurra o botão de sair para fora dos 245px da barra, que tem
+   overflow-x hidden — ou seja, o botão simplesmente desaparecia. */
+.sidebar-footer { grid-template-columns: 35px minmax(0, 1fr) 34px 34px; }
+.sidebar-footer > div:nth-child(2) { min-width: 0; }
+.sidebar-footer strong,
+.sidebar-footer small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

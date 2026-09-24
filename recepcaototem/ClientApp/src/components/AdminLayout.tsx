@@ -1,4 +1,4 @@
-import { Activity, CalendarCheck2, CalendarRange, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, UserRound, Users, UserRoundSearch, X } from 'lucide-react'
+import { Activity, CalendarCheck2, CalendarRange, CircleHelp, ClipboardCheck, DoorOpen, LayoutDashboard, LogOut, Menu, MessageSquareText, Settings, UserRound, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
@@ -43,7 +43,7 @@ export function AdminLayout() {
             <span className="sr-only">LUMIS Administração</span>
             <button className="mobile-close icon-button" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
           </div>
-          <nav className="admin-nav" aria-label="Navegação administrativa">
+          <nav className="admin-nav" data-tour="nav-lateral" aria-label="Navegação administrativa">
             <span className="nav-label">Gestão</span>
             {navItems.slice(0, 9).map(({ to, label, icon: Icon, end }) => (
               <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}><Icon size={19} />{label}</NavLink>
@@ -56,6 +56,7 @@ export function AdminLayout() {
           <div className="sidebar-footer">
             <div className="sidebar-avatar">{initials}</div>
             <div><strong>{name}</strong><small>{session.user?.email}</small></div>
+            <NavLink className="icon-button" to="/ajuda" data-tour="ajuda" aria-label="Ajuda"><CircleHelp size={18} /></NavLink>
             <button className="icon-button" type="button" onClick={logout} aria-label="Sair"><LogOut size={18} /></button>
           </div>
         </aside>

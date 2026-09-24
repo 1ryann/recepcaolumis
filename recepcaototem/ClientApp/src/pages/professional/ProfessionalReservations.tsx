@@ -113,7 +113,7 @@ export function ProfessionalReservations() {
   const canCancel = (reservation: ReservationDto) => reservation.status !== 'REJECTED' && reservation.status !== 'CANCELLED'
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Agenda" title="Reservas" description="Acompanhe e gerencie suas solicitações de reserva." />
+    <PageHeader eyebrow="Agenda" tour="pagina-reservas" title="Reservas" description="Acompanhe e gerencie suas solicitações de reserva." />
     <section className="panel table-panel">
       <div className="table-toolbar">
         <ProfessionalFilterBar>

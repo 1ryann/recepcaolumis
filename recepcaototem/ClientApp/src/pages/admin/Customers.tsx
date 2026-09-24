@@ -105,7 +105,7 @@ export function Customers() {
   const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Pessoas atendidas" title="Clientes" description="Cadastros criados pelos agendamentos e pela área do cliente. Um cadastro desativado não agenda, não faz check-in e não recebe avisos." />
+    <PageHeader eyebrow="Pessoas atendidas" tour="pagina-clientes" title="Clientes" description="Cadastros criados pelos agendamentos e pela área do cliente. Um cadastro desativado não agenda, não faz check-in e não recebe avisos." />
     <section className="panel table-panel">
       <div className="table-toolbar">
         <div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome ou telefone" aria-label="Buscar clientes" /></div>

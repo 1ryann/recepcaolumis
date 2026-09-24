@@ -1,8 +1,8 @@
 import { type ReactNode } from 'react'
 
-export function PageHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
+export function PageHeader({ eyebrow, title, description, action, tour }: { eyebrow?: string; title: string; description: string; action?: ReactNode; tour?: string }) {
   return (
-    <div className="page-header">
+    <div className="page-header" data-tour={tour}>
       <div>{eyebrow && <span className="page-eyebrow">{eyebrow}</span>}<h1>{title}</h1><p>{description}</p></div>
       {action && <div className="page-action">{action}</div>}
     </div>
