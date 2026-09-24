@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 import { passosVisiveis, type Trilha, type TrilhaId, trilhaDaRole } from './content'
 import { TourContext } from './TourContext'
+import { TourOverlay } from './TourOverlay'
 import { criarTourProgressStore, type TourProgressStore } from './tourStorage'
 
 export { useTour } from './TourContext'
@@ -55,5 +56,5 @@ export function TourProvider({ children, store }: { children: ReactNode; store?:
     reiniciar: (id: TrilhaId) => { progresso.limpar(id); setTrilha(null); setIndice(0); navigate('/admin') },
   }
 
-  return <TourContext.Provider value={value}>{children}</TourContext.Provider>
+  return <TourContext.Provider value={value}>{children}<TourOverlay /></TourContext.Provider>
 }
