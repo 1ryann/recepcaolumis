@@ -2,7 +2,7 @@ import { CircleHelp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 import { passosVisiveis, type Trilha, trilhaDaRole, trilhasPublicas } from './content'
-import { useTour } from './TourProvider'
+import { useTour } from './TourContext'
 
 export function HelpCenter() {
   const session = useSession()

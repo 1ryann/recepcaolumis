@@ -4,6 +4,11 @@ import { type Retangulo, useTourTarget } from './useTourTarget'
 
 const margem = 14
 
+function elementoEditavel(alvo: EventTarget | null) {
+  if (!(alvo instanceof HTMLElement)) return false
+  return alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName)
+}
+
 function posicionar(retangulo: Retangulo) {
   const largura = Math.min(360, window.innerWidth - 32)
   const abaixo = retangulo.top + retangulo.height + margem
@@ -27,16 +32,18 @@ export function TourOverlay() {
   useEffect(() => {
     if (!trilha) return
     const teclado = (evento: KeyboardEvent) => {
-      if (evento.key === 'Escape') { evento.preventDefault(); pular() }
+      if (evento.key === 'Escape') { evento.preventDefault(); pular(); return }
+      if ((evento.key === 'ArrowRight' || evento.key === 'ArrowLeft') && elementoEditavel(evento.target)) return
       if (evento.key === 'ArrowRight') { evento.preventDefault(); avancar() }
       if (evento.key === 'ArrowLeft') { evento.preventDefault(); voltar() }
       if (evento.key !== 'Tab' || !cartao.current) return
-      const foco = cartao.current.querySelectorAll<HTMLElement>('button')
+      const foco = Array.from(cartao.current.querySelectorAll<HTMLElement>('button'))
       if (foco.length === 0) return
       const primeiro = foco[0]
       const ultimo = foco[foco.length - 1]
-      if (!evento.shiftKey && document.activeElement === ultimo) { evento.preventDefault(); primeiro.focus() }
-      if (evento.shiftKey && document.activeElement === primeiro) { evento.preventDefault(); ultimo.focus() }
+      const dentro = foco.includes(document.activeElement as HTMLElement)
+      if (!evento.shiftKey && (!dentro || document.activeElement === ultimo)) { evento.preventDefault(); primeiro.focus() }
+      if (evento.shiftKey && (!dentro || document.activeElement === primeiro)) { evento.preventDefault(); ultimo.focus() }
     }
     document.addEventListener('keydown', teclado)
     return () => document.removeEventListener('keydown', teclado)

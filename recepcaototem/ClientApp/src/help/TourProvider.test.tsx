@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
-import { SessionProvider } from '../auth/SessionProvider'
+import { SessionProvider, useSession } from '../auth/SessionProvider'
 import { TourProvider, useTour } from './TourProvider'
 import { criarTourProgressStore } from './tourStorage'
 
@@ -11,9 +11,37 @@ function sessaoDe(roles: string[], mustChangePassword = false) {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 }
 
+function sessaoRenovavel(roles: string[]) {
+  return vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+    userId: 'u1', displayName: 'Admin Real', email: 'admin@lumis.test', roles, mustChangePassword: false,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+}
+
 function Espiao() {
   const tour = useTour()
   return <div>{tour.trilha ? `${tour.trilha.id}:${tour.passo?.id}:${tour.indice + 1}/${tour.total}` : 'sem-tour'}</div>
+}
+
+function EspiaoComLogout() {
+  const tour = useTour()
+  const session = useSession()
+  return (
+    <div>
+      <span>{tour.trilha ? `${tour.trilha.id}:${tour.passo?.id}:${tour.indice + 1}/${tour.total}` : 'sem-tour'}</span>
+      <button type="button" onClick={() => { void session.logout() }}>Sair</button>
+    </div>
+  )
+}
+
+function EspiaoComNavegacao() {
+  const tour = useTour()
+  const navigate = useNavigate()
+  return (
+    <div>
+      <span>{tour.trilha ? `${tour.trilha.id}:${tour.passo?.id}:${tour.indice + 1}/${tour.total}` : 'sem-tour'}</span>
+      <button type="button" onClick={() => navigate('/ajuda')}>Ir para ajuda</button>
+    </div>
+  )
 }
 
 function montar(rota = '/admin') {
@@ -91,4 +119,32 @@ test('o profissional não recebe tour, porque a trilha dele não tem passos anco
   vi.stubGlobal('fetch', sessaoDe(['PROFISSIONAL']))
   montar()
   await waitFor(() => expect(screen.getByText('sem-tour')).toBeInTheDocument())
+})
+
+test('encerra o tour ao sair da sessão, sem gravar progresso', async () => {
+  const store = criarTourProgressStore()
+  vi.stubGlobal('fetch', sessaoRenovavel(['ADMINISTRADOR']))
+  render(
+    <MemoryRouter initialEntries={['/admin']}>
+      <SessionProvider><TourProvider store={store}><EspiaoComLogout /></TourProvider></SessionProvider>
+    </MemoryRouter>,
+  )
+  await waitFor(() => expect(screen.getByText(/^admin:/)).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Sair' }))
+  await waitFor(() => expect(screen.getByText('sem-tour')).toBeInTheDocument())
+  expect(store.ler('admin')).toBeNull()
+})
+
+test('encerra o tour ao navegar para /ajuda, sem gravar progresso', async () => {
+  const store = criarTourProgressStore()
+  vi.stubGlobal('fetch', sessaoDe(['ADMINISTRADOR']))
+  render(
+    <MemoryRouter initialEntries={['/admin']}>
+      <SessionProvider><TourProvider store={store}><EspiaoComNavegacao /></TourProvider></SessionProvider>
+    </MemoryRouter>,
+  )
+  await waitFor(() => expect(screen.getByText(/^admin:/)).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Ir para ajuda' }))
+  await waitFor(() => expect(screen.getByText('sem-tour')).toBeInTheDocument())
+  expect(store.ler('admin')).toBeNull()
 })

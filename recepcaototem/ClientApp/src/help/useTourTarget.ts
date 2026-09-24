@@ -21,6 +21,13 @@ export function aguardarAlvo(alvo: string, limite = limiteAlvoEmMs) {
   })
 }
 
+function foraDaTela(retangulo: Retangulo) {
+  if (retangulo.width === 0 && retangulo.height === 0) return false
+  const direita = retangulo.left + retangulo.width
+  const baixo = retangulo.top + retangulo.height
+  return direita <= 0 || baixo <= 0 || retangulo.left >= window.innerWidth || retangulo.top >= window.innerHeight
+}
+
 export function useTourTarget(alvo: string | undefined) {
   const [elemento, setElemento] = useState<HTMLElement | null>(null)
   const [retangulo, setRetangulo] = useState<Retangulo | null>(null)
@@ -44,7 +51,9 @@ export function useTourTarget(alvo: string | undefined) {
     if (!elemento) return
     const medir = () => {
       const caixa = elemento.getBoundingClientRect()
-      setRetangulo({ top: caixa.top, left: caixa.left, width: caixa.width, height: caixa.height })
+      const proximo = { top: caixa.top, left: caixa.left, width: caixa.width, height: caixa.height }
+      if (foraDaTela(proximo)) { setElemento(null); setRetangulo(null); return }
+      setRetangulo(proximo)
     }
     elemento.scrollIntoView?.({ block: 'center' })
     medir()

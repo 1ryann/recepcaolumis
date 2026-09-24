@@ -91,6 +91,34 @@ test('foca o cartão ao mudar para um passo com outro alvo', async () => {
   await waitFor(() => expect(document.activeElement).toBe(dialogo))
 })
 
+test('seta não avança o tour quando o foco está em um campo de texto', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  render(
+    <MemoryRouter initialEntries={['/admin']}>
+      <SessionProvider>
+        <TourProvider>
+          <nav data-tour="nav-lateral">Navegação</nav>
+          <input aria-label="busca" />
+        </TourProvider>
+      </SessionProvider>
+    </MemoryRouter>,
+  )
+  await waitFor(() => screen.getByRole('dialog'))
+  const campo = screen.getByLabelText('busca')
+  campo.focus()
+  fireEvent.keyDown(campo, { key: 'ArrowRight' })
+  expect(screen.getByText(/passo 1 de/i)).toBeInTheDocument()
+})
+
+test('Shift+Tab logo após a troca de passo mantém o foco dentro do cartão', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  montar()
+  const dialogo = await waitFor(() => screen.getByRole('dialog'))
+  await waitFor(() => expect(document.activeElement).toBe(dialogo))
+  fireEvent.keyDown(dialogo, { key: 'Tab', shiftKey: true })
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Avançar' }))
+})
+
 test('pula o passo cujo alvo não existe na tela', async () => {
   vi.stubGlobal('fetch', sessaoAdmin())
   render(

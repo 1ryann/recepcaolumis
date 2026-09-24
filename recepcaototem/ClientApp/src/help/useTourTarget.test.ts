@@ -1,5 +1,6 @@
+import { renderHook, waitFor } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
-import { aguardarAlvo } from './useTourTarget'
+import { aguardarAlvo, useTourTarget } from './useTourTarget'
 
 test('encontra um alvo que já está no documento', async () => {
   document.body.innerHTML = '<button data-tour="nova-sala">Nova sala</button>'
@@ -30,4 +31,15 @@ test('não vaza observadores após encontrar o alvo', async () => {
   document.body.innerHTML = ''
   await aguardarAlvo('inexistente', 20)
   expect(desconectar).toHaveBeenCalled()
+})
+
+test('trata um alvo fora da tela como ausente', async () => {
+  document.body.innerHTML = '<div data-tour="nav-lateral"></div>'
+  const elemento = document.querySelector('[data-tour="nav-lateral"]') as HTMLElement
+  elemento.getBoundingClientRect = () => ({
+    top: 40, left: -300, width: 245, height: 400, right: -55, bottom: 440, x: -300, y: 40, toJSON() { return {} },
+  })
+  const { result } = renderHook(() => useTourTarget('nav-lateral'))
+  await waitFor(() => expect(result.current.elemento).toBeNull())
+  expect(result.current.retangulo).toBeNull()
 })
