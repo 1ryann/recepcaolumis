@@ -33,11 +33,15 @@ export function useTourTarget(alvo: string | undefined) {
   const [retangulo, setRetangulo] = useState<Retangulo | null>(null)
   const [procurando, setProcurando] = useState(false)
   const [resolvido, setResolvido] = useState<string | undefined>(undefined)
+  // Sem isto o cartão apareceria por um quadro na posição centrada, antes da primeira
+  // medição, e saltaria para junto da âncora logo em seguida.
+  const [medido, setMedido] = useState(false)
 
   useEffect(() => {
     setElemento(null)
     setRetangulo(null)
     setResolvido(undefined)
+    setMedido(false)
     if (!alvo) { setProcurando(false); return }
     let cancelado = false
     setProcurando(true)
@@ -52,11 +56,14 @@ export function useTourTarget(alvo: string | undefined) {
 
   useEffect(() => {
     if (!elemento) return
+    // Um alvo fora da tela — a barra lateral off-canvas do celular — continua sendo o alvo
+    // do passo: o texto vale, só não há onde pousar o holofote. Zerar o retângulo sem zerar
+    // o elemento é o que distingue isso de um alvo que não existe, que é pulado.
     const medir = () => {
       const caixa = elemento.getBoundingClientRect()
       const proximo = { top: caixa.top, left: caixa.left, width: caixa.width, height: caixa.height }
-      if (foraDaTela(proximo)) { setElemento(null); setRetangulo(null); return }
-      setRetangulo(proximo)
+      setRetangulo(foraDaTela(proximo) ? null : proximo)
+      setMedido(true)
     }
     elemento.scrollIntoView?.({ block: 'center' })
     medir()
@@ -71,5 +78,5 @@ export function useTourTarget(alvo: string | undefined) {
     }
   }, [elemento])
 
-  return { elemento, retangulo, procurando, resolvido }
+  return { elemento, retangulo, procurando, resolvido, medido }
 }

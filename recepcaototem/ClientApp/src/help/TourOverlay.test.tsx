@@ -133,14 +133,44 @@ test('pula o passo cujo alvo não existe na tela', async () => {
   await waitFor(() => expect(screen.getByText('Salas e tarifas')).toBeInTheDocument(), { timeout: 4000 })
 })
 
-test('pula o passo cujo alvo existe mas está fora da viewport, como a barra lateral off-canvas no celular', async () => {
-  vi.stubGlobal('fetch', sessaoAdmin())
+// A barra lateral off-canvas do celular continua no DOM, deslocada para fora da tela.
+// Pular esses passos silenciava justamente o que ensina onde reencontrar o tutorial, cujo
+// alvo é o botão de ajuda dentro dela. O passo aparece; o que some é o holofote, que não
+// teria onde pousar.
+function comAlvoForaDaTela() {
   const foraDaTela = { top: 0, left: -240, width: 210, height: 600, right: -30, bottom: 600, x: -240, y: 0, toJSON: () => ({}) } as DOMRect
   const original = Element.prototype.getBoundingClientRect
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
     return this.getAttribute('data-tour') === 'nav-lateral' ? foraDaTela : original.call(this)
   })
+}
+
+test('mostra o passo cujo alvo está fora da viewport, sem holofote, em vez de pulá-lo', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  comAlvoForaDaTela()
+  const { container } = montar()
+  await waitFor(() => expect(screen.getByText('A navegação')).toBeInTheDocument())
+  expect(screen.getByText(/passo 1 de/i)).toBeInTheDocument()
+  expect(container.querySelector('.tour-spotlight')).toBeNull()
+})
+
+test('o passo com alvo fora da viewport continua avançando, não trava o tour', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  comAlvoForaDaTela()
   montar()
-  await waitFor(() => expect(screen.getByText('Salas e tarifas')).toBeInTheDocument(), { timeout: 4000 })
-  expect(screen.queryByText('A navegação')).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByText('A navegação')).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Avançar' }))
+  await waitFor(() => expect(screen.getByText('Salas e tarifas')).toBeInTheDocument())
+})
+
+test('o passo cuja âncora está visível mantém o holofote', async () => {
+  vi.stubGlobal('fetch', sessaoAdmin())
+  const visivel = { top: 40, left: 0, width: 210, height: 600, right: 210, bottom: 640, x: 0, y: 40, toJSON: () => ({}) } as DOMRect
+  const original = Element.prototype.getBoundingClientRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    return this.getAttribute('data-tour') === 'nav-lateral' ? visivel : original.call(this)
+  })
+  const { container } = montar()
+  await waitFor(() => expect(screen.getByText('A navegação')).toBeInTheDocument())
+  await waitFor(() => expect(container.querySelector('.tour-spotlight')).not.toBeNull())
 })

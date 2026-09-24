@@ -9,20 +9,33 @@ function elementoEditavel(alvo: EventTarget | null) {
   return alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName)
 }
 
+function largura() {
+  return Math.min(360, window.innerWidth - 32)
+}
+
 function posicionar(retangulo: Retangulo) {
-  const largura = Math.min(360, window.innerWidth - 32)
+  const width = largura()
   const abaixo = retangulo.top + retangulo.height + margem
   const cabeAbaixo = abaixo + 200 < window.innerHeight
   const top = cabeAbaixo ? abaixo : Math.max(16, retangulo.top - 200 - margem)
-  const left = Math.min(Math.max(16, retangulo.left), Math.max(16, window.innerWidth - largura - 16))
-  return { top, left, width: largura }
+  const left = Math.min(Math.max(16, retangulo.left), Math.max(16, window.innerWidth - width - 16))
+  return { top, left, width }
+}
+
+// Sem âncora visível o cartão não tem a que se encostar, então fica no centro.
+function centralizar() {
+  const width = largura()
+  return { top: Math.max(16, Math.round(window.innerHeight / 2 - 130)), left: Math.max(16, Math.round((window.innerWidth - width) / 2)), width }
 }
 
 export function TourOverlay() {
   const { trilha, passo, indice, total, avancar, voltar, pular } = useTour()
-  const { elemento, retangulo, procurando, resolvido } = useTourTarget(passo?.alvo)
+  const { elemento, retangulo, procurando, resolvido, medido } = useTourTarget(passo?.alvo)
   const cartao = useRef<HTMLDivElement | null>(null)
   const ausente = Boolean(passo?.alvo) && !procurando && elemento === null && resolvido === passo?.alvo
+  // `resolvido` diz a que alvo este resultado pertence: sem ele, o cartão de um passo
+  // apareceria medido pelo alvo do passo anterior.
+  const visivel = Boolean(passo) && resolvido === passo?.alvo && elemento !== null && medido
 
   useEffect(() => { if (ausente) avancar() }, [ausente, passo?.id])
 
@@ -46,15 +59,15 @@ export function TourOverlay() {
     return () => document.removeEventListener('keydown', teclado)
   }, [trilha, passo?.id])
 
-  useEffect(() => { if (retangulo) cartao.current?.focus() }, [passo?.id, Boolean(retangulo)])
+  useEffect(() => { if (visivel) cartao.current?.focus() }, [passo?.id, visivel])
 
-  if (!trilha || !passo || !retangulo) return null
-  const caixa = posicionar(retangulo)
+  if (!trilha || !passo || !visivel) return null
+  const caixa = retangulo ? posicionar(retangulo) : centralizar()
   const ultimo = indice + 1 >= total
 
   return (
     <div className="tour-overlay">
-      <div className="tour-spotlight" style={{ top: retangulo.top - 6, left: retangulo.left - 6, width: retangulo.width + 12, height: retangulo.height + 12 }} />
+      {retangulo && <div className="tour-spotlight" style={{ top: retangulo.top - 6, left: retangulo.left - 6, width: retangulo.width + 12, height: retangulo.height + 12 }} />}
       <div className="tour-card" ref={cartao} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="tour-titulo" style={caixa}>
         <span className="tour-progresso" aria-live="polite">Passo {indice + 1} de {total}</span>
         <h2 id="tour-titulo">{passo.titulo}</h2>
