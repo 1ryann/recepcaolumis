@@ -59,6 +59,13 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
     {
         await LocalPostgreSqlTestDatabase.CreateSchemaAsync(_baseConnection, _schemaName);
         _schemaCreated = true;
+        // Migrate before the host exists. Data protection builds its key ring while the host starts,
+        // and the test search path ends in "public": on an unmigrated schema the key ring reads the
+        // developer's own DataProtectionKeys table, caches that key for the life of the host and never
+        // writes one here. Migrating first gives the key ring the table it belongs in.
+        await using (var migrations = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(_testConnection).Options))
+            await migrations.Database.MigrateAsync();
         Client = CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
@@ -67,7 +74,6 @@ public sealed class AuthApiFactory : WebApplicationFactory<recepcaototem.Pages.I
         });
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await db.Database.MigrateAsync();
         await ResetAsync(db);
         await EnsureRolesAsync(scope.ServiceProvider);
     }
