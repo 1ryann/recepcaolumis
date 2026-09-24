@@ -3,6 +3,7 @@ import { AdminLayout } from '../components/AdminLayout'
 import { ReceptionLayout } from '../components/ReceptionLayout'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { ChangePassword } from '../pages/ChangePassword'
+import { HelpCenter } from '../help/HelpCenter'
 import { Login } from '../pages/Login'
 import { Reception } from '../pages/Reception'
 import { AdminDashboard } from '../pages/admin/AdminDashboard'
@@ -62,6 +63,7 @@ export default function DevelopmentApp() {
         <Route path="/salas/:id" element={<TotemRoomDetail />} />
         <Route path="/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/ajuda" element={<HelpCenter />} />
         <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
           <Route path="/cliente" element={<CustomerShell />}>
             <Route index element={<CustomerHome />} />

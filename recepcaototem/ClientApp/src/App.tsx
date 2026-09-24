@@ -40,6 +40,7 @@ import { ProfessionalVisits } from './pages/professional/ProfessionalVisits'
 import { ProfessionalLeases } from './pages/professional/ProfessionalLeases'
 import { ProfessionalFinance } from './pages/professional/ProfessionalFinance'
 import { ProfessionalApplications } from './pages/admin/ProfessionalApplications'
+import { HelpCenter } from './help/HelpCenter'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./dev/DevelopmentApp')) : null
 
@@ -66,6 +67,7 @@ function ProductionApp() {
   <Route path="/salas/:id/interesse" element={<TotemRoomInterestSuccess />} />
   <Route path="/reagendar/:token" element={<RescheduleLink />} />
   <Route path="/change-password" element={<ChangePassword />} />
+  <Route path="/ajuda" element={<HelpCenter />} />
   <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
    <Route path="/cliente" element={<CustomerShell />}>
     <Route index element={<CustomerHome />} />

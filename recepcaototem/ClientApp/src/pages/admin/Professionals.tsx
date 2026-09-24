@@ -122,7 +122,7 @@ export function Professionals() {
   const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Equipe do edifício" title="Profissionais" description="Gerencie os dados cadastrais e o acesso das pessoas que atendem no LUMIS."
+    <PageHeader eyebrow="Equipe do edifício" tour="pagina-profissionais" title="Profissionais" description="Gerencie os dados cadastrais e o acesso das pessoas que atendem no LUMIS."
       action={<button className="primary-button" onClick={() => setFormProfessional(null)}><Plus size={18} /> Novo profissional</button>} />
     <section className="panel table-panel">
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome ou profissão" aria-label="Buscar profissionais" /></div>

@@ -75,7 +75,7 @@ export function Rooms() {
   const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
 
   return <div className="page-enter">
-    <PageHeader eyebrow="Espaços do edifício" title="Salas" description="Cadastre os espaços e as tarifas disponíveis para uso."
+    <PageHeader eyebrow="Espaços do edifício" tour="pagina-salas" title="Salas" description="Cadastre os espaços e as tarifas disponíveis para uso."
       action={<button className="primary-button" onClick={() => setFormRoom(null)}><Plus size={18} /> Nova sala</button>} />
     <section className="panel table-panel">
       <div className="table-toolbar"><div className="search-field"><Search size={18} /><input value={rawSearch} onChange={event => { setRawSearch(event.target.value); setPage(1) }} placeholder="Buscar por nome" aria-label="Buscar salas" /></div>
