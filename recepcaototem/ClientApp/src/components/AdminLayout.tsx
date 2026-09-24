@@ -1,6 +1,6 @@
-import { CalendarRange, ChevronDown, DoorOpen, LayoutDashboard, LogOut, Menu, Settings, Users, UserRoundSearch, X } from 'lucide-react'
+import { CalendarRange, ChevronDown, CircleHelp, DoorOpen, LayoutDashboard, LogOut, Menu, Settings, Users, UserRoundSearch, X } from 'lucide-react'
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider'
 
 const navItems = [
@@ -47,6 +47,7 @@ export function AdminLayout() {
         <div className="sidebar-footer">
           <div className="sidebar-avatar">{initials}</div>
           <div><strong>{name}</strong><small>{session.user?.email}</small></div>
+          <Link className="icon-button" to="/ajuda" data-tour="ajuda" aria-label="Ajuda"><CircleHelp size={18} /></Link>
           <button className="icon-button" type="button" onClick={logout} aria-label="Sair"><LogOut size={18} /></button>
         </div>
       </aside>

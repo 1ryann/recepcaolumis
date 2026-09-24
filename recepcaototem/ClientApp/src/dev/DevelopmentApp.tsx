@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminLayout } from '../components/AdminLayout'
 import { ProtectedRoute } from '../components/ProtectedRoute'
+import { HelpCenter } from '../help/HelpCenter'
 import { ChangePassword } from '../pages/ChangePassword'
 import { Login } from '../pages/Login'
 import { Reception } from '../pages/Reception'
@@ -19,6 +20,7 @@ export default function DevelopmentApp() {
         <Route path="/recepcao" element={<Reception />} />
         <Route path="/login" element={<Login />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/ajuda" element={<HelpCenter />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />

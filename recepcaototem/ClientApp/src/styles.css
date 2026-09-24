@@ -844,6 +844,20 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow: hidden; }
 .tour-navegacao { display: flex; align-items: center; gap: 8px; }
 .tour-acoes .ghost-button,.tour-acoes .secondary-button,.tour-acoes .primary-button { min-height: 36px; font-size: 12px; }
 
+.help-page { display: grid; gap: 18px; max-width: 860px; margin: 0 auto; padding: 34px 20px 48px; }
+.help-header { display: flex; align-items: center; gap: 14px; }
+.help-header > div { flex: 1; }
+.help-header h1 { margin: 0; color: var(--ink); font-size: 25px; }
+.help-header p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.help-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; color: var(--ink); background: #ececec; border-radius: 14px; }
+.help-track { padding: 22px; }
+.help-track-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.help-track-header h2 { margin: 0; color: var(--ink); font-size: 18px; }
+.help-track-header p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.help-steps { display: grid; gap: 14px; margin: 18px 0 0; padding-inline-start: 22px; }
+.help-steps li strong { color: var(--ink); font-size: 14px; font-weight: 650; }
+.help-steps li p { margin: 4px 0 0; color: #666; font-size: 13px; line-height: 1.5; }
+
 @media (max-width: 700px) {
   .sidebar-logo { width: 132px; }
   .sidebar-brand { min-height: 76px; }

@@ -18,6 +18,6 @@ export const trilhaAdmin: Trilha = {
     { id: 'admin-vincular-conta', alvo: 'acoes-profissional', rota: '/admin/profissionais', titulo: 'Vincular uma conta de acesso', texto: 'Somente administradores vinculam um profissional a uma conta do sistema. É esse vínculo que permite à pessoa entrar e ver os próprios atendimentos.', somenteRoles: ['ADMINISTRADOR'] },
     { id: 'admin-ativar-desativar', alvo: 'acoes-profissional', rota: '/admin/profissionais', titulo: 'Desativar em vez de excluir', texto: 'Profissionais e salas são desativados, nunca excluídos. O histórico de visitas e locações depende desses registros continuarem existindo.' },
     { id: 'admin-paginacao', alvo: 'paginacao-profissionais', rota: '/admin/profissionais', titulo: 'Listas longas', texto: 'Quando a lista passa do tamanho de uma página, a navegação aparece no rodapé do painel.' },
-    { id: 'admin-onde-esta-ajuda', titulo: 'Onde reencontrar este tutorial', texto: 'A qualquer momento, o botão de ajuda no rodapé da barra lateral abre a central de ajuda, onde você pode reler tudo e refazer o tour.' },
+    { id: 'admin-onde-esta-ajuda', alvo: 'ajuda', titulo: 'Onde reencontrar este tutorial', texto: 'A qualquer momento, o botão de ajuda no rodapé da barra lateral abre a central de ajuda, onde você pode reler tudo e refazer o tour.' },
   ],
 }
