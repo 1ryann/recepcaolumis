@@ -1148,7 +1148,13 @@ export const customersAdministrationApi = {
   remove(id: string, concurrencyToken: string) {
     return apiClient.delete<CustomerDeletionDto>(`/api/admin/customers/${encodeURIComponent(id)}`, { concurrencyToken })
   },
+  // No token: this changes the login, not the customer row, so a stale list is not a conflict.
+  resetPassword(id: string) {
+    return apiClient.post<ResetPasswordDto>(`/api/admin/customers/${encodeURIComponent(id)}/reset-password`, {})
+  },
 }
+
+export interface ResetPasswordDto { userId: string, temporaryPassword: string }
 
 export type SystemRole = 'ADMINISTRADOR' | 'GERENTE' | 'PROFISSIONAL'
 export interface CreatedUserDto {

@@ -247,6 +247,93 @@ public sealed class CustomerAdministrationApiTests(ModulesApiFactory factory)
         Assert.True(await db.Professionals.AnyAsync(x => x.ApplicationUserId == account.Id));
     }
 
+
+    // "I forgot my password" has no self-service answer anywhere in the system, so reception hands
+    // out a new temporary one. It must actually replace the old password and force a change.
+    [Fact]
+    public async Task Reception_resets_the_password_of_a_customer_who_forgot_it()
+    {
+        await factory.ResetAsync();
+        var email = $"customer-forgot-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(email, Password, [SystemRoles.Customer], displayName: "Bruno Lima");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-reset@lumis.test");
+        var customer = await SeedAsync("Bruno Lima", "69999990110", account.Id);
+
+        var stampBefore = (await ReadAccountAsync(account.Id)).SecurityStamp;
+        var response = await factory.PostWithCsrfAsync($"/api/admin/customers/{customer.Id}/reset-password", new { });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var issued = (await response.Content.ReadFromJsonAsync<ResetPayload>())!;
+        Assert.False(string.IsNullOrWhiteSpace(issued.TemporaryPassword));
+        Assert.Equal(account.Id, issued.UserId);
+
+        var stored = await ReadAccountAsync(account.Id);
+        Assert.True(stored.MustChangePassword);
+        Assert.NotEqual(stampBefore, stored.SecurityStamp);
+
+        await factory.PostWithCsrfAsync("/api/auth/logout", new { });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.LoginAsync(email, Password)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, issued.TemporaryPassword)).StatusCode);
+        // The next sign-in is sent to the change-password screen by this flag.
+        var session = await factory.Client.GetAsync("/api/auth/session");
+        Assert.Contains("\"mustChangePassword\":true", await session.Content.ReadAsStringAsync());
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "USER_PASSWORD_RESET" && x.TargetUserId == account.Id));
+    }
+
+    [Fact]
+    public async Task Resetting_a_customer_without_a_login_says_so_instead_of_failing()
+    {
+        await factory.ResetAsync();
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-noaccount@lumis.test");
+        var customer = await SeedAsync("Sem Conta", "69999990111");
+
+        var response = await factory.PostWithCsrfAsync($"/api/admin/customers/{customer.Id}/reset-password", new { });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("CUSTOMER_WITHOUT_ACCOUNT", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await factory.PostWithCsrfAsync($"/api/admin/customers/{Guid.NewGuid()}/reset-password", new { })).StatusCode);
+    }
+
+    // The route is open to reception, so it must not become a way around the administrator: a login
+    // that also carries a staff role is refused here and stays untouched.
+    [Fact]
+    public async Task A_login_that_is_not_only_a_customer_is_not_receptions_to_reset()
+    {
+        await factory.ResetAsync();
+        var email = $"customer-staff-{Guid.NewGuid():N}@lumis.test";
+        var account = await factory.CreateUserAsync(email, Password, [SystemRoles.Customer, SystemRoles.Administrador], displayName: "Pessoa Dupla");
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-staff@lumis.test");
+        var customer = await SeedAsync("Pessoa Dupla", "69999990112", account.Id);
+
+        var response = await factory.PostWithCsrfAsync($"/api/admin/customers/{customer.Id}/reset-password", new { });
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("ACCOUNT_NOT_CUSTOMER_ONLY", await response.Content.ReadAsStringAsync());
+
+        var stored = await ReadAccountAsync(account.Id);
+        Assert.False(stored.MustChangePassword);
+        await factory.PostWithCsrfAsync("/api/auth/logout", new { });
+        Assert.Equal(HttpStatusCode.NoContent, (await factory.LoginAsync(email, Password)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Resetting_needs_operations_and_antiforgery()
+    {
+        await factory.ResetAsync();
+        var id = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await factory.Client.PostAsJsonAsync($"/api/admin/customers/{id}/reset-password", new { })).StatusCode);
+
+        await LoginAsAsync(SystemRoles.Profissional, "professional-customer-reset@lumis.test");
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await factory.Client.PostAsJsonAsync($"/api/admin/customers/{id}/reset-password", new { })).StatusCode);
+
+        await factory.ResetAsync();
+        await LoginAsAsync(SystemRoles.Gerente, "reception-customer-reset-csrf@lumis.test");
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await factory.Client.PostAsJsonAsync($"/api/admin/customers/{id}/reset-password", new { })).StatusCode);
+    }
     private async Task SeedProfessionalWithAccountAsync(string accountId)
     {
         var now = factory.UtcNow;
@@ -311,6 +398,7 @@ public sealed class CustomerAdministrationApiTests(ModulesApiFactory factory)
     }
 
     private sealed record DeletePayload(string Outcome);
+    private sealed record ResetPayload(string UserId, string TemporaryPassword);
     private sealed record CustomerPayload(Guid Id, string Name, string Phone, bool IsActive, bool HasAccount, string ConcurrencyToken);
     private sealed record PagePayload(IReadOnlyList<CustomerPayload> Items, int Page, int PageSize, int TotalCount);
 }

@@ -100,6 +100,23 @@ public static class UserAdministrationEndpoints
         if (user is null)
             return Results.NotFound(new { code = "USER_NOT_FOUND", message = "Usuário não encontrado." });
 
+        return await ResetPasswordAsync(user, context, users, db, passwords, timeProvider, cancellationToken);
+    }
+
+    /// <summary>
+    /// The reset itself, shared with the reception's own route for a customer's login
+    /// (<c>CustomerAdministrationEndpoints</c>): same transaction, same rotated stamp, same audit
+    /// entry. Whoever calls this has already decided that the caller may touch this account.
+    /// </summary>
+    internal static async Task<IResult> ResetPasswordAsync(
+        ApplicationUser user,
+        HttpContext context,
+        UserManager<ApplicationUser> users,
+        ApplicationDbContext db,
+        ITemporaryPasswordGenerator passwords,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
         var temporaryPassword = passwords.Generate();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 

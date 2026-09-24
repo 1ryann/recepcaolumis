@@ -5,7 +5,7 @@ import { customersAdministrationApi } from '../../api/modules'
 import { Customers } from './Customers'
 
 vi.mock('../../api/modules', () => ({
-  customersAdministrationApi: { list: vi.fn(), changeStatus: vi.fn(), remove: vi.fn() },
+  customersAdministrationApi: { list: vi.fn(), changeStatus: vi.fn(), remove: vi.fn(), resetPassword: vi.fn() },
 }))
 
 const customer = {
@@ -83,4 +83,38 @@ test('a customer with history is reported as anonymised, not as deleted', async 
   fireEvent.click(screen.getByRole('button', { name: 'Excluir definitivamente' }))
 
   expect(await screen.findByText(/histórico foi mantido sem identificação/)).toBeInTheDocument()
+})
+
+// Reception's only answer to "I forgot my password": there is no self-service recovery anywhere.
+const withAccount = { ...customer, id: 'customer-2', name: 'Bruno Lima', hasAccount: true, concurrencyToken: 'token-2' }
+
+test('a customer without a login has nothing to reset', async () => {
+  render(<Customers />)
+  expect(await screen.findByText('Maria Clara Souza')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Redefinir a senha/ })).not.toBeInTheDocument()
+})
+
+test('resetting a password asks first and then shows it once', async () => {
+  vi.mocked(customersAdministrationApi.list).mockResolvedValue({ items: [withAccount], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(customersAdministrationApi.resetPassword).mockResolvedValue({ userId: 'u-2', temporaryPassword: 'janela-cravo-482' })
+  render(<Customers />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Redefinir a senha de Bruno Lima' }))
+  expect(customersAdministrationApi.resetPassword).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Redefinir senha' }))
+  await waitFor(() => expect(customersAdministrationApi.resetPassword).toHaveBeenCalledWith('customer-2'))
+  expect(await screen.findByText('janela-cravo-482')).toBeInTheDocument()
+})
+
+test('a login that is not only a customer is refused with the reason', async () => {
+  vi.mocked(customersAdministrationApi.list).mockResolvedValue({ items: [withAccount], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(customersAdministrationApi.resetPassword)
+    .mockRejectedValue(new ApiError(409, 'ACCOUNT_NOT_CUSTOMER_ONLY', 'Esta conta também dá outro acesso.'))
+  render(<Customers />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Redefinir a senha de Bruno Lima' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Redefinir senha' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Redefina por Profissionais')
 })

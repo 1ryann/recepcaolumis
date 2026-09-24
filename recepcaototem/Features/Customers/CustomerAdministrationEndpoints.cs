@@ -1,4 +1,5 @@
 using GestaoPredio.Domain.Customers;
+using GestaoPredio.Domain.Security;
 using GestaoPredio.Infrastructure.Identity;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Auth;
 using recepcaototem.Features.Common;
 using recepcaototem.Features.Professionals;
+using recepcaototem.Features.Users;
 using recepcaototem.Features.Whatsapp;
 
 namespace recepcaototem.Features.Customers;
@@ -19,7 +21,8 @@ public sealed record CustomerAdministrationResponse(Guid Id, string Name, string
 /// <summary>
 /// Reception and administration view of the customer records created by bookings and self-registration. Deactivating
 /// one is how a duplicate or mistyped record stops being usable: an inactive customer cannot book, check in or be
-/// notified. Nothing here deletes a record, because appointments and audit entries point at it.
+/// notified. Deleting one is the way out for good, and resetting the password is how someone who forgot it gets back
+/// in, since there is no self-service recovery.
 /// </summary>
 public static class CustomerAdministrationEndpoints
 {
@@ -30,6 +33,7 @@ public static class CustomerAdministrationEndpoints
         group.MapPost("/{id:guid}/activate", Activate).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/{id:guid}/deactivate", Deactivate).AddEndpointFilter<AntiforgeryFilter>();
         group.MapDelete("/{id:guid}", Delete).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/reset-password", ResetPassword).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 
@@ -186,6 +190,36 @@ public static class CustomerAdministrationEndpoints
             return ProfessionalEndpoints.Modified();
         }
         return Results.Ok(new CustomerDeletionResponse(hasHistory ? "ANONYMIZED" : "DELETED"));
+    }
+
+    /// <summary>
+    /// Reception's answer to "I forgot my password". Nothing here recovers an account on its own —
+    /// there is no e-mail or WhatsApp recovery — so the person asks at the desk and leaves with a
+    /// temporary password that the next sign-in forces them to replace. Only a customer's own
+    /// login: an account that also carries a staff role is refused, so this cannot become a way
+    /// for reception to take over an administrator's account.
+    /// </summary>
+    private static async Task<IResult> ResetPassword(Guid id, HttpContext context, ApplicationDbContext db,
+        UserManager<ApplicationUser> users, ITemporaryPasswordGenerator passwords, TimeProvider time,
+        CancellationToken cancellationToken)
+    {
+        var customer = await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (customer is null) return Results.NotFound();
+
+        var account = customer.ApplicationUserId is null ? null : await users.FindByIdAsync(customer.ApplicationUserId);
+        if (account is null)
+            return Results.BadRequest(new { code = "CUSTOMER_WITHOUT_ACCOUNT", message = "Este cliente não tem conta de acesso." });
+
+        var roles = await users.GetRolesAsync(account);
+        if (roles.Any(role => role != SystemRoles.Customer))
+            return Results.Json(new
+            {
+                code = "ACCOUNT_NOT_CUSTOMER_ONLY",
+                message = "Esta conta também dá outro acesso. Redefina por Profissionais ou peça ao administrador."
+            }, statusCode: 409);
+
+        return await UserAdministrationEndpoints.ResetPasswordAsync(
+            account, context, users, db, passwords, time, cancellationToken);
     }
 
     private static CustomerAdministrationResponse ToResponse(Customer customer) => new(

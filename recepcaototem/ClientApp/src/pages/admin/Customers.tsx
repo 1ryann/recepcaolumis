@@ -1,4 +1,4 @@
-import { Search, Trash2, UserMinus, UserPlus } from 'lucide-react'
+import { Check, Copy, KeyRound, Search, Trash2, UserMinus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type CustomerAdministrationDto, customersAdministrationApi, type ModuleStatus, type PagedResponse } from '../../api/modules'
@@ -25,6 +25,9 @@ export function Customers() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState<CustomerAdministrationDto | null>(null)
+  const [resetting, setResetting] = useState<CustomerAdministrationDto | null>(null)
+  const [issued, setIssued] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -77,6 +80,26 @@ export function Customers() {
     } finally { setSaving(false) }
   }
 
+  // There is no self-service recovery: a customer who forgot the password asks here, and the
+  // reception reads the temporary one back. It is shown once and the next sign-in forces a change.
+  const resetPassword = async () => {
+    if (!resetting) return
+    setSaving(true); setError(null)
+    try {
+      setIssued((await customersAdministrationApi.resetPassword(resetting.id)).temporaryPassword)
+    } catch (reason) {
+      setError(reason instanceof ApiError && reason.code === 'ACCOUNT_NOT_CUSTOMER_ONLY'
+        ? 'Esta conta também dá outro acesso. Redefina por Profissionais ou peça ao administrador.'
+        : 'Não foi possível redefinir a senha deste cliente.')
+      setResetting(null)
+    } finally { setSaving(false) }
+  }
+  const closeReset = () => { setResetting(null); setIssued(null); setCopied(false) }
+  const copyPassword = async () => {
+    if (!issued) return
+    try { await navigator.clipboard?.writeText(issued); setCopied(true) } catch { setCopied(false) }
+  }
+
   const start = result.totalCount ? ((result.page - 1) * result.pageSize) + 1 : 0
   const end = Math.min(result.page * result.pageSize, result.totalCount)
   const pages = Math.max(1, Math.ceil(result.totalCount / result.pageSize))
@@ -100,7 +123,7 @@ export function Customers() {
                   <td>{optInLabel(customer)}</td>
                   <td>{customer.hasAccount ? 'Conta vinculada' : 'Sem conta'}</td>
                   <td><StatusBadge status={customer.isActive ? 'active' : 'inactive'} /></td>
-                  <td><div className="row-actions"><button type="button" disabled={saving} title={customer.isActive ? 'Desativar' : 'Ativar'} onClick={() => void toggleStatus(customer)} aria-label={`${customer.isActive ? 'Desativar' : 'Ativar'} ${customer.name}`}>{customer.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button><button type="button" disabled={saving} title="Excluir" aria-label={`Excluir ${customer.name}`} onClick={() => { setNotice(null); setRemoving(customer) }}><Trash2 size={17} /></button></div></td>
+                  <td><div className="row-actions"><button type="button" disabled={saving} title={customer.isActive ? 'Desativar' : 'Ativar'} onClick={() => void toggleStatus(customer)} aria-label={`${customer.isActive ? 'Desativar' : 'Ativar'} ${customer.name}`}>{customer.isActive ? <UserMinus size={17} /> : <UserPlus size={17} />}</button>{customer.hasAccount && <button type="button" disabled={saving} title="Redefinir senha" aria-label={`Redefinir a senha de ${customer.name}`} onClick={() => { setNotice(null); setIssued(null); setCopied(false); setResetting(customer) }}><KeyRound size={17} /></button>}<button type="button" disabled={saving} title="Excluir" aria-label={`Excluir ${customer.name}`} onClick={() => { setNotice(null); setRemoving(customer) }}><Trash2 size={17} /></button></div></td>
                 </tr>)}</tbody>
               </table></div>}
       {notice && <p className="form-hint" role="status">{notice}</p>}
@@ -118,6 +141,27 @@ export function Customers() {
           <button className="danger-button" type="button" disabled={saving} onClick={() => void remove()}>{saving ? 'Excluindo…' : 'Excluir definitivamente'}</button>
         </div>
       </div>
+    </Modal>
+    <Modal open={resetting !== null} onClose={closeReset} title="Redefinir senha"
+      subtitle={resetting ? `${resetting.name} · ${displayWhatsApp(resetting.phone)}` : undefined}>
+      {issued
+        ? <div className="user-account-created">
+            <p className="form-hint">Senha temporária criada. Passe para o cliente agora — ele terá que escolher uma nova senha ao entrar.</p>
+            <div className="user-account-password">
+              <code>{issued}</code>
+              <button className="secondary-button" type="button" onClick={() => void copyPassword()}>{copied ? <><Check size={16} /> Copiado</> : <><Copy size={16} /> Copiar</>}</button>
+            </div>
+            <p className="field-hint">Guarde agora: a senha não volta a ser exibida.</p>
+            <div className="modal-actions"><button className="primary-button" type="button" onClick={closeReset}>Fechar</button></div>
+          </div>
+        : <div className="simple-form">
+            <p className="form-hint">Use quando o cliente não lembra a senha. A senha atual deixa de valer na hora e as sessões abertas caem.</p>
+            <p className="form-hint">A senha temporária aparece uma única vez, aqui nesta tela.</p>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" disabled={saving} onClick={closeReset}>Cancelar</button>
+              <button className="primary-button" type="button" disabled={saving} onClick={() => void resetPassword()}>{saving ? 'Redefinindo…' : 'Redefinir senha'}</button>
+            </div>
+          </div>}
     </Modal>
   </div>
 }
