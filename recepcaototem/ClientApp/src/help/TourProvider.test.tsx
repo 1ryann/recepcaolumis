@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import { SessionProvider, useSession } from '../auth/SessionProvider'
+import { trilhaPorId } from './content'
 import { TourProvider, useTour } from './TourProvider'
 import { criarTourProgressStore } from './tourStorage'
 
@@ -100,7 +101,7 @@ test('reinicia quando o progresso salvo é de uma versão anterior', async () =>
   await waitFor(() => expect(screen.getByText(/^admin:admin-navegacao/)).toBeInTheDocument())
 })
 
-test('o gerente não recebe o passo restrito a administradores', async () => {
+test('gerente e administrador recebem o mesmo tour, porque nenhum passo ancorado é restrito por role', async () => {
   vi.stubGlobal('fetch', sessaoDe(['GERENTE']))
   montar()
   await waitFor(() => expect(screen.getByText(/^admin:/)).toBeInTheDocument())
@@ -112,7 +113,13 @@ test('o gerente não recebe o passo restrito a administradores', async () => {
     </MemoryRouter>,
   )
   await waitFor(() => expect(within(administrador.container).getByText(/^admin:/)).toBeInTheDocument())
-  expect(Number(within(administrador.container).getByText(/^admin:/).textContent!.split('/')[1])).toBe(total + 1)
+  expect(Number(within(administrador.container).getByText(/^admin:/).textContent!.split('/')[1])).toBe(total)
+})
+
+test('todo passo ancorado aponta para um elemento que existe sem depender de dados cadastrados', () => {
+  const ancorados = trilhaPorId('admin')!.passos.filter(passo => passo.alvo).map(passo => passo.alvo)
+  expect(ancorados).not.toContain('acoes-profissional')
+  expect(ancorados).not.toContain('paginacao-profissionais')
 })
 
 test('o profissional não recebe tour, porque a trilha dele não tem passos ancorados', async () => {

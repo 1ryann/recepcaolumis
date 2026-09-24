@@ -20,6 +20,16 @@ function sessaoDe(roles: string[]) {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 }
 
+test('o gerente não vê o passo restrito a administradores, e o administrador vê', async () => {
+  vi.stubGlobal('fetch', sessaoDe(['GERENTE']))
+  montar()
+  await waitFor(() => expect(screen.getByText('Para a administração')).toBeInTheDocument())
+  expect(screen.queryByText('Vincular uma conta de acesso')).not.toBeInTheDocument()
+  vi.stubGlobal('fetch', sessaoDe(['ADMINISTRADOR']))
+  const administrador = montar()
+  await waitFor(() => expect(administrador.container.textContent).toContain('Vincular uma conta de acesso'))
+})
+
 test('sem sessão mostra as trilhas públicas e não a do administrador', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 401 })))
   montar()
