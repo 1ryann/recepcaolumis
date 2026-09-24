@@ -1818,7 +1818,11 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 
 /* --- shared weekly period editor / time inputs --- */
 .settings-page,.availability-page { padding-bottom: clamp(40px, 8vh, 90px); }
-.settings-real-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); align-items: start; }
+/* Duas colunas fixas: com auto-fit o painel de 992px abria três faixas, e a faixa vazia
+   deixada pelos dois cartões de baixo aparecia como um buraco à direita. */
+.settings-real-grid { grid-template-columns: 1fr; align-items: start; }
+.settings-real-grid > .operating-hours-page { grid-column: 1 / -1; }
+@media (min-width: 62rem) { .settings-real-grid { grid-template-columns: 1fr 1fr; } }
 .time-input { width: 100%; min-width: 8.5rem; max-width: 11rem; min-height: 38px; padding: 0 10px; color: var(--text); border: 1px solid #d7e3e1; border-radius: 9px; background: #fff; font: inherit; }
 .time-input:focus { outline: 0; border-color: #4c9b85; box-shadow: 0 0 0 3px rgba(76,155,133,.12); }
 .time-input:disabled { color: #8da0a0; background: #f4f7f6; }
@@ -1864,6 +1868,19 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .oh-save-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 0 2px; background: linear-gradient(rgba(255,255,255,0), #fff 32%); }
 .oh-save-bar > span { color: var(--muted); font-size: 11.5px; }
 .availability-days .wpe-days { margin-top: 12px; }
+/* O cartão do horário tem sete dias, cada um com um período que precisa de ~380px para
+   caber em uma linha. Em coluna estreita cada linha quebrava em três, e o cartão ficava
+   três vezes mais alto que os vizinhos. Ele ocupa a linha inteira e distribui os dias. */
+.operating-hours-editor .wpe-days { grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); align-items: start; }
+.operating-hours-editor .timefield-input { max-width: 7rem; }
+/* Quando a coluna do dia sobra (uma coluna só, em telas médias), o nome e os horários
+   dividem a mesma linha em vez de deixar metade da largura vazia; sem espaço, quebram. */
+.operating-hours-editor .wpe-day { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: 18px; row-gap: 10px; }
+.operating-hours-editor .wpe-day-head { flex: 1 1 11rem; justify-content: flex-start; }
+.operating-hours-editor .wpe-periods,.operating-hours-editor .wpe-closed { margin-top: 0; }
+/* Os dois campos da barra "aplicar a todos" esticavam até 11rem e empurravam o botão
+   para uma segunda linha; um campo de hora não precisa de mais que isso. */
+.oh-bulk-fields .time-input { flex: 0 0 7.5rem; min-width: 0; max-width: 7.5rem; }
 
 /* --- totem check-in --- */
 .totem-checkin-card { margin-block: clamp(24px, 6vh, 72px); }
