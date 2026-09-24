@@ -1480,7 +1480,6 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .admin-content .timefield-opt:hover { border-color: var(--lumis-success); background: rgba(var(--lumis-success-rgb), .12); }
 .admin-content .availability-editor-heading,
 .admin-content .availability-editor-actions { border-bottom-color: var(--lumis-border-soft); border-top-color: var(--lumis-border-soft); }
-.admin-content .oh-save-bar { background: linear-gradient(rgba(24,24,24,0), var(--lumis-bg) 32%); }
 .admin-content .oh-save-bar > span,
 .admin-content .availability-editor-actions > span { color: var(--lumis-text-secondary); }
 .admin-content .availability-effective { background: rgba(var(--lumis-success-rgb), .08); border-color: rgba(var(--lumis-success-rgb), .25); }
@@ -1695,7 +1694,6 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .professional-content .timefield-opt:hover { border-color: var(--lumis-success); background: rgba(var(--lumis-success-rgb),.12); }
 .professional-content .availability-editor-heading,
 .professional-content .availability-editor-actions { border-bottom-color: var(--lumis-border-soft); border-top-color: var(--lumis-border-soft); }
-.professional-content .oh-save-bar { background: linear-gradient(rgba(24,24,24,0), var(--lumis-bg) 32%); }
 .professional-content .oh-save-bar > span,
 .professional-content .availability-editor-actions > span { color: var(--lumis-text-secondary); }
 .professional-content .availability-effective { background: rgba(var(--lumis-success-rgb),.08); border-color: rgba(var(--lumis-success-rgb),.25); }
@@ -1865,7 +1863,7 @@ html:has(.lumis-gallery), body:has(.lumis-gallery) { overflow-x: hidden; overflo
 .oh-bulk-copy strong { display: block; color: var(--brand); font-size: 12px; }
 .oh-bulk-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; }
 .oh-bulk-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.oh-save-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 0 2px; background: linear-gradient(rgba(255,255,255,0), #fff 32%); }
+.oh-save-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 0 2px; }
 .oh-save-bar > span { color: var(--muted); font-size: 11.5px; }
 .availability-days .wpe-days { margin-top: 12px; }
 /* O cartão do horário tem sete dias, cada um com um período que precisa de ~380px para
