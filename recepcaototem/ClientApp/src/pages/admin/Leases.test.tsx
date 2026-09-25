@@ -6,7 +6,7 @@ import { leasesApi, professionalsApi, roomRentalInquiriesApi, roomsApi, tenantsA
 import { Leases, toInputDate } from './Leases'
 
 vi.mock('../../api/modules', () => ({
-  leasesApi: { list: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn(), postpone: vi.fn(), cancel: vi.fn(), end: vi.fn() },
+  leasesApi: { list: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn(), postpone: vi.fn(), cancel: vi.fn(), end: vi.fn(), reactivate: vi.fn(), remove: vi.fn() },
   tenantsApi: { list: vi.fn(), create: vi.fn() }, professionalsApi: { list: vi.fn() }, roomsApi: { list: vi.fn() },
   roomRentalInquiriesApi: { get: vi.fn() },
 }))
@@ -255,4 +255,53 @@ test('a 409 ROOM_RENTAL_INQUIRY_ALREADY_CONVERTED on submit surfaces the error w
   fireEvent.click(screen.getByRole('button', { name: 'Cadastrar locação' }))
   expect(await screen.findByText('O interesse já foi convertido.')).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Nova locação' })).toBeInTheDocument()
+})
+
+const cancelledLease = { ...lease, id: 'lease-2', status: 'CANCELADA' as const, concurrencyToken: 'lease-token-2' }
+
+test('a cancelled lease can be reactivated under a new end, prefilled with the old one', async () => {
+  vi.mocked(leasesApi.list).mockResolvedValue({ items: [cancelledLease], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(leasesApi.reactivate).mockResolvedValue({ ...cancelledLease, status: 'AGENDADA', concurrencyToken: 'lease-token-3' })
+  render(<Leases />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Reativar locação Clínica Aurora' }))
+  const field = screen.getByLabelText('Novo fim da ocupação')
+  expect(field).toHaveValue(toInputDate(cancelledLease.occupancyEndAt))
+  fireEvent.change(field, { target: { value: '2026-09-30T18:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Reativar locação' }))
+
+  await waitFor(() => expect(leasesApi.reactivate).toHaveBeenCalledWith(
+    'lease-2', new Date('2026-09-30T18:00').toISOString(), 'lease-token-2'))
+  // Scoped to the badge: the status filter above the table has an "Agendada" option too.
+  expect(await screen.findByText('Agendada', { selector: 'span.status-badge' })).toBeInTheDocument()
+})
+
+test('reactivating over a period someone else took explains the clash', async () => {
+  vi.mocked(leasesApi.list).mockResolvedValue({ items: [cancelledLease], page: 1, pageSize: 20, totalCount: 1 })
+  vi.mocked(leasesApi.reactivate).mockRejectedValue(
+    new ApiError(409, 'LEASE_RESOURCE_CONFLICT', 'Conflito de recursos.'))
+  render(<Leases />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Reativar locação Clínica Aurora' }))
+  fireEvent.change(screen.getByLabelText('Novo fim da ocupação'), { target: { value: '2026-09-30T18:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Reativar locação' }))
+
+  expect(await screen.findByText(/A sala já está ocupada nesse período/)).toBeInTheDocument()
+})
+
+test('deleting a lease asks first and reports it, and a lease with charges is refused with the reason', async () => {
+  vi.mocked(leasesApi.remove).mockResolvedValue(undefined)
+  render(<Leases />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Apagar locação Clínica Aurora' }))
+  // Nothing leaves the screen before the confirmation is accepted.
+  expect(leasesApi.remove).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Apagar definitivamente' }))
+  await waitFor(() => expect(leasesApi.remove).toHaveBeenCalledWith('lease-1', 'lease-token-1'))
+  expect(await screen.findByText(/foi apagada/)).toBeInTheDocument()
+
+  vi.mocked(leasesApi.remove).mockRejectedValue(new ApiError(409, 'LEASE_HAS_CHARGES', 'Locação com cobranças.'))
+  fireEvent.click(screen.getByRole('button', { name: 'Apagar locação Clínica Aurora' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apagar definitivamente' }))
+  expect(await screen.findByText(/já gerou cobranças/)).toBeInTheDocument()
 })

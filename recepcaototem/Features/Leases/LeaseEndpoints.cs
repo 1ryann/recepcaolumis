@@ -28,6 +28,8 @@ public static partial class LeaseEndpoints
         group.MapPost("/{id:guid}/postpone-occupancy", Postpone).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/{id:guid}/cancel", Cancel).AddEndpointFilter<AntiforgeryFilter>();
         group.MapPost("/{id:guid}/end", End).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapPost("/{id:guid}/reactivate", Reactivate).AddEndpointFilter<AntiforgeryFilter>();
+        group.MapDelete("/{id:guid}", Delete).AddEndpointFilter<AntiforgeryFilter>();
         return endpoints;
     }
 

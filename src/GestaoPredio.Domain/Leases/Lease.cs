@@ -170,6 +170,30 @@ public sealed class Lease
         UpdatedAt = timestamp;
     }
 
+    /// <summary>
+    /// Puts a cancelled or ended lease back to work. The new end has to be informed and has to be in the future:
+    /// an ended lease almost always has its end in the past, so restoring the old window would hand back a lease
+    /// that is already over. The start is kept — reactivating is resuming the same contract, not writing a new one;
+    /// a start already behind us simply means the room is taken from now on. The caller re-checks the room first:
+    /// the period was free when the lease was cancelled, and something else may have taken it since.
+    /// </summary>
+    public void Reactivate(DateTimeOffset occupancyEndAt, DateTimeOffset occurredAt)
+    {
+        if (LifecycleState is not (LeaseLifecycleState.Cancelled or LeaseLifecycleState.Ended))
+            throw new InvalidOperationException("Somente uma locação cancelada ou encerrada pode ser reativada.");
+        var timestamp = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+        var end = TimestampNormalizer.ToUtcMicroseconds(occupancyEndAt);
+        if (end <= timestamp)
+            throw new ArgumentException("O novo término deve ser futuro.", nameof(occupancyEndAt));
+        if (end <= OccupancyStartAt)
+            throw new ArgumentException("O término deve ser posterior ao início da ocupação.", nameof(occupancyEndAt));
+        LifecycleState = LeaseLifecycleState.Open;
+        OccupancyEndAt = end;
+        // The occurrences are planned again from scratch, so nothing is materialised yet.
+        MaterializedThroughAt = null;
+        UpdatedAt = timestamp;
+    }
+
     public void SetMaterializedThrough(DateTimeOffset? value)
     {
         MaterializedThroughAt = value is null ? null : TimestampNormalizer.ToUtcMicroseconds(value.Value);

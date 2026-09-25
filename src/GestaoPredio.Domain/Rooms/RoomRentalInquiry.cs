@@ -86,4 +86,16 @@ public sealed class RoomRentalInquiry
         ConvertedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
         Status = RoomRentalInquiryStatus.Converted;
     }
+
+    /// <summary>
+    /// Undoes the conversion when the lease it produced is deleted. The inquiry goes back to new, which is the
+    /// truth of it: someone still wants that room and the lease that answered them is gone. Leaving it converted
+    /// would point it at a row that no longer exists.
+    /// </summary>
+    public void DetachLease()
+    {
+        LeaseId = null;
+        ConvertedAt = null;
+        Status = RoomRentalInquiryStatus.New;
+    }
 }

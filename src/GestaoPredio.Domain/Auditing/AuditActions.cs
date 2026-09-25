@@ -54,6 +54,8 @@ public static class AuditActions
     public const string LeaseEndScheduled = "LEASE_END_SCHEDULED";
     public const string LeaseEndingPending = "LEASE_ENDING_PENDING";
     public const string LeaseEnded = "LEASE_ENDED";
+    public const string LeaseReactivated = "LEASE_REACTIVATED";
+    public const string LeaseDeleted = "LEASE_DELETED";
     public const string ReservationCreated = "RESERVATION_CREATED";
     public const string ReservationRequested = "RESERVATION_REQUESTED";
     public const string ReservationApproved = "RESERVATION_APPROVED";

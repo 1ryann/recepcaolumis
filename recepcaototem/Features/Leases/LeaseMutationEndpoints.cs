@@ -6,6 +6,7 @@ using GestaoPredio.Domain.Auditing;
 using GestaoPredio.Domain.Common;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using recepcaototem.Features.Common;
 
@@ -206,6 +207,107 @@ public static partial class LeaseEndpoints
         db.AuditEntries.Add(LeaseAudit.CreateSucceeded(id, action, now,
             context.TraceIdentifier, Actor(context), context.Connection.RemoteIpAddress?.ToString()));
         return await SaveMutation(db, transaction, lease, version, now, cancellationToken);
+    }
+
+    /// <summary>
+    /// Puts a cancelled or ended lease back to work under a new end date. The room is re-checked first: the period
+    /// was free when the lease left, and a reservation or another lease may have taken it since — reopening over
+    /// one of those would double-book the room.
+    /// </summary>
+    private static async Task<IResult> Reactivate(
+        Guid id,
+        ReactivateLeaseRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        ILeaseResourceLock resourceLock,
+        ILeaseConflictDetector conflictDetector,
+        IRoomAvailabilityService roomAvailability,
+        ILeaseOccurrencePlanner planner,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return InvalidToken();
+        if (request.OccupancyEndAt is not { } occupancyEndAt) return Invalid();
+        var now = timeProvider.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var lease = await db.Leases.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lease is null) return Results.NotFound();
+        if (lease.Version != version) return Modified();
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([lease.TenantId], [lease.RoomId], [lease.ProfessionalId]), cancellationToken);
+        if (!await ResourcesAreActive(db, lease.TenantId, lease.ProfessionalId, lease.RoomId, cancellationToken))
+            return InvalidResource();
+
+        var conflict = await conflictDetector.FindConflictAsync(lease.RoomId, lease.ProfessionalId,
+            lease.OccupancyStartAt, occupancyEndAt, lease.Id, cancellationToken);
+        if (conflict.Any) return Conflict();
+        var roomConflict = await roomAvailability.CheckLeaseRoomAsync(lease.RoomId,
+            lease.OccupancyStartAt, occupancyEndAt, lease.Mode, cancellationToken);
+        if (roomConflict != RoomAvailabilityConflict.None) return AvailabilityConflict(roomConflict);
+
+        db.Entry(lease).Property(x => x.Version).OriginalValue = version;
+        try { lease.Reactivate(occupancyEndAt, now); }
+        catch (InvalidOperationException) { return InvalidTransition(); }
+        catch (ArgumentException) { return Invalid(); }
+
+        // The occurrences cancelled on the way out are reopened rather than replaced: they hold the same starts the
+        // plan is about to ask for, (LeaseId, StartAt) is unique, and a delete plus an insert in one save collides
+        // on that index. Reopened, they are ordinary planned rows again — the plan then moves the ends it needs to
+        // move and cancels any the new, shorter or longer occupancy no longer wants.
+        var occurrences = await db.LeaseOccurrences.Where(x => x.LeaseId == id).ToListAsync(cancellationToken);
+        foreach (var occurrence in occurrences.Where(x => x.State == LeaseOccurrenceState.Cancelled))
+            occurrence.Reopen(now);
+        ApplyPlan(db, lease, occurrences, planner.Plan(lease, now, occurrences), now);
+        db.AuditEntries.Add(LeaseAudit.CreateSucceeded(id, AuditActions.LeaseReactivated, now,
+            context.TraceIdentifier, Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        return await SaveMutation(db, transaction, lease, version, now, cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes a lease for good — the way out for one created by mistake. Its occurrences are the lease's own rows
+    /// and go with it, and a room-rental inquiry that became this lease is unlinked so the inquiry survives. A lease
+    /// that already produced a financial charge is refused instead: the charge carries the lease id with no cascade,
+    /// and money is not something to make disappear from a confirmation dialog. Cancel or end that one.
+    /// </summary>
+    private static async Task<IResult> Delete(
+        Guid id,
+        [FromBody] LeaseConcurrencyRequest request,
+        HttpContext context,
+        ApplicationDbContext db,
+        ILeaseResourceLock resourceLock,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!ConcurrencyToken.TryDecode(request.ConcurrencyToken, out var version)) return InvalidToken();
+        var now = timeProvider.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var lease = await db.Leases.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lease is null) return Results.NotFound();
+        if (lease.Version != version) return Modified();
+        await resourceLock.AcquireAsync(new LeaseResourceLockRequest([lease.TenantId], [lease.RoomId], [lease.ProfessionalId]), cancellationToken);
+
+        if (await db.FinancialCharges.AnyAsync(x => x.LeaseId == id, cancellationToken))
+            return Results.Json(new ApiError("LEASE_HAS_CHARGES",
+                "Esta locação já gerou cobranças e não pode ser apagada. Cancele ou encerre a locação."),
+                statusCode: StatusCodes.Status409Conflict);
+
+        db.Entry(lease).Property(x => x.Version).OriginalValue = version;
+        db.LeaseOccurrences.RemoveRange(await db.LeaseOccurrences.Where(x => x.LeaseId == id).ToListAsync(cancellationToken));
+        foreach (var inquiry in await db.RoomRentalInquiries.Where(x => x.LeaseId == id).ToListAsync(cancellationToken))
+            inquiry.DetachLease();
+        db.Leases.Remove(lease);
+        db.AuditEntries.Add(LeaseAudit.CreateSucceeded(id, AuditActions.LeaseDeleted, now,
+            context.TraceIdentifier, Actor(context), context.Connection.RemoteIpAddress?.ToString()));
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Modified();
+        }
+        return Results.NoContent();
     }
 
     private static async Task<IResult> SaveMutation(

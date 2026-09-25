@@ -12,7 +12,9 @@ public static class LeaseAudit
         AuditActions.LeaseCancelled,
         AuditActions.LeaseEndScheduled,
         AuditActions.LeaseEndingPending,
-        AuditActions.LeaseEnded
+        AuditActions.LeaseEnded,
+        AuditActions.LeaseReactivated,
+        AuditActions.LeaseDeleted
     ];
 
     public static AuditEntry CreateSucceeded(

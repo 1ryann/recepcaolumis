@@ -32,6 +32,7 @@ public sealed record UpdateLeaseRequest(
 public sealed record PostponeLeaseRequest(DateTimeOffset OccupancyStartAt, string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record LeaseConcurrencyRequest(string? ConcurrencyToken) : IStrictModuleRequest;
 public sealed record EndLeaseRequest(DateTimeOffset? EndAt, string? ConcurrencyToken) : IStrictModuleRequest;
+public sealed record ReactivateLeaseRequest(DateTimeOffset? OccupancyEndAt, string? ConcurrencyToken) : IStrictModuleRequest;
 
 public sealed record LeaseResponse(
     Guid Id,

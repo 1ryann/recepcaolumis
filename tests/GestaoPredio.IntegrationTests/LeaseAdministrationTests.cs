@@ -4,6 +4,7 @@ using GestaoPredio.Domain.Professionals;
 using GestaoPredio.Domain.Rooms;
 using GestaoPredio.Domain.Security;
 using GestaoPredio.Domain.Tenants;
+using GestaoPredio.Domain.Finance;
 using GestaoPredio.Domain.Leases;
 using GestaoPredio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -296,6 +297,110 @@ public sealed class LeaseAdministrationTests(ModulesApiFactory factory)
         var verificationDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(LeaseLifecycleState.Ended, (await verificationDb.Leases.SingleAsync(x => x.Id == expired.Id)).LifecycleState);
         Assert.Equal(1, await verificationDb.AuditEntries.CountAsync(x => x.TargetEntityId == expired.Id && x.Action == "LEASE_ENDED"));
+    }
+
+    // Reception asked to be able to undo a cancellation or an ending instead of retyping the contract.
+    [Fact]
+    public async Task A_cancelled_lease_is_reactivated_under_a_new_end_and_plans_its_occurrence_again()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        var cancelled = (await (await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/cancel",
+            new { concurrencyToken = created.ConcurrencyToken })).Content.ReadFromJsonAsync<LeasePayload>())!;
+        Assert.Equal("CANCELADA", cancelled.Status);
+
+        var newEnd = factory.UtcNow.AddDays(3);
+        var response = await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/reactivate",
+            new { occupancyEndAt = newEnd, concurrencyToken = cancelled.ConcurrencyToken });
+
+        response.EnsureSuccessStatusCode();
+        var reactivated = (await response.Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        Assert.Equal("AGENDADA", reactivated.Status);
+        Assert.Equal(created.OccupancyStartAt, reactivated.OccupancyStartAt);
+        Assert.Equal(newEnd, reactivated.OccupancyEndAt);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // The occurrence cancelled on the way out is replaced by a planned one: the room is taken again.
+        var occurrence = Assert.Single(await db.LeaseOccurrences.Where(x => x.LeaseId == created.Id).ToListAsync());
+        Assert.Equal(LeaseOccurrenceState.Planned, occurrence.State);
+        Assert.Equal(newEnd, occurrence.EndAt);
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "LEASE_REACTIVATED"));
+    }
+
+    [Fact]
+    public async Task Reactivation_refuses_a_past_end_and_a_period_taken_meanwhile()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        var cancelled = (await (await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/cancel",
+            new { concurrencyToken = created.ConcurrencyToken })).Content.ReadFromJsonAsync<LeasePayload>())!;
+
+        var past = await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/reactivate",
+            new { occupancyEndAt = factory.UtcNow.AddHours(-1), concurrencyToken = cancelled.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.BadRequest, past.StatusCode);
+        Assert.Equal("INVALID_LEASE", (await past.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+
+        // The room did not stay empty while the lease was cancelled.
+        (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).EnsureSuccessStatusCode();
+        var taken = await factory.PostWithCsrfAsync($"/api/admin/leases/{created.Id}/reactivate",
+            new { occupancyEndAt = factory.UtcNow.AddDays(3), concurrencyToken = cancelled.ConcurrencyToken });
+        Assert.Equal(HttpStatusCode.Conflict, taken.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_lease_without_charges_is_deleted_with_its_occurrences_and_audited()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/leases/{created.Id}",
+            new { concurrencyToken = created.ConcurrencyToken });
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Null(await db.Leases.SingleOrDefaultAsync(x => x.Id == created.Id));
+        Assert.Empty(await db.LeaseOccurrences.Where(x => x.LeaseId == created.Id).ToListAsync());
+        Assert.Equal(1, await db.AuditEntries.CountAsync(x => x.Action == "LEASE_DELETED"));
+        // The room is free again: the same period can be let to someone else.
+        (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources))).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task A_lease_that_already_produced_a_charge_is_not_deleted()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+        var created = (await (await factory.PostWithCsrfAsync("/api/admin/leases", Body(resources)))
+            .Content.ReadFromJsonAsync<LeaseDetailPayload>())!;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.FinancialCharges.Add(FinancialCharge.Create(created.Id, resources.Professional.Id, resources.Tenant.Id,
+                factory.UtcNow.AddDays(-2), factory.UtcNow.AddDays(-1),
+                DateOnly.FromDateTime(factory.UtcNow.AddDays(5).DateTime), 150.50m, "mensalidade", factory.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await factory.DeleteWithCsrfAsync($"/api/admin/leases/{created.Id}",
+            new { concurrencyToken = created.ConcurrencyToken });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("LEASE_HAS_CHARGES", (await response.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        await using var verification = factory.Services.CreateAsyncScope();
+        var db2 = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.NotNull(await db2.Leases.SingleOrDefaultAsync(x => x.Id == created.Id));
     }
 
     private CreateLeaseBody Body((Tenant Tenant, Professional Professional, Room Room) value) => new(

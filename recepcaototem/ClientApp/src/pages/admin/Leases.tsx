@@ -1,4 +1,4 @@
-import { Ban, CalendarClock, CalendarDays, CircleStop, Eye, Pencil, Plus, Search } from 'lucide-react'
+import { Ban, CalendarClock, CalendarDays, CircleStop, Eye, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
@@ -72,6 +72,9 @@ export function Leases() {
   const [postponeAt, setPostponeAt] = useState('')
   const [endLease, setEndLease] = useState<LeaseDto | null>(null)
   const [endAt, setEndAt] = useState('')
+  const [reactivating, setReactivating] = useState<LeaseDto | null>(null)
+  const [reactivateAt, setReactivateAt] = useState('')
+  const [removing, setRemoving] = useState<LeaseDto | null>(null)
   const [newTenant, setNewTenant] = useState(false)
   const [tenantName, setTenantName] = useState('')
   const [tenantKind, setTenantKind] = useState<'INDIVIDUAL' | 'LEGAL_ENTITY'>('INDIVIDUAL')
@@ -170,6 +173,34 @@ export function Leases() {
     try { upsert(await leasesApi.end(endLease.id, endAt ? toIso(endAt) : null, endLease.concurrencyToken)); setEndLease(null) }
     catch (reason) { await resolveFailure(reason) }
   }
+  // Reactivating asks for a new end because the old one is almost always in the past, and the room may
+  // have been let or booked to someone else in the meantime — the API refuses that, and says so.
+  const saveReactivation = async (event: FormEvent) => {
+    event.preventDefault(); if (!reactivating) return
+    setSaving(true)
+    try { upsert(await leasesApi.reactivate(reactivating.id, toIso(reactivateAt), reactivating.concurrencyToken)); setReactivating(null) }
+    catch (reason) {
+      if (reason instanceof ApiError && (reason.code === 'LEASE_RESOURCE_CONFLICT' || reason.code === 'ROOM_UNAVAILABLE'))
+        setError('A sala já está ocupada nesse período. Escolha outro término ou libere o período antes de reativar.')
+      else await resolveFailure(reason)
+      setReactivating(null)
+    } finally { setSaving(false) }
+  }
+  const remove = async () => {
+    if (!removing) return
+    setSaving(true)
+    try {
+      await leasesApi.remove(removing.id, removing.concurrencyToken)
+      setNotice(`A locação de ${removing.tenantName} foi apagada.`)
+      setRemoving(null)
+      await refresh()
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'LEASE_HAS_CHARGES')
+        setError('Esta locação já gerou cobranças e não pode ser apagada. Cancele ou encerre a locação.')
+      else await resolveFailure(reason)
+      setRemoving(null)
+    } finally { setSaving(false) }
+  }
   const openNewTenant = () => {
     // Editable prefill only: the inquiry's FullName seeds the initial value, never its Kind — the Admin
     // always chooses INDIVIDUAL/LEGAL_ENTITY explicitly.
@@ -256,6 +287,8 @@ export function Leases() {
                 <button type="button" title="Detalhes" aria-label={`Detalhes da locação ${lease.tenantName}`} onClick={() => void showDetail(lease)}><Eye size={17} /></button>
                 {lease.status === 'AGENDADA' && <><button type="button" title="Editar" aria-label={`Editar locação ${lease.tenantName}`} onClick={() => void openForm(lease)}><Pencil size={17} /></button><button type="button" title="Postergar ocupação" aria-label={`Postergar locação ${lease.tenantName}`} onClick={() => { setPostpone(lease); setPostponeAt(toInputDate(lease.occupancyStartAt)) }}><CalendarClock size={17} /></button><button type="button" title="Cancelar locação" aria-label={`Cancelar locação ${lease.tenantName}`} onClick={() => void cancel(lease)}><Ban size={17} /></button></>}
                 {lease.status === 'ATIVA' && <button type="button" title="Encerrar locação" aria-label={`Encerrar locação ${lease.tenantName}`} onClick={() => { setEndLease(lease); setEndAt('') }}><CircleStop size={17} /></button>}
+                {(lease.status === 'ENCERRADA' || lease.status === 'CANCELADA') && <button type="button" title="Reativar locação" aria-label={`Reativar locação ${lease.tenantName}`} onClick={() => { setNotice(null); setReactivating(lease); setReactivateAt(toInputDate(lease.occupancyEndAt)) }}><RotateCcw size={17} /></button>}
+                <button type="button" title="Apagar locação" aria-label={`Apagar locação ${lease.tenantName}`} onClick={() => { setNotice(null); setRemoving(lease) }}><Trash2 size={17} /></button>
               </div></td></tr>)}
             </tbody></table></div>}
       {notice && <p className="form-hint" role="status">{notice}</p>}
@@ -283,6 +316,31 @@ export function Leases() {
     <Modal open={detail !== null} onClose={() => setDetail(null)} title="Detalhes da locação">{detail && <dl className="room-rates"><div><dt>Locatário</dt><dd>{detail.tenantName}</dd></div><div><dt>Profissional</dt><dd>{detail.professionalName}</dd></div><div><dt>Sala</dt><dd>{detail.roomName}</dd></div><div><dt>Status</dt><dd>{statusLabels[detail.status]}</dd></div></dl>}</Modal>
     <Modal open={postpone !== null} onClose={() => setPostpone(null)} title="Postergar ocupação"><form className="simple-form" onSubmit={savePostpone}><label className="field-label">Novo início da ocupação<input className="field-input" required type="datetime-local" value={postponeAt} onChange={event => setPostponeAt(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setPostpone(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar postergação</button></div></form></Modal>
     <Modal open={endLease !== null} onClose={() => setEndLease(null)} title="Encerrar locação" subtitle="Deixe a data vazia para encerramento imediato."><form className="simple-form" onSubmit={saveEnd}><label className="field-label">Data de encerramento<input className="field-input" type="datetime-local" value={endAt} onChange={event => setEndAt(event.target.value)} /></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setEndLease(null)}>Cancelar</button><button className="primary-button" type="submit">Confirmar encerramento</button></div></form></Modal>
+    <Modal open={reactivating !== null} onClose={() => setReactivating(null)} title="Reativar locação"
+      subtitle={reactivating ? `${reactivating.tenantName} · ${reactivating.roomName}` : undefined}>
+      <form className="simple-form" onSubmit={saveReactivation}>
+        <p className="form-hint">A locação volta a valer a partir do mesmo início. Informe até quando — o término anterior costuma já ter passado.</p>
+        <label className="field-label">Novo fim da ocupação
+          <input className="field-input" required type="datetime-local" value={reactivateAt}
+            onChange={event => setReactivateAt(event.target.value)} />
+        </label>
+        <div className="modal-actions">
+          <button className="ghost-button" type="button" disabled={saving} onClick={() => setReactivating(null)}>Cancelar</button>
+          <button className="primary-button" type="submit" disabled={saving || !reactivateAt}>{saving ? 'Reativando…' : 'Reativar locação'}</button>
+        </div>
+      </form>
+    </Modal>
+    <Modal open={removing !== null} onClose={() => setRemoving(null)} title="Apagar locação"
+      subtitle={removing ? `${removing.tenantName} · ${removing.roomName}` : undefined}>
+      <div className="simple-form">
+        <p className="form-hint">Sem volta. O contrato some da lista e a sala fica livre no período.</p>
+        <p className="form-hint">Se já houver cobrança gerada, a locação não é apagada — nesse caso, cancele ou encerre.</p>
+        <div className="modal-actions">
+          <button className="ghost-button" type="button" disabled={saving} onClick={() => setRemoving(null)}>Cancelar</button>
+          <button className="danger-button" type="button" disabled={saving} onClick={() => void remove()}>{saving ? 'Apagando…' : 'Apagar definitivamente'}</button>
+        </div>
+      </div>
+    </Modal>
     <Modal open={newTenant} onClose={() => setNewTenant(false)} title="Novo locatário"><form className="simple-form" onSubmit={createTenant}><label className="field-label">Nome do locatário<input className="field-input" required maxLength={200} value={tenantName} onChange={event => setTenantName(event.target.value)} /></label><label className="field-label">Tipo<select className="field-input" value={tenantKind} onChange={event => setTenantKind(event.target.value as typeof tenantKind)}><option value="INDIVIDUAL">Pessoa física</option><option value="LEGAL_ENTITY">Pessoa jurídica</option></select></label><div className="modal-actions"><button className="ghost-button" type="button" onClick={() => setNewTenant(false)}>Cancelar</button><button className="primary-button" type="submit">Cadastrar locatário</button></div></form></Modal>
   </div>
 }

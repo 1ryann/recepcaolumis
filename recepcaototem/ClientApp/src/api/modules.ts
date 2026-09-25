@@ -679,6 +679,12 @@ export const leasesApi = {
   end(id: string, endAt: string | null, concurrencyToken: string) {
     return apiClient.post<LeaseDto>(`${leasePath(id)}/end`, { endAt, concurrencyToken })
   },
+  reactivate(id: string, occupancyEndAt: string, concurrencyToken: string) {
+    return apiClient.post<LeaseDto>(`${leasePath(id)}/reactivate`, { occupancyEndAt, concurrencyToken })
+  },
+  remove(id: string, concurrencyToken: string) {
+    return apiClient.delete<void>(leasePath(id), { concurrencyToken })
+  },
 }
 
 export const professionalLeasesApi = {

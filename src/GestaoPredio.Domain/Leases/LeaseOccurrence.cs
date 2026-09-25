@@ -47,6 +47,19 @@ public sealed class LeaseOccurrence
         UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
     }
 
+    /// <summary>
+    /// Takes back the cancellation when the lease it belongs to is reactivated. The row is reused instead of being
+    /// replaced: (LeaseId, StartAt) is unique, so a fresh occurrence for the same start would collide with the one
+    /// being removed in the same save.
+    /// </summary>
+    public void Reopen(DateTimeOffset occurredAt)
+    {
+        if (State != LeaseOccurrenceState.Cancelled)
+            throw new InvalidOperationException("Somente uma ocorrência cancelada pode ser reaberta.");
+        State = LeaseOccurrenceState.Planned;
+        UpdatedAt = TimestampNormalizer.ToUtcMicroseconds(occurredAt);
+    }
+
     public void Complete(DateTimeOffset occurredAt)
     {
         if (State != LeaseOccurrenceState.Planned)

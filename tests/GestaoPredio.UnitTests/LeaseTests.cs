@@ -151,6 +151,26 @@ public sealed class LeaseTests
             billingDueDay);
     }
 
+
+    [Fact]
+    public void Reactivation_demands_a_future_end_and_only_a_cancelled_or_ended_lease()
+    {
+        var open = Create(LeaseMode.Hourly, Now.AddDays(1), Now.AddDays(1).AddHours(2), null);
+        // An open lease has nothing to reactivate: it is already working.
+        Assert.Throws<InvalidOperationException>(() => open.Reactivate(Now.AddDays(5), Now));
+
+        var cancelled = Create(LeaseMode.Hourly, Now.AddDays(1), Now.AddDays(1).AddHours(2), null);
+        cancelled.Cancel(Now);
+        // Restoring the old window would hand back a lease that is already over, so the end has to be future.
+        Assert.Throws<ArgumentException>(() => cancelled.Reactivate(Now.AddHours(-1), Now));
+
+        cancelled.Reactivate(Now.AddDays(5), Now);
+        Assert.Equal(LeaseLifecycleState.Open, cancelled.LifecycleState);
+        Assert.Equal(Now.AddDays(5), cancelled.OccupancyEndAt);
+        // The start is untouched: reactivating resumes the contract, it does not write a new one.
+        Assert.Equal(Now.AddDays(1), cancelled.OccupancyStartAt);
+        Assert.Null(cancelled.MaterializedThroughAt);
+    }
     private static Lease Create(
         LeaseMode mode,
         DateTimeOffset startAt,
