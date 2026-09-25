@@ -28,9 +28,19 @@ public interface IRoomAvailabilityService
         DateTimeOffset startAt, DateTimeOffset? endAt, LeaseMode mode,
         CancellationToken cancellationToken);
 
-    Task<bool> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
+    /// <summary>The first commitment the proposed schedule would leave outside the opening hours, or null.</summary>
+    Task<OperatingHoursConflict?> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
         DateTimeOffset now, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// What a proposed schedule would leave outside the opening hours. Carried back to the screen so it can say which
+/// booking is in the way instead of asking the operator to guess which period to adjust.
+/// </summary>
+public sealed record OperatingHoursConflict(OperatingHoursConflictKind Kind, string RoomName, string? TenantName,
+    DateTimeOffset StartAt, DateTimeOffset EndAt);
+
+public enum OperatingHoursConflictKind { Reservation, Lease }
 
 public sealed record RoomOperationalStatus(Guid RoomId, string RoomName, string Status,
     DateTimeOffset? NextCommitmentAt);

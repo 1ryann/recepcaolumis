@@ -139,30 +139,45 @@ public sealed class PostgreSqlRoomAvailabilityService(
         return reservation ? RoomAvailabilityConflict.Reservation : RoomAvailabilityConflict.None;
     }
 
-    public async Task<bool> CanApplyScheduleAsync(IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
+    public async Task<OperatingHoursConflict?> CanApplyScheduleAsync(
+        IReadOnlyCollection<OperatingHourInterval> proposedIntervals,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
         EnsureTransaction();
-        await foreach (var period in db.Reservations.AsNoTracking()
-                           .Where(value => value.Status == ReservationStatus.Approved &&
-                                           value.Kind != ReservationKind.Cancellation && value.EndAt > now)
-                           .Select(value => new { value.StartAt, value.EndAt })
+        // The room name travels with each period so the rejection can name what is in the way: the operator sees the
+        // booking to move, instead of a schedule that refuses to save for no stated reason.
+        await foreach (var period in (
+                           from value in db.Reservations.AsNoTracking()
+                           join room in db.Rooms.AsNoTracking() on value.RoomId equals room.Id
+                           where value.Status == ReservationStatus.Approved &&
+                                 value.Kind != ReservationKind.Cancellation && value.EndAt > now
+                           select new { value.StartAt, value.EndAt, RoomName = room.Name })
                            .AsAsyncEnumerable().WithCancellation(cancellationToken))
-            if (!operatingHours.Contains(proposedIntervals, period.StartAt, period.EndAt)) return false;
+            if (!operatingHours.CoversPeriod(proposedIntervals, period.StartAt, period.EndAt))
+                return new OperatingHoursConflict(OperatingHoursConflictKind.Reservation, period.RoomName, null,
+                    period.StartAt, period.EndAt);
 
-        await foreach (var period in db.Leases.AsNoTracking()
-                           .Where(value => (value.Mode == LeaseMode.Hourly || value.Mode == LeaseMode.Daily) &&
-                                           (value.LifecycleState == LeaseLifecycleState.Open ||
-                                            value.LifecycleState == LeaseLifecycleState.EndingPending) &&
-                                           value.OccupancyEndAt != null && value.OccupancyEndAt > now)
-                           .Select(value => new { value.Mode, value.OccupancyStartAt, EndAt = value.OccupancyEndAt!.Value })
+        await foreach (var period in (
+                           from value in db.Leases.AsNoTracking()
+                           join room in db.Rooms.AsNoTracking() on value.RoomId equals room.Id
+                           join tenant in db.Tenants.AsNoTracking() on value.TenantId equals tenant.Id
+                           where (value.Mode == LeaseMode.Hourly || value.Mode == LeaseMode.Daily) &&
+                                 (value.LifecycleState == LeaseLifecycleState.Open ||
+                                  value.LifecycleState == LeaseLifecycleState.EndingPending) &&
+                                 value.OccupancyEndAt != null && value.OccupancyEndAt > now
+                           select new
+                           {
+                               value.Mode, value.OccupancyStartAt, EndAt = value.OccupancyEndAt!.Value,
+                               RoomName = room.Name, TenantName = tenant.Name
+                           })
                            .AsAsyncEnumerable().WithCancellation(cancellationToken))
             if (period.Mode == LeaseMode.Hourly
-                    ? !operatingHours.Contains(proposedIntervals, period.OccupancyStartAt, period.EndAt)
+                    ? !operatingHours.CoversPeriod(proposedIntervals, period.OccupancyStartAt, period.EndAt)
                     : !operatingHours.IsCivilDayOpen(proposedIntervals, period.OccupancyStartAt))
-                return false;
+                return new OperatingHoursConflict(OperatingHoursConflictKind.Lease, period.RoomName, period.TenantName,
+                    period.OccupancyStartAt, period.EndAt);
 
-        return true;
+        return null;
     }
 
     private void EnsureTransaction()

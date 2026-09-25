@@ -213,12 +213,44 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
             ScheduleBody(schedule.ConcurrencyToken, mondayClose: "17:00"));
 
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
-        Assert.Equal("OPERATING_HOURS_CONFLICT", (await conflict.Content.ReadFromJsonAsync<ErrorPayload>())!.Code);
+        var rejected = (await conflict.Content.ReadFromJsonAsync<ErrorPayload>())!;
+        Assert.Equal("OPERATING_HOURS_CONFLICT", rejected.Code);
+        // The operator has to be able to find the booking that is in the way.
+        Assert.Contains(resources.Room.Name, rejected.Message);
         var unchanged = (await (await factory.Client.GetAsync("/api/admin/operating-hours"))
             .Content.ReadFromJsonAsync<SchedulePayload>())!;
         Assert.Equal(schedule.ConcurrencyToken, unchanged.ConcurrencyToken);
     }
 
+
+    // Production, 2026-09-25: the database was rebuilt, so no schedule existed. The guard that rejects an
+    // out-of-hours lease only runs when a schedule exists, so an hourly lease covering a whole month got in —
+    // and from then on no operating hours could be saved at all, because an occupancy that crosses midnight
+    // fits inside no daily interval. The setting was locked by the very data it would have prevented.
+    [Fact]
+    public async Task A_long_hourly_occupancy_created_before_any_schedule_does_not_lock_the_screen()
+    {
+        await factory.ResetAsync();
+        var resources = await SeedResourcesAsync();
+        await LoginAsync(SystemRoles.Administrador);
+
+        var lease = await factory.PostWithCsrfAsync("/api/admin/leases",
+            LeaseBody(resources, "HOURLY", MondayAtEight, MondayAtEight.AddDays(30)));
+        Assert.Equal(HttpStatusCode.Created, lease.StatusCode);
+
+        var saved = await factory.PutWithCsrfAsync("/api/admin/operating-hours", EveryDayBody());
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+
+        // Closing a day the occupancy covers is still refused — and the answer now names what is in the way.
+        var token = (await saved.Content.ReadFromJsonAsync<SchedulePayload>())!.ConcurrencyToken;
+        var closingSunday = await factory.PutWithCsrfAsync("/api/admin/operating-hours",
+            EveryDayBody(token, closed: "SUNDAY"));
+        Assert.Equal(HttpStatusCode.Conflict, closingSunday.StatusCode);
+        var error = (await closingSunday.Content.ReadFromJsonAsync<ErrorPayload>())!;
+        Assert.Equal("OPERATING_HOURS_CONFLICT", error.Code);
+        Assert.Contains(resources.Room.Name, error.Message);
+        Assert.Contains(resources.Tenant.Name, error.Message);
+    }
     [Fact]
     public async Task Hourly_lease_respects_hours_and_blocks_while_monthly_is_not_restricted_by_civil_hours()
     {
@@ -364,6 +396,18 @@ public sealed class OperatingHoursRoomBlocksApiTests(ModulesApiFactory factory)
             intervals = day == nameof(DayOfWeek.Monday)
                 ? new[] { new { opensAt = "08:00", closesAt = "12:00" }, new { opensAt = "14:00", closesAt = mondayClose } }
                 : []
+        }).ToArray(),
+        concurrencyToken
+    };
+
+    private static object EveryDayBody(string? concurrencyToken = null, string? closed = null) => new
+    {
+        days = Enum.GetNames<DayOfWeek>().Select(day => new
+        {
+            dayOfWeek = day.ToUpperInvariant(),
+            intervals = day.ToUpperInvariant() == closed
+                ? Array.Empty<object>()
+                : new object[] { new { opensAt = "08:00", closesAt = "18:00" } }
         }).ToArray(),
         concurrencyToken
     };

@@ -75,3 +75,19 @@ test('a manager does not get the account card', async () => {
   expect(await screen.findByText('Horário do estabelecimento')).toBeInTheDocument()
   expect(screen.queryByText('Contas de acesso')).not.toBeInTheDocument()
 })
+
+// The screen used to replace this one with "ajuste os períodos e tente novamente", which hid the only useful
+// part: which booking is in the way. The server composes it, names and hours included, so it is shown as sent.
+test('a schedule conflict shows what the server says is in the way', async () => {
+  const { ApiError } = await import('../../api/client')
+  vi.mocked(operatingHoursApi.update).mockRejectedValue(new ApiError(409, 'OPERATING_HOURS_CONFLICT',
+    'A locação da Sala Premium para Doutor ocupa de 01/09/2026 08:30 até 01/10/2026 08:30 e ficaria fora do funcionamento. Ajuste os períodos ou altere esse compromisso.'))
+  render(<Settings />)
+  expect(await screen.findByText('Horário do estabelecimento')).toBeInTheDocument()
+  const monday = screen.getByTestId('wpe-day-MONDAY')
+  fireEvent.change(within(monday).getAllByLabelText('Fechamento')[0], { target: { value: '19:00' } })
+  fireEvent.click(screen.getByRole('button', { name: /salvar horário/i }))
+
+  expect(await screen.findByText(/Sala Premium para Doutor/)).toBeInTheDocument()
+  expect(screen.queryByText(/Ajuste os períodos e tente novamente/)).not.toBeInTheDocument()
+})

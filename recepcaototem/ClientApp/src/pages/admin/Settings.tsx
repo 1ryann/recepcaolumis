@@ -13,7 +13,8 @@ const localDateTimeToIso = (value: string) => value ? new Date(value).toISOStrin
 const errorText = (reason: unknown) => {
   if (reason instanceof ApiError) {
     if (reason.code === 'RESOURCE_MODIFIED') return 'Este registro foi alterado em outra sessão. Atualizamos os dados para você.'
-    if (reason.code === 'OPERATING_HOURS_CONFLICT') return 'O novo horário deixaria uma reserva ou ocupação válida fora do funcionamento. Ajuste os períodos e tente novamente.'
+    // OPERATING_HOURS_CONFLICT is deliberately not rewritten here: the server names the booking in the way — which
+    // room, whose, which hours — and that is the whole value of the message. The generic text used to hide it.
     return reason.message
   }
   return reason instanceof Error ? reason.message : 'Não foi possível concluir a operação.'

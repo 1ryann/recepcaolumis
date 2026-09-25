@@ -34,7 +34,7 @@ public static class OperatingHoursEndpoints
 
     private static async Task<IResult> Put(UpdateOperatingHoursRequest request, HttpContext context,
         ApplicationDbContext db, IRoomAvailabilityService availability, ILeaseResourceLock resourceLock,
-        TimeProvider timeProvider,
+        TimeProvider timeProvider, TimeZoneInfo timeZone,
         CancellationToken cancellationToken)
     {
         if (!TryBuildIntervals(request.Days, out var proposed)) return InvalidSchedule();
@@ -67,10 +67,8 @@ public static class OperatingHoursEndpoints
         var roomIds = await db.Rooms.AsNoTracking().OrderBy(value => value.Id)
             .Select(value => value.Id).ToArrayAsync(cancellationToken);
         await resourceLock.AcquireAsync(new LeaseResourceLockRequest([], roomIds, []), cancellationToken);
-        if (!await availability.CanApplyScheduleAsync(proposed, now, cancellationToken))
-            return Results.Json(new ApiError("OPERATING_HOURS_CONFLICT",
-                "O novo horário deixaria uma reserva ou ocupação válida fora do funcionamento."),
-                statusCode: StatusCodes.Status409Conflict);
+        if (await availability.CanApplyScheduleAsync(proposed, now, cancellationToken) is { } conflict)
+            return Conflict(conflict, timeZone);
 
         db.OperatingHourIntervals.RemoveRange(existing);
         db.OperatingHourIntervals.AddRange(proposed);
@@ -149,6 +147,29 @@ public static class OperatingHoursEndpoints
                     value.OpensAt.ToString("HH:mm", CultureInfo.InvariantCulture),
                     value.ClosesAt.ToString("HH:mm", CultureInfo.InvariantCulture))).ToArray())).ToArray(),
         schedule is null ? null : ConcurrencyToken.Encode(schedule.Version));
+
+    /// <summary>
+    /// Names the booking in the way. The old text said only that "a reservation or occupancy would be left outside"
+    /// and asked the operator to adjust the periods — with nothing to adjust towards, since the screen never said
+    /// which room, which day or which hours were the problem.
+    /// </summary>
+    private static IResult Conflict(OperatingHoursConflict conflict, TimeZoneInfo timeZone)
+    {
+        var start = TimeZoneInfo.ConvertTime(conflict.StartAt, timeZone);
+        var end = TimeZoneInfo.ConvertTime(conflict.EndAt, timeZone);
+        var when = start.Date == end.Date
+            ? $"em {Local(start, "dd/MM/yyyy")}, das {Local(start, "HH:mm")} às {Local(end, "HH:mm")}"
+            : $"de {Local(start, "dd/MM/yyyy")} {Local(start, "HH:mm")} até {Local(end, "dd/MM/yyyy")} {Local(end, "HH:mm")}";
+        var what = conflict.Kind == OperatingHoursConflictKind.Lease
+            ? $"A locação da {conflict.RoomName} para {conflict.TenantName}"
+            : $"A reserva da {conflict.RoomName}";
+        return Results.Json(new ApiError("OPERATING_HOURS_CONFLICT",
+            $"{what} ocupa {when} e ficaria fora do funcionamento. Ajuste os períodos ou altere esse compromisso."),
+            statusCode: StatusCodes.Status409Conflict);
+    }
+
+    private static string Local(DateTimeOffset value, string format) =>
+        value.ToString(format, CultureInfo.InvariantCulture);
 
     private static string? Actor(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier);
     private static IResult InvalidSchedule() => Results.BadRequest(new ApiError(

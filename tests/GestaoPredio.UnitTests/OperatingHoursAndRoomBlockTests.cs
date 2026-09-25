@@ -48,6 +48,47 @@ public sealed class OperatingHoursAndRoomBlockTests
             new DateTimeOffset(2026, 9, 6, 14, 0, 0, TimeSpan.Zero)));
     }
 
+    // An occupancy that crosses midnight fits in no daily interval, so Contains always said no and a single
+    // month-long lease made every possible schedule invalid (production, 2026-09-25). Such a period is judged
+    // by the days it covers instead.
+    [Fact]
+    public void A_period_crossing_midnight_is_judged_by_the_days_it_covers()
+    {
+        var scheduleId = Guid.NewGuid();
+        var evaluator = new OperatingHoursEvaluator(TimeZone);
+        var mondayAndTuesday = OperatingHourInterval.CreateDay(scheduleId, DayOfWeek.Monday,
+                [new LocalTimeRange(new TimeOnly(8, 0), new TimeOnly(18, 0))])
+            .Concat(OperatingHourInterval.CreateDay(scheduleId, DayOfWeek.Tuesday,
+                [new LocalTimeRange(new TimeOnly(8, 0), new TimeOnly(18, 0))])).ToList();
+        // Monday 08:00 to Tuesday 08:00 in Porto Velho.
+        var start = new DateTimeOffset(2027, 1, 4, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.True(evaluator.CoversPeriod(mondayAndTuesday, start, start.AddDays(1)));
+        Assert.False(evaluator.CoversPeriod(mondayAndTuesday, start, start.AddDays(2)));   // Wednesday is closed
+        // Inside a single day it is the old rule, to the minute.
+        Assert.True(evaluator.CoversPeriod(mondayAndTuesday, start, start.AddHours(10)));
+        Assert.False(evaluator.CoversPeriod(mondayAndTuesday, start, start.AddHours(11)));
+    }
+
+    [Fact]
+    public void An_occupancy_of_a_week_or_more_needs_every_day_open_and_ends_at_midnight_without_the_next_day()
+    {
+        var scheduleId = Guid.NewGuid();
+        var evaluator = new OperatingHoursEvaluator(TimeZone);
+        var everyDay = Enum.GetValues<DayOfWeek>().SelectMany(day => OperatingHourInterval.CreateDay(scheduleId, day,
+            [new LocalTimeRange(new TimeOnly(8, 0), new TimeOnly(18, 0))])).ToList();
+        var withoutSunday = everyDay.Where(interval => interval.DayOfWeek != DayOfWeek.Sunday).ToList();
+        var start = new DateTimeOffset(2027, 1, 4, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.True(evaluator.CoversPeriod(everyDay, start, start.AddDays(30)));
+        Assert.False(evaluator.CoversPeriod(withoutSunday, start, start.AddDays(30)));
+        // Monday 08:00 to Wednesday 00:00 occupies Monday and Tuesday; Wednesday is only the closing instant.
+        var mondayAndTuesday = everyDay.Where(interval =>
+            interval.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Tuesday).ToList();
+        Assert.True(evaluator.CoversPeriod(mondayAndTuesday,
+            start, new DateTimeOffset(2027, 1, 6, 4, 0, 0, TimeSpan.Zero)));
+    }
+
     [Fact]
     public void Civil_day_is_open_when_it_has_at_least_one_local_interval()
     {
