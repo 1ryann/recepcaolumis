@@ -63,6 +63,20 @@ test('shows the 6-digit code next to the QR after "Gerar QR Code"', async () => 
   expect(screen.getByText('Use este código no Totem.')).toBeInTheDocument()
 })
 
+test('copies the manual code (not the QR token) to the clipboard', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.assign(navigator, { clipboard: { writeText } })
+  await issueFromDetail()
+  fireEvent.click(screen.getByRole('button', { name: /copiar/i }))
+  expect(writeText).toHaveBeenCalledWith('004821')
+  expect(writeText).not.toHaveBeenCalledWith('strong-token')
+})
+
+test('no development-only affordance is exposed to the customer', async () => {
+  await issueFromDetail()
+  expect(screen.queryByText(/desenvolvimento/i)).not.toBeInTheDocument()
+})
+
 test('the manual code is never written to web storage', async () => {
   const setItem = vi.spyOn(Storage.prototype, 'setItem')
   await issueFromDetail()
